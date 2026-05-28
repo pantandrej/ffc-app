@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 38">
+  <path d="M17 1L2 7v12c0 9 6 16 15 18C26 35 32 28 32 19V7L17 1z" fill="#B91C1C"/>
+  <path d="M17 1L2 7v12c0 9 6 16 15 18V1z" fill="#991B1B"/>
+  <path d="M17 4L4 9v10c0 7.5 5 13 13 15 8-2 13-7.5 13-15V9L17 4z" fill="#14532D"/>
+  <text x="17" y="23" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="10" fill="#F59E0B">FFC</text>
+</svg>
