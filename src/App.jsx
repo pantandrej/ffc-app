@@ -1185,12 +1185,19 @@ function AuthModal({ onClose, onAuth, onSocialAuth }) {
 
   async function signInWithVK() {
     setSocialBusy("vk");
-    // Прямой редирект на VK OAuth — code придёт в Edge Function vk-auth
-    const redirectUri = encodeURIComponent(VK_FUNCTION_URL);
-    const appUrl = encodeURIComponent(window.location.origin);
-    const vkOAuthUrl = `https://oauth.vk.com/authorize?client_id=${VK_APP_ID}&display=page&redirect_uri=${redirectUri}&scope=email&response_type=code&state=${appUrl}`;
+    // VK не всегда принимает supabase.co как redirect_uri.
+    // Используем ffc-app.vercel.app/vk-callback как redirect —
+    // он добавлен в VK как доверенный домен, и оттуда перенаправим в Edge Function.
+    const VK_REDIRECT = "https://ffc-app.vercel.app/vk-callback";
+    const vkOAuthUrl =
+      "https://oauth.vk.com/authorize" +
+      "?client_id=" + VK_APP_ID +
+      "&display=page" +
+      "&redirect_uri=" + encodeURIComponent(VK_REDIRECT) +
+      "&scope=email" +
+      "&response_type=code" +
+      "&v=5.131";
     window.location.href = vkOAuthUrl;
-    // setSocialBusy не сбрасываем — страница уйдёт на VK
   }
 
   const isAnySocialBusy = socialBusy !== null;
@@ -1914,7 +1921,25 @@ export default function App() {
 
   // Загрузка сессии при старте + подписка на OAuth-редирект
   useEffect(() => {
-    // 0. Проверить hash — VK Edge Function возвращает токены в #hash
+    // -1. Обработка /vk-callback — VK вернул code сюда, пересылаем в Edge Function
+    if (window.location.pathname === "/vk-callback") {
+      const qp = new URLSearchParams(window.location.search);
+      const code = qp.get("code");
+      const vkError = qp.get("error");
+      if (vkError) {
+        window.history.replaceState(null, "", "/");
+        setToast("VK отказал в доступе: " + (qp.get("error_description") || vkError));
+        return;
+      }
+      if (code) {
+        // Чистим URL и перенаправляем в Edge Function с правильным redirect_uri
+        window.history.replaceState(null, "", "/");
+        const VK_REDIRECT = encodeURIComponent("https://ffc-app.vercel.app/vk-callback");
+        const edgeUrl = `${VK_FUNCTION_URL}?code=${code}&redirect_uri=${VK_REDIRECT}`;
+        window.location.href = edgeUrl;
+        return;
+      }
+    }
     const hash = window.location.hash;
     if (hash && hash.includes("vk_access_token=")) {
       const params = new URLSearchParams(hash.replace("#", ""));
