@@ -3,9 +3,27 @@
 // Вкладки groups/playoff/questions/table/thirds/ffc/plans УДАЛЕНЫ.
 // Плей-офф, бонусы, третьи места — секции внутри "Отправить прогноз".
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://nhmidxkohjpcnhjucuuh.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5obWlkeGtvaGpwY25oanVjdXVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzMzcyNzUsImV4cCI6MjA5NDkxMzI3NX0.GhyUFcEQKpiyXmCkHKWluUFiMuv8iqxdiG5jcUh-Jm8";
+
+// supabase-js клиент — только для auth (OAuth, session, signOut)
+// Для DB-запросов используется supa() ниже
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Для Google OAuth:
+// Supabase Dashboard → Authentication → Providers → Google → Enable
+// Google Cloud Console → OAuth → Redirect URI:
+//   https://nhmidxkohjpcnhjucuuh.supabase.co/auth/v1/callback
+// Supabase Auth → URL Configuration → добавить:
+//   https://ffc-app-xxx.vercel.app
+
+// Для VK OAuth:
+// Supabase Dashboard → Authentication → Add custom OIDC provider
+// Provider id: vk  (используй provider: "vk" в signInWithOAuth)
+// Client secret НЕ хранить во фронтенде — нужен backend/Edge Function.
+// Если VK не поддерживает OIDC — кнопка покажет сообщение без падения.
 
 const supa = (path, opts = {}) =>
   fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -1085,6 +1103,13 @@ body{background:#0A1208}
 .debug-panel{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:14px;margin-bottom:14px;font-size:11px}
 @media(max-width:680px){.group-grid,.po-grid{grid-template-columns:1fr}}
 @media(max-width:600px){.anch-btn{padding:3px 6px!important;font-size:11px!important;min-width:26px!important}.sin{width:34px!important;height:36px!important}}
+.auth-divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(240,237,230,.25);font-size:11px}.auth-divider::before,.auth-divider::after{content:"";flex:1;height:1px;background:rgba(255,255,255,.08)}
+.google-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;border:none;border-radius:6px;color:#1f1f1f;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;padding:11px 16px;cursor:pointer;transition:.15s;margin-bottom:8px}
+.google-btn:hover{background:#f0f0f0;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.vk-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#0077FF;border:none;border-radius:6px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;padding:11px 16px;cursor:pointer;transition:.15s;margin-bottom:4px}
+.vk-btn:hover{background:#0060d0}
+.vk-btn:disabled{background:#334;cursor:default;opacity:.5}
+.auth-hint{font-size:10px;color:rgba(240,237,230,.25);text-align:center;margin-bottom:10px;line-height:1.4}
 `;
 
 // ── SHIELD LOGO ──
@@ -1100,7 +1125,7 @@ function Shield() {
 }
 
 // ── OTP AUTH MODAL ──
-function AuthModal({ onClose, onAuth }) {
+function AuthModal({ onClose, onAuth, onSocialAuth }) {
   const [step, setStep] = useState("email"); // "email" | "otp"
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -1108,6 +1133,7 @@ function AuthModal({ onClose, onAuth }) {
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [socialBusy, setSocialBusy] = useState(null); // "google" | "vk" | null
 
   async function sendOtp() {
     setErr(""); setInfo("");
@@ -1135,13 +1161,40 @@ function AuthModal({ onClose, onAuth }) {
     const r = await supaAuth("verify", { type: "email", email, token: code });
     setBusy(false);
     if (r.error) { setErr("Код неверный или истёк. Попробуй снова."); return; }
-    // r содержит { access_token, refresh_token, user }
     if (r.access_token) {
       onAuth(r);
     } else {
       setErr("Не удалось получить сессию. Попробуй ещё раз.");
     }
   }
+
+  async function signInWithGoogle() {
+    setSocialBusy("google");
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) {
+      setSocialBusy(null);
+      setErr("Ошибка входа через Google: " + error.message);
+    }
+    // При успехе — редирект на Google, onAuthStateChange подхватит после возврата
+  }
+
+  async function signInWithVK() {
+    setSocialBusy("vk");
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+      provider: "vk",
+      options: { redirectTo: window.location.origin },
+    });
+    setSocialBusy(null);
+    if (error) {
+      // VK может не быть настроен — показываем понятное сообщение, не падаем
+      setErr("VK-вход пока не настроен. Войди через Google или email-код.");
+    }
+  }
+
+  const isAnySocialBusy = socialBusy !== null;
 
   return (
     <div className="modal-bg" onClick={(e) => e.target.className === "modal-bg" && onClose()}>
@@ -1156,16 +1209,40 @@ function AuthModal({ onClose, onAuth }) {
         {err && <div className="err">{err}</div>}
         {info && <div className="ok">{info}</div>}
 
+        {/* Кнопки соцсетей — показываем только на шаге email */}
         {step === "email" && (
           <>
+            <button className="google-btn" disabled={isAnySocialBusy} onClick={signInWithGoogle}>
+              {/* Google G logo SVG */}
+              <svg width="18" height="18" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              {socialBusy === "google" ? "Перехожу..." : "Войти через Google"}
+            </button>
+
+            <button className="vk-btn" disabled={isAnySocialBusy} onClick={signInWithVK}>
+              {/* VK logo */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                <path d="M12.785 16.241s.288-.032.436-.194c.136-.148.132-.427.132-.427s-.02-1.304.585-1.496c.598-.19 1.365 1.26 2.179 1.815.615.422 1.08.33 1.08.33l2.17-.03s1.135-.07.597-1.04c-.044-.078-.314-.66-1.613-1.866-1.36-1.26-1.178-1.056.46-3.234.999-1.33 1.397-2.143 1.272-2.49-.12-.33-.863-.243-.863-.243l-2.44.016s-.181-.025-.316.056c-.132.08-.217.267-.217.267s-.387 1.03-.903 1.906c-1.088 1.849-1.52 1.948-1.698 1.834-.413-.267-.31-1.075-.31-1.648 0-1.793.272-2.54-.528-2.733-.266-.064-.461-.107-1.141-.114-.872-.009-1.609.003-2.027.207-.278.136-.492.44-.362.457.162.022.53.099.724.365.25.344.242 1.118.242 1.118s.144 2.11-.336 2.372c-.33.18-.783-.187-1.754-1.862-.498-.861-.874-1.814-.874-1.814s-.072-.18-.202-.277c-.158-.115-.378-.152-.378-.152l-2.32.015s-.348.01-.476.161C4.96 7.888 5.05 8.2 5.05 8.2s1.816 4.25 3.872 6.395c1.886 1.968 4.028 1.84 4.028 1.84l1.835-.03z"/>
+              </svg>
+              {socialBusy === "vk" ? "Перехожу..." : "Войти через VK"}
+            </button>
+            <div className="auth-hint">Если VK-вход не открылся — провайдер ещё не настроен в Supabase.</div>
+
+            <div className="auth-divider">или войди по email-коду</div>
+
             <div style={{ fontSize: 12, color: "rgba(240,237,230,.4)", marginBottom: 12, lineHeight: 1.5 }}>
-              Введи имя и email — мы пришлём одноразовый код. Пароль не нужен.
+              Пароль не нужен — пришлём код на почту.
             </div>
             <input className="inp" placeholder="Твоё имя (в таблице лидеров)" value={name} onChange={(e) => setName(e.target.value)} />
             <input className="inp" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendOtp()} />
-            <button className="bp" style={{ width: "100%", marginTop: 4 }} disabled={busy} onClick={sendOtp}>
+            <button className="bp" style={{ width: "100%", marginTop: 4 }} disabled={busy || isAnySocialBusy} onClick={sendOtp}>
               {busy ? "Отправляю..." : "Получить код →"}
             </button>
+            <div className="auth-hint" style={{ marginTop: 10 }}>Продолжая, вы соглашаетесь с правилами турнира.</div>
           </>
         )}
 
@@ -1769,8 +1846,76 @@ export default function App() {
 
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 2800); };
 
-  // Загрузка сессии при старте
+  // ── ЕДИНЫЙ ОБРАБОТЧИК ПОСЛЕ УСПЕШНОГО ВХОДА ──
+  // Используется для email OTP, Google и VK — не дублируем логику
+  const afterSuccessfulAuth = useCallback(async (rawSess) => {
+    // rawSess может быть объектом { access_token, user, ... } (OTP)
+    // или объектом Session из supabase-js (OAuth)
+    const token = rawSess.access_token;
+    const user = rawSess.user || rawSess;
+    if (!token || !user?.id) return;
+
+    const sessObj = { access_token: token, user };
+    localStorage.setItem("ffc_session", JSON.stringify(sessObj));
+    setSession(sessObj);
+
+    // Загрузить или создать профиль
+    const pr = await supa(`profiles?id=eq.${user.id}&select=*`, { token });
+    let prof = null;
+    if (pr.ok) {
+      const d = await pr.json();
+      prof = d[0] || null;
+    }
+    if (!prof) {
+      // Создаём профиль для нового пользователя (Google/VK/email)
+      const meta = user.user_metadata || {};
+      const newProf = {
+        id: user.id,
+        email: user.email || null,
+        name: meta.full_name || meta.name || user.email || "Игрок",
+        avatar_url: meta.avatar_url || meta.picture || null,
+        provider: user.app_metadata?.provider || "email",
+        prediction_status: "draft",
+        access_level: ACCESS.DEMO,
+      };
+      const cr = await supa("profiles", {
+        method: "POST", token,
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(newProf),
+      });
+      prof = newProf;
+    }
+    setProfile(prof);
+    const dbStatus = prof.prediction_status;
+    const localStatus = localStorage.getItem(`ffc_pred_status_${user.id}`);
+    setPredStatus(dbStatus || localStatus || "draft");
+
+    // Перенести guest draft если есть и прогноз ещё не submitted
+    const guestScores = localStorage.getItem("ffc_guest_scores");
+    let hasDraft = false;
+    try { hasDraft = guestScores && Object.keys(JSON.parse(guestScores)).length > 0; } catch { }
+    if (hasDraft && prof.prediction_status !== "submitted") {
+      setPendingSession(sessObj);
+      setShowDraftModal(true);
+    } else {
+      await loadMyData(sessObj);
+      showToast("✓ Вход выполнен!");
+    }
+
+    await loadLeaderboard();
+    setShowAuth(false);
+
+    // Если до входа нажимали "Отправить прогноз" — открыть оплату
+    if (pendingPlanAfterAuth) {
+      setShowPayment(pendingPlanAfterAuth);
+      setPendingPlanAfterAuth(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPlanAfterAuth]);
+
+  // Загрузка сессии при старте + подписка на OAuth-редирект
   useEffect(() => {
+    // 1. Восстановить сессию из localStorage (email OTP)
     const stored = localStorage.getItem("ffc_session");
     if (stored) {
       try {
@@ -1781,6 +1926,31 @@ export default function App() {
         loadLeaderboard();
       } catch { localStorage.removeItem("ffc_session"); }
     }
+
+    // 2. Подхватить OAuth-сессию после редиректа с Google/VK
+    supabaseClient.auth.getSession().then(({ data }) => {
+      if (data?.session?.user) {
+        const s = data.session;
+        // Если уже есть из localStorage — не дублируем
+        const alreadyHave = localStorage.getItem("ffc_session");
+        if (!alreadyHave) {
+          afterSuccessfulAuth(s);
+        }
+      }
+    });
+
+    // 3. Слушать SIGNED_IN (возврат после OAuth-редиректа)
+    const { data: sub } = supabaseClient.auth.onAuthStateChange((event, s) => {
+      if (event === "SIGNED_IN" && s?.user) {
+        const alreadyHave = localStorage.getItem("ffc_session");
+        if (!alreadyHave) {
+          afterSuccessfulAuth(s);
+        }
+      }
+    });
+
+    return () => sub?.subscription?.unsubscribe?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadProfile(s) {
@@ -1832,20 +2002,12 @@ export default function App() {
     if (r.ok) { const d = await r.json(); setLeaderboard(d); }
   }
 
+  // handleAuth — вызывается из AuthModal после успешного email OTP
   async function handleAuth(sess) {
-    localStorage.setItem("ffc_session", JSON.stringify(sess));
-    setPendingSession(sess);
-    setShowAuth(false);
-    const guestScores = localStorage.getItem("ffc_guest_scores");
-    let hasDraft = false;
-    try { hasDraft = guestScores && Object.keys(JSON.parse(guestScores)).length > 0; } catch { }
-    if (hasDraft) {
-      setShowDraftModal(true);
-    } else {
-      await finishAuth(sess, false);
-    }
+    await afterSuccessfulAuth(sess);
   }
 
+  // finishAuth — вызывается из DraftModal (перенести или нет черновик)
   async function finishAuth(sess, transfer) {
     setSession(sess);
     await loadProfile(sess);
@@ -1853,7 +2015,6 @@ export default function App() {
     await loadLeaderboard();
     setPendingSession(null);
     showToast(transfer ? "✓ Черновик перенесён в аккаунт!" : "✓ Вход выполнен!");
-    // Если после входа нужно было открыть оплату
     if (pendingPlanAfterAuth) {
       setShowPayment(pendingPlanAfterAuth);
       setPendingPlanAfterAuth(null);
@@ -2098,15 +2259,17 @@ export default function App() {
                   <span className={`access-badge ${isAdmin ? "badge-admin" : isPaid ? "badge-paid" : "badge-demo"}`}>
                     {isAdmin ? "Админ" : isPaid ? "Участник" : "Черновик"}
                   </span>
-                  <button onClick={() => {
+                  <button onClick={async () => {
                     const keep = window.confirm("Оставить черновик прогнозов на этом устройстве?");
+                    await supabaseClient.auth.signOut();
                     localStorage.removeItem("ffc_session");
                     if (!keep) {
                       localStorage.removeItem("ffc_guest_scores"); localStorage.removeItem("ffc_guest_playoff_scores");
                       localStorage.removeItem("ffc_guest_playoff_pens"); localStorage.removeItem("ffc_guest_bonus");
                       setScores({}); setPScores({}); setPPens({}); setBonus({});
                     }
-                    setSession(null); setProfile(null);
+                    setSession(null); setProfile(null); setPredStatus("draft");
+                    showToast("Вы вышли из аккаунта");
                   }} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.1)", color: "rgba(240,237,230,.35)", fontSize: 11, padding: "3px 7px", borderRadius: 4, cursor: "pointer", fontFamily: "Barlow Condensed,sans-serif" }}>Выйти</button>
                 </>
               )}
