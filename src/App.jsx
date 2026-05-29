@@ -5,25 +5,27 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://nhmidxkohjpcnhjucuuh.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5obWlkeGtvaGpwY25oanVjdXVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzMzcyNzUsImV4cCI6MjA5NDkxMzI3NX0.GhyUFcEQKpiyXmCkHKWluUFiMuv8iqxdiG5jcUh-Jm8";
+const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
 
 // supabase-js клиент — только для auth (OAuth, session, signOut)
 // Для DB-запросов используется supa() ниже
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Для Google OAuth:
-// Supabase Dashboard → Authentication → Providers → Google → Enable
-// Google Cloud Console → OAuth → Redirect URI:
-//   https://nhmidxkohjpcnhjucuuh.supabase.co/auth/v1/callback
-// Supabase Auth → URL Configuration → добавить:
-//   https://ffc-app-xxx.vercel.app
+// Supabase → Authentication → Providers → Google → Enable
+// Google Cloud → OAuth 2.0 → Redirect URI:
+//   https://gcuxixbldjrztnqsdqcs.supabase.co/auth/v1/callback
+// Supabase → Auth → URL Configuration → Site URL:
+//   https://ffc-app.vercel.app
 
-// Для VK OAuth:
-// Supabase Dashboard → Authentication → Add custom OIDC provider
-// Provider id: vk  (используй provider: "vk" в signInWithOAuth)
-// Client secret НЕ хранить во фронтенде — нужен backend/Edge Function.
-// Если VK не поддерживает OIDC — кнопка покажет сообщение без падения.
+// Для VK OAuth (через Edge Function):
+// Edge Function: https://gcuxixbldjrztnqsdqcs.supabase.co/functions/v1/vk-auth
+// VK App → Авторизация → Redirect URI:
+//   https://gcuxixbldjrztnqsdqcs.supabase.co/functions/v1/vk-auth
+// Секреты VK_APP_ID и VK_SECRET уже добавлены в Supabase Secrets.
+const VK_APP_ID = "54614369";
+const VK_FUNCTION_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co/functions/v1/vk-auth";
 
 const supa = (path, opts = {}) =>
   fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -1183,15 +1185,12 @@ function AuthModal({ onClose, onAuth, onSocialAuth }) {
 
   async function signInWithVK() {
     setSocialBusy("vk");
-    const { error } = await supabaseClient.auth.signInWithOAuth({
-      provider: "vk",
-      options: { redirectTo: window.location.origin },
-    });
-    setSocialBusy(null);
-    if (error) {
-      // VK может не быть настроен — показываем понятное сообщение, не падаем
-      setErr("VK-вход пока не настроен. Войди через Google или email-код.");
-    }
+    // Прямой редирект на VK OAuth — code придёт в Edge Function vk-auth
+    const redirectUri = encodeURIComponent(VK_FUNCTION_URL);
+    const appUrl = encodeURIComponent(window.location.origin);
+    const vkOAuthUrl = `https://oauth.vk.com/authorize?client_id=${VK_APP_ID}&display=page&redirect_uri=${redirectUri}&scope=email&response_type=code&state=${appUrl}`;
+    window.location.href = vkOAuthUrl;
+    // setSocialBusy не сбрасываем — страница уйдёт на VK
   }
 
   const isAnySocialBusy = socialBusy !== null;
@@ -1915,6 +1914,33 @@ export default function App() {
 
   // Загрузка сессии при старте + подписка на OAuth-редирект
   useEffect(() => {
+    // 0. Проверить hash — VK Edge Function возвращает токены в #hash
+    const hash = window.location.hash;
+    if (hash && hash.includes("vk_access_token=")) {
+      const params = new URLSearchParams(hash.replace("#", ""));
+      const vkToken = params.get("vk_access_token");
+      const vkRefresh = params.get("vk_refresh_token");
+      if (vkToken) {
+        // Очищаем hash из URL чтобы не светить токен
+        window.history.replaceState(null, "", window.location.pathname);
+        // Получаем пользователя по токену
+        supabaseClient.auth.getUser(vkToken).then(({ data }) => {
+          if (data?.user) {
+            afterSuccessfulAuth({ access_token: vkToken, user: data.user });
+          }
+        });
+        return; // не делаем остальные проверки
+      }
+    }
+
+    // Проверить query — VK может вернуть ошибку в ?vk_error=
+    const qParams = new URLSearchParams(window.location.search);
+    const vkError = qParams.get("vk_error");
+    if (vkError) {
+      window.history.replaceState(null, "", window.location.pathname);
+      setToast(`Ошибка VK: ${vkError}`);
+    }
+
     // 1. Восстановить сессию из localStorage (email OTP)
     const stored = localStorage.getItem("ffc_session");
     if (stored) {
@@ -1927,19 +1953,17 @@ export default function App() {
       } catch { localStorage.removeItem("ffc_session"); }
     }
 
-    // 2. Подхватить OAuth-сессию после редиректа с Google/VK
+    // 2. Подхватить OAuth-сессию после редиректа с Google
     supabaseClient.auth.getSession().then(({ data }) => {
       if (data?.session?.user) {
-        const s = data.session;
-        // Если уже есть из localStorage — не дублируем
         const alreadyHave = localStorage.getItem("ffc_session");
         if (!alreadyHave) {
-          afterSuccessfulAuth(s);
+          afterSuccessfulAuth(data.session);
         }
       }
     });
 
-    // 3. Слушать SIGNED_IN (возврат после OAuth-редиректа)
+    // 3. Слушать SIGNED_IN (возврат после Google OAuth)
     const { data: sub } = supabaseClient.auth.onAuthStateChange((event, s) => {
       if (event === "SIGNED_IN" && s?.user) {
         const alreadyHave = localStorage.getItem("ffc_session");
