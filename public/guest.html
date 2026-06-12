@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FFC 2026 — Заполнить прогноз</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1f0d;color:#f0ede6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;padding:0 0 80px}
+.header{background:#0a1a0a;border-bottom:2px solid #c8a84b;padding:14px 20px;position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px}
+.header h1{font-size:18px;font-weight:700;color:#fde68a;letter-spacing:.5px}
+.header .sub{font-size:11px;color:rgba(240,237,230,.4);margin-top:2px}
+.main{max-width:900px;margin:0 auto;padding:20px 16px}
+.name-block{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:16px 20px;margin-bottom:24px}
+.name-block label{font-size:13px;color:#fde68a;font-weight:600;display:block;margin-bottom:8px}
+.name-block input{width:100%;max-width:340px;height:38px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#f0ede6;font-size:15px;padding:0 12px;outline:none}
+.name-block input:focus{border-color:#fde68a}
+.section{margin-bottom:28px}
+.sec-hd{background:rgba(200,168,75,.12);border-left:3px solid #c8a84b;border-radius:0 6px 6px 0;padding:8px 14px;margin-bottom:12px;font-size:15px;font-weight:700;color:#fde68a}
+.grp-hd{font-size:11px;font-weight:700;color:rgba(240,237,230,.4);letter-spacing:1px;text-transform:uppercase;padding:10px 4px 4px}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;color:rgba(240,237,230,.35);font-weight:400;padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left}
+td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.015)}
+.no{color:rgba(240,237,230,.3);font-size:11px;width:26px}
+.hm{font-weight:600}
+.aw{}
+.vs{color:rgba(240,237,230,.25);font-size:11px;padding:0 2px}
+.sc{display:inline-flex;align-items:center;gap:3px}
+.sc input{width:34px;height:28px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:5px;color:#f0ede6;text-align:center;font-size:13px;font-weight:600;outline:none;-moz-appearance:textfield}
+.sc input::-webkit-outer-spin-button,.sc input::-webkit-inner-spin-button{-webkit-appearance:none}
+.sc input:focus{border-color:#93c5fd;background:rgba(147,197,253,.08)}
+.sc .col{color:rgba(240,237,230,.3);font-size:12px}
+.dt{font-size:10px;color:rgba(240,237,230,.25);width:50px}
+.po-slot{font-size:11px;color:rgba(240,237,230,.4)}
+.bonus-item{padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.bonus-item:last-child{border-bottom:none}
+.b-row{display:flex;align-items:baseline;gap:6px;margin-bottom:5px}
+.b-n{font-size:11px;color:rgba(240,237,230,.3);min-width:22px}
+.b-q{font-size:13px;flex:1;line-height:1.4}
+.b-pts{font-size:10px;background:rgba(245,158,11,.15);color:#fde68a;padding:2px 7px;border-radius:10px;white-space:nowrap}
+.b-help{font-size:11px;color:rgba(240,237,230,.35);margin:0 0 5px 28px;font-style:italic}
+.b-ans{margin-left:28px}
+.b-ans input{width:100%;max-width:380px;height:30px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:5px;color:#f0ede6;font-size:13px;padding:0 10px;outline:none}
+.b-ans input:focus{border-color:#93c5fd}
+.submit-wrap{position:fixed;bottom:0;left:0;right:0;background:#0a1a0a;border-top:1px solid rgba(255,255,255,.08);padding:14px 20px;display:flex;align-items:center;gap:16px;z-index:100}
+.submit-btn{background:#c8a84b;color:#0a1a0a;border:none;border-radius:8px;padding:12px 32px;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.3px}
+.submit-btn:hover{background:#e6c55a}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+.status{font-size:13px;color:rgba(240,237,230,.5)}
+.status.ok{color:#86efac}
+.status.err{color:#fca5a5}
+.progress{font-size:12px;color:rgba(240,237,230,.4)}
+.tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.tab{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:7px 16px;font-size:13px;font-weight:600;color:rgba(240,237,230,.5);cursor:pointer}
+.tab.on{background:rgba(200,168,75,.15);border-color:#c8a84b;color:#fde68a}
+.page{display:none}.page.on{display:block}
+.pen-row{display:none;margin-top:4px;font-size:11px;color:rgba(147,197,253,.7)}
+.pen-row input{width:120px;height:24px;background:rgba(255,255,255,.07);border:1px solid rgba(147,197,253,.2);border-radius:4px;color:#f0ede6;font-size:11px;padding:0 6px;outline:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="h1" style="font-size:18px;font-weight:700;color:#fde68a">⚽ FFC 2026 — Прогноз</div>
+    <div class="sub">Заполни и нажми «Отправить» — данные придут организатору</div>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="name-block">
+    <label>Твоё имя (как тебя показывать в таблице):</label>
+    <input type="text" id="pname" placeholder="Например: Иван Петров" autocomplete="name">
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" onclick="showTab('groups')">🏟 Групповой этап (72)</div>
+    <div class="tab" onclick="showTab('playoff')">⚔ Плей-офф (32)</div>
+    <div class="tab" onclick="showTab('bonus')">🧠 Бонусы (31)</div>
+  </div>
+
+  <div id="page-groups" class="page on"></div>
+  <div id="page-playoff" class="page"></div>
+  <div id="page-bonus" class="page"></div>
+
+</div>
+
+<div class="submit-wrap">
+  <button class="submit-btn" id="submitBtn" onclick="submitAll()">📤 Отправить прогноз</button>
+  <div>
+    <div class="progress" id="progText">Заполнено: 0 / 135</div>
+    <div class="status" id="statusMsg"></div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
+
+const GROUPS = {
+  A:[{no:1,h:"Мексика",a:"ЮАР",d:"11 июн"},{no:2,h:"Корея",a:"Чехия",d:"11 июн"},{no:25,h:"Чехия",a:"ЮАР",d:"18 июн"},{no:28,h:"Мексика",a:"Корея",d:"18 июн"},{no:53,h:"Чехия",a:"Мексика",d:"24 июн"},{no:54,h:"ЮАР",a:"Корея",d:"24 июн"}],
+  B:[{no:3,h:"Канада",a:"Босния",d:"12 июн"},{no:8,h:"Катар",a:"Швейцария",d:"13 июн"},{no:26,h:"Швейцария",a:"Босния",d:"18 июн"},{no:27,h:"Канада",a:"Катар",d:"18 июн"},{no:51,h:"Швейцария",a:"Канада",d:"24 июн"},{no:52,h:"Босния",a:"Катар",d:"24 июн"}],
+  C:[{no:7,h:"Бразилия",a:"Марокко",d:"13 июн"},{no:5,h:"Гаити",a:"Шотландия",d:"13 июн"},{no:30,h:"Шотландия",a:"Марокко",d:"19 июн"},{no:29,h:"Бразилия",a:"Гаити",d:"19 июн"},{no:49,h:"Шотландия",a:"Бразилия",d:"24 июн"},{no:50,h:"Марокко",a:"Гаити",d:"24 июн"}],
+  D:[{no:4,h:"США",a:"Парагвай",d:"12 июн"},{no:6,h:"Австралия",a:"Турция",d:"13 июн"},{no:32,h:"США",a:"Австралия",d:"19 июн"},{no:31,h:"Турция",a:"Парагвай",d:"19 июн"},{no:59,h:"Турция",a:"США",d:"25 июн"},{no:60,h:"Парагвай",a:"Австралия",d:"25 июн"}],
+  E:[{no:10,h:"Германия",a:"Кюрасао",d:"14 июн"},{no:9,h:"Кот-д'Ивуар",a:"Эквадор",d:"14 июн"},{no:33,h:"Германия",a:"Кот-д'Ивуар",d:"20 июн"},{no:34,h:"Эквадор",a:"Кюрасао",d:"20 июн"},{no:55,h:"Кюрасао",a:"Кот-д'Ивуар",d:"25 июн"},{no:56,h:"Эквадор",a:"Германия",d:"25 июн"}],
+  F:[{no:11,h:"Нидерланды",a:"Япония",d:"14 июн"},{no:12,h:"Швеция",a:"Тунис",d:"14 июн"},{no:35,h:"Нидерланды",a:"Швеция",d:"20 июн"},{no:36,h:"Тунис",a:"Япония",d:"20 июн"},{no:57,h:"Япония",a:"Швеция",d:"25 июн"},{no:58,h:"Тунис",a:"Нидерланды",d:"25 июн"}],
+  G:[{no:16,h:"Бельгия",a:"Египет",d:"15 июн"},{no:15,h:"Иран",a:"Нов.Зеландия",d:"15 июн"},{no:39,h:"Бельгия",a:"Иран",d:"21 июн"},{no:40,h:"Нов.Зеландия",a:"Египет",d:"21 июн"},{no:63,h:"Египет",a:"Иран",d:"26 июн"},{no:64,h:"Нов.Зеландия",a:"Бельгия",d:"26 июн"}],
+  H:[{no:14,h:"Испания",a:"Кабо-Верде",d:"15 июн"},{no:13,h:"Сауд.Аравия",a:"Уругвай",d:"15 июн"},{no:38,h:"Испания",a:"Сауд.Аравия",d:"21 июн"},{no:37,h:"Уругвай",a:"Кабо-Верде",d:"21 июн"},{no:65,h:"Кабо-Верде",a:"Сауд.Аравия",d:"26 июн"},{no:66,h:"Уругвай",a:"Испания",d:"26 июн"}],
+  I:[{no:17,h:"Франция",a:"Сенегал",d:"16 июн"},{no:18,h:"Ирак",a:"Норвегия",d:"16 июн"},{no:42,h:"Франция",a:"Ирак",d:"22 июн"},{no:41,h:"Норвегия",a:"Сенегал",d:"22 июн"},{no:61,h:"Норвегия",a:"Франция",d:"26 июн"},{no:62,h:"Сенегал",a:"Ирак",d:"26 июн"}],
+  J:[{no:19,h:"Аргентина",a:"Алжир",d:"16 июн"},{no:20,h:"Австрия",a:"Иордания",d:"16 июн"},{no:43,h:"Аргентина",a:"Австрия",d:"22 июн"},{no:44,h:"Иордания",a:"Алжир",d:"22 июн"},{no:69,h:"Алжир",a:"Австрия",d:"27 июн"},{no:70,h:"Иордания",a:"Аргентина",d:"27 июн"}],
+  K:[{no:23,h:"Португалия",a:"ДР Конго",d:"17 июн"},{no:24,h:"Узбекистан",a:"Колумбия",d:"17 июн"},{no:47,h:"Португалия",a:"Узбекистан",d:"23 июн"},{no:48,h:"Колумбия",a:"ДР Конго",d:"23 июн"},{no:71,h:"Колумбия",a:"Португалия",d:"27 июн"},{no:72,h:"ДР Конго",a:"Узбекистан",d:"27 июн"}],
+  L:[{no:21,h:"Англия",a:"Хорватия",d:"17 июн"},{no:22,h:"Гана",a:"Панама",d:"17 июн"},{no:45,h:"Англия",a:"Гана",d:"23 июн"},{no:46,h:"Панама",a:"Хорватия",d:"23 июн"},{no:67,h:"Панама",a:"Англия",d:"27 июн"},{no:68,h:"Хорватия",a:"Гана",d:"27 июн"}]
+};
+
+const PLAYOFF_STAGES = [
+  {stage:"1/16 финала", matches:[
+    {no:73,h:"1A",a:"2B",d:"28 июн"},{no:74,h:"1E",a:"3ABCDF",d:"28 июн"},
+    {no:75,h:"1F",a:"2C",d:"29 июн"},{no:76,h:"1C",a:"2F",d:"29 июн"},
+    {no:77,h:"1I",a:"3CDFGH",d:"29 июн"},{no:78,h:"2E",a:"2I",d:"30 июн"},
+    {no:79,h:"1A",a:"3CEFHI",d:"30 июн"},{no:80,h:"1L",a:"3EHIJK",d:"1 июл"},
+    {no:81,h:"1D",a:"3BEFIJ",d:"1 июл"},{no:82,h:"1G",a:"3AEHIJ",d:"1 июл"},
+    {no:83,h:"2K",a:"2L",d:"2 июл"},{no:84,h:"1H",a:"2J",d:"2 июл"},
+    {no:85,h:"1B",a:"3EFGIJ",d:"2 июл"},{no:86,h:"1J",a:"2H",d:"3 июл"},
+    {no:87,h:"1K",a:"3DEIJL",d:"3 июл"},{no:88,h:"2D",a:"2G",d:"3 июл"}
+  ]},
+  {stage:"1/8 финала", matches:[
+    {no:89,h:"Поб.74",a:"Поб.77",d:"4 июл"},{no:90,h:"Поб.73",a:"Поб.75",d:"4 июл"},
+    {no:91,h:"Поб.76",a:"Поб.78",d:"5 июл"},{no:92,h:"Поб.79",a:"Поб.80",d:"5 июл"},
+    {no:93,h:"Поб.81",a:"Поб.82",d:"6 июл"},{no:94,h:"Поб.83",a:"Поб.84",d:"6 июл"},
+    {no:95,h:"Поб.85",a:"Поб.86",d:"7 июл"},{no:96,h:"Поб.87",a:"Поб.88",d:"7 июл"}
+  ]},
+  {stage:"Четвертьфинал", matches:[
+    {no:97,h:"Поб.89",a:"Поб.90",d:"11 июл"},{no:98,h:"Поб.91",a:"Поб.92",d:"12 июл"},
+    {no:99,h:"Поб.93",a:"Поб.94",d:"12 июл"},{no:100,h:"Поб.95",a:"Поб.96",d:"13 июл"}
+  ]},
+  {stage:"Полуфинал", matches:[
+    {no:101,h:"Поб.97",a:"Поб.98",d:"15 июл"},{no:102,h:"Поб.99",a:"Поб.100",d:"16 июл"}
+  ]},
+  {stage:"За 3-е место", matches:[{no:103,h:"Проиг.101",a:"Проиг.102",d:"19 июл"}]},
+  {stage:"Финал", matches:[{no:104,h:"Поб.101",a:"Поб.102",d:"19 июл"}]}
+];
+
+const BONUS = [
+  {id:"top_scorers",n:1,q:"Топ-3 бомбардира чемпионата",h:"Порядок не важен. 8/5/3 очков за 1/2/3 место",pts:"8/5/3",ph:"Игрок 1, Игрок 2, Игрок 3"},
+  {id:"mvp",n:2,q:"Лучший игрок турнира (MVP)",pts:8,ph:"Имя игрока"},
+  {id:"top_assistant",n:3,q:"Лучший ассистент (больше всех голевых пасов)",pts:5,ph:"Имя игрока"},
+  {id:"best_young_player",n:4,q:"Лучший молодой игрок (до 21 года на 01.01.2026)",pts:5,ph:"Имя игрока"},
+  {id:"goalkeeper_least_goals_conceded",n:5,q:"Вратарь, который сыграет и пропустит меньше всех",pts:5,ph:"Имя вратаря"},
+  {id:"least_goals_conceded_group",n:6,q:"Команда, которая меньше всех пропустит на групповом этапе",pts:3,ph:"Название команды"},
+  {id:"most_goals_conceded_group",n:7,q:"Команда, которая больше всех пропустит на групповом этапе",pts:3,ph:"Название команды"},
+  {id:"least_goals_scored_group",n:8,q:"Команда, которая меньше всех забьёт на групповом этапе",pts:3,ph:"Название команды"},
+  {id:"most_goals_scored_group",n:9,q:"Команда, которая больше всех забьёт на групповом этапе",pts:3,ph:"Название команды"},
+  {id:"team_wins_all_group_matches",n:10,q:"Команда, которая выиграет все 3 матча в группе",pts:3,ph:"Название команды"},
+  {id:"team_draws_all_group_matches",n:11,q:"Команда, которая сыграет 3 ничьи в группе",pts:3,ph:"Название команды"},
+  {id:"team_zero_points_group",n:12,q:"Команда, которая не наберёт ни 1 очка в группе",pts:3,ph:"Название команды"},
+  {id:"most_common_group_score",n:13,q:"Самый частый счёт на групповом этапе",pts:3,ph:"напр. 2:1"},
+  {id:"penalty_shootout_count",n:14,q:"Сколько раз за весь чемпионат будет серия пенальти?",h:"Серии пенальти бывают только в плей-офф",pts:3,ph:"Число"},
+  {id:"total_goals_full_tens",n:15,q:"Сколько полных десятков голов за весь чемпионат?",h:"Пример: 105 голов → ответ 10, 63 → ответ 6",pts:3,ph:"Число"},
+  {id:"team_no_loss_regular_time",n:16,q:"Команда, которая ни разу не проиграет в игровое время",h:"Поражение по пенальти не считается",pts:3,ph:"Название команды"},
+  {id:"team_wins_extra_time",n:17,q:"Команда, которая победит в дополнительное время",pts:3,ph:"Название команды"},
+  {id:"team_plays_shootout",n:18,q:"Команда, которая будет бить послематчевые пенальти",pts:3,ph:"Название команды"},
+  {id:"team_scores_first_5_min",n:19,q:"Команда, которая забьёт гол в первые 5 минут",pts:3,ph:"Название команды"},
+  {id:"player_scores_header",n:20,q:"Игрок, который забьёт гол головой",pts:3,ph:"Имя игрока"},
+  {id:"player_scores_as_sub",n:21,q:"Игрок, который забьёт, выйдя на замену",pts:3,ph:"Имя игрока"},
+  {id:"player_scores_free_kick",n:22,q:"Игрок, который забьёт со штрафного",pts:3,ph:"Имя игрока"},
+  {id:"goalkeeper_saves_penalty",n:23,q:"Вратарь, который отразит пенальти",pts:3,ph:"Имя вратаря"},
+  {id:"player_misses_penalty",n:24,q:"Игрок, который не забьёт пенальти",pts:3,ph:"Имя игрока"},
+  {id:"player_scores_own_goal",n:25,q:"Игрок, который забьёт в свои ворота",pts:5,ph:"Имя игрока"},
+  {id:"player_gets_yellow_card",n:26,q:"Игрок, который получит жёлтую карточку",pts:3,ph:"Имя игрока"},
+  {id:"player_sent_off",n:27,q:"Игрок, который будет удалён",pts:5,ph:"Имя игрока"},
+  {id:"player_scores_hat_trick",n:28,q:"Игрок, который сделает хет-трик",pts:5,ph:"Имя игрока"},
+  {id:"top_scorer_goal_count",n:29,q:"Число голов, забитых лучшим бомбардиром",pts:3,ph:"Число"},
+  {id:"max_goals_in_one_match",n:30,q:"Максимальное количество голов в 1 матче",h:"Голы в серии пенальти не считаются",pts:3,ph:"Число"},
+  {id:"final_match_score",n:31,q:"Счёт финального матча",pts:3,ph:"напр. 2:1"}
+];
+
+// Генерируем стабильный гостевой UUID из имени (детерминированный)
+function nameToUUID(name) {
+  let hash = 0;
+  const s = 'guest_' + name.trim().toLowerCase();
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) - hash) + s.charCodeAt(i);
+    hash |= 0;
+  }
+  const h = Math.abs(hash).toString(16).padStart(8,'0');
+  return `00000000-${h.slice(0,4)}-4${h.slice(4,7)}-8${h.slice(7,8)}00-${h}0000`;
+}
+
+function showTab(t) {
+  document.querySelectorAll('.tab').forEach((el,i) => {
+    const tabs = ['groups','playoff','bonus'];
+    el.classList.toggle('on', tabs[i] === t);
+  });
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('on'));
+  document.getElementById('page-'+t).classList.add('on');
+}
+
+function makeScoreInputs(prefix, no) {
+  return `<div class="sc">
+    <input type="number" min="0" max="30" id="${prefix}h${no}" placeholder="-" oninput="updateProgress()">
+    <span class="col">:</span>
+    <input type="number" min="0" max="30" id="${prefix}a${no}" placeholder="-" oninput="updateProgress()">
+  </div>`;
+}
+
+// Групповой этап
+const gp = document.getElementById('page-groups');
+Object.entries(GROUPS).forEach(([g, ms]) => {
+  let rows = ms.map(m => `<tr>
+    <td class="no">${m.no}</td>
+    <td class="hm">${m.h}</td>
+    <td class="vs">–</td>
+    <td class="aw">${m.a}</td>
+    <td>${makeScoreInputs('g',m.no)}</td>
+    <td class="dt">${m.d}</td>
+  </tr>`).join('');
+  gp.innerHTML += `
+    <div class="grp-hd">Группа ${g}</div>
+    <table>
+      <thead><tr><th>#</th><th>Хозяева</th><th></th><th>Гости</th><th style="width:80px">Прогноз</th><th>Дата</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+});
+
+// Плей-офф
+const pp = document.getElementById('page-playoff');
+pp.innerHTML = `<div style="font-size:12px;color:rgba(240,237,230,.4);margin-bottom:12px;padding:8px 10px;background:rgba(255,255,255,.03);border-radius:6px">
+  ℹ В плей-офф укажи счёт по итогам основного/доп. времени. Если ничья — укажи победителя по пенальти в доп. поле.
+</div>`;
+PLAYOFF_STAGES.forEach(s => {
+  let rows = s.matches.map(m => `<tr>
+    <td class="no">${m.no}</td>
+    <td class="po-slot">${m.h}</td>
+    <td class="vs">–</td>
+    <td class="po-slot">${m.a}</td>
+    <td>
+      ${makeScoreInputs('p',m.no)}
+      <div class="pen-row" id="pen-row-${m.no}">
+        пен: <input type="text" id="pen${m.no}" placeholder="победитель" style="width:110px;height:22px;background:rgba(255,255,255,.07);border:1px solid rgba(147,197,253,.2);border-radius:4px;color:#f0ede6;font-size:11px;padding:0 6px;outline:none">
+      </div>
+    </td>
+    <td class="dt">${m.d}</td>
+  </tr>`).join('');
+  pp.innerHTML += `
+    <div class="grp-hd">${s.stage}</div>
+    <table>
+      <thead><tr><th>#</th><th>Позиция хозяев</th><th></th><th>Позиция гостей</th><th style="width:160px">Прогноз</th><th>Дата</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+});
+
+// Слушатель ничьей в плей-офф
+document.addEventListener('input', e => {
+  const id = e.target.id;
+  const isH = id.startsWith('ph');
+  const isA = id.startsWith('pa');
+  if (!isH && !isA) return;
+  const no = id.slice(2);
+  const h = document.getElementById('ph'+no);
+  const a = document.getElementById('pa'+no);
+  const row = document.getElementById('pen-row-'+no);
+  if (!h || !a || !row) return;
+  const draw = h.value !== '' && a.value !== '' && h.value === a.value;
+  row.style.display = draw ? 'block' : 'none';
+});
+
+// Бонусы
+const bp = document.getElementById('page-bonus');
+bp.innerHTML = `<div class="section">` + BONUS.map(b => `
+  <div class="bonus-item">
+    <div class="b-row">
+      <span class="b-n">${b.n}.</span>
+      <span class="b-q">${b.q}</span>
+      <span class="b-pts">${b.pts} оч.</span>
+    </div>
+    ${b.h ? `<div class="b-help">${b.h}</div>` : ''}
+    <div class="b-ans">
+      <input type="text" id="bonus_${b.id}" placeholder="${b.ph||'Ответ'}" oninput="updateProgress()">
+    </div>
+  </div>`).join('') + `</div>`;
+
+function updateProgress() {
+  let filled = 0;
+  // группы
+  Object.values(GROUPS).flat().forEach(m => {
+    const h = document.getElementById('gh'+m.no);
+    const a = document.getElementById('ga'+m.no);
+    if (h && a && h.value !== '' && a.value !== '') filled++;
+  });
+  // плей-офф
+  PLAYOFF_STAGES.forEach(s => s.matches.forEach(m => {
+    const h = document.getElementById('ph'+m.no);
+    const a = document.getElementById('pa'+m.no);
+    if (h && a && h.value !== '' && a.value !== '') filled++;
+  }));
+  // бонусы
+  BONUS.forEach(b => {
+    const el = document.getElementById('bonus_'+b.id);
+    if (el && el.value.trim() !== '') filled++;
+  });
+  document.getElementById('progText').textContent = `Заполнено: ${filled} / 135`;
+}
+
+// Исправляем ID инпутов - использовали 'g' prefix а нужны 'gh'/'ga'
+// Переделаем makeScoreInputs чтобы использовать правильный prefix
+function fixIds() {
+  // групповой этап: gh73, ga73
+  document.querySelectorAll('[id^="gg"]').forEach(el => {
+    const old = el.id;
+    el.id = old.replace(/^gg/, 'g');
+  });
+}
+
+async function submitAll() {
+  const name = document.getElementById('pname').value.trim();
+  if (!name) { alert('Введи своё имя!'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  const status = document.getElementById('statusMsg');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Сохраняю...';
+
+  const userId = nameToUUID(name);
+
+  // Сохраняем профиль
+  try {
+    await fetch(`${SUPA_URL}/rest/v1/profiles`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ id: userId, name: name, display_name: name })
+    });
+  } catch(e) {}
+
+  // Собираем прогнозы матчей
+  const predictions = [];
+  const allMatches = [
+    ...Object.values(GROUPS).flat().map(m => ({...m, prefix:'g'})),
+    ...PLAYOFF_STAGES.flatMap(s => s.matches.map(m => ({...m, prefix:'p'})))
+  ];
+
+  allMatches.forEach(m => {
+    const hEl = document.getElementById(m.prefix+'h'+m.no);
+    const aEl = document.getElementById(m.prefix+'a'+m.no);
+    if (!hEl || !aEl || hEl.value === '' || aEl.value === '') return;
+    const penEl = document.getElementById('pen'+m.no);
+    predictions.push({
+      user_id: userId,
+      match_id: 'm'+m.no,
+      home_score: parseInt(hEl.value),
+      away_score: parseInt(aEl.value),
+      predicted_winner: penEl ? penEl.value.trim() || null : null,
+      updated_at: new Date().toISOString()
+    });
+  });
+
+  // Сохраняем прогнозы батчами
+  let savedPreds = 0;
+  for (let i = 0; i < predictions.length; i += 50) {
+    const batch = predictions.slice(i, i+50);
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/predictions`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(batch)
+      });
+      if (r.ok) savedPreds += batch.length;
+    } catch(e) {}
+    status.textContent = `Сохранено матчей: ${savedPreds}/${predictions.length}...`;
+  }
+
+  // Бонусы
+  const bonusRows = [];
+  BONUS.forEach(b => {
+    const el = document.getElementById('bonus_'+b.id);
+    if (!el || !el.value.trim()) return;
+    bonusRows.push({
+      user_id: userId,
+      question_id: b.id,
+      answer: el.value.trim(),
+      updated_at: new Date().toISOString()
+    });
+  });
+
+  let savedBonus = 0;
+  for (let i = 0; i < bonusRows.length; i += 50) {
+    const batch = bonusRows.slice(i, i+50);
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/bonus_answers`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(batch)
+      });
+      if (r.ok) savedBonus += batch.length;
+    } catch(e) {}
+  }
+
+  status.className = 'status ok';
+  status.textContent = `✓ Готово! Матчей: ${savedPreds}, бонусов: ${savedBonus}. Организатор всё получил.`;
+  btn.disabled = false;
+}
+
+updateProgress();
+</script>
+</body>
+</html>
