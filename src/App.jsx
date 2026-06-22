@@ -4,16 +4,10 @@
 // Плей-офф, бонусы, третьи места — секции внутри "Отправить прогноз".
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
+import * as XLSX from "xlsx";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-
-// ── Флаг блокировки прогнозов после дедлайна ──
-// true  → форма скрыта, показывается публичная таблица
-// false → форма доступна как раньше
-const PREDICTIONS_LOCKED = true;
-// Гостевой режим по ссылке: ?guest=ffc2026 — открывает форму прогнозов даже после дедлайна
-const GUEST_FORM_OPEN = false;
 
 // supabase-js клиент — только для auth (OAuth, session, signOut)
 // Для DB-запросов используется supa() ниже
@@ -1298,7 +1292,7 @@ const BONUS_QS = [
     recommendedNames:["Lamine Yamal","Kenan Yildiz","Arda Guler","Pau Cubarsi","Gavi","Warren Zaire-Emery","Estevao","Obed Vargas","Endrick","Alejandro Garnacho","Kobbie Mainoo"],
     help:"Выбери игрока, которому было 21 год или меньше на 1 января 2026 года." },
   { id:"goalkeeper_least_goals_conceded", answerType:"goalkeeper", pts:5,
-    text:"Вратарь, который сыграет и пропустит меньше всех",
+    text:"Вратарь, который пропустит меньше всех голов за турнир",
     filterType:"goalkeeper",
     recommendedNames:["Emiliano Martinez","Gregor Kobel","Mike Maignan","Diogo Costa","Unai Simon","Alisson","Ederson","Andre Onana","Jan Sommer","Ronwen Williams","Yann Sommer","Guillermo Ochoa"],
     help:"Выбери только из вратарей заявок ЧМ-2026." },
@@ -2282,7 +2276,6 @@ function calculatePlayerFantasyPoints(position, stats) {
     if (g >= 2) pts += 3;
     if (g >= 3) pts += 6;
     pts += (s.assists || 0) * 4;
-    if (s.team_win) pts += 2;
     pts -= (s.penalty_missed || 0) * 3;
     pts -= (s.yellow_cards || 0);
     pts -= (s.red_cards || 0) * 4;
@@ -3477,15 +3470,15 @@ const DRAFT_NAME_RU = {
   "Cristiano Ronaldo":"Криштиану Роналду","Mohamed Salah":"Мохамед Салах","Alexander Isak":"Александер Исак",
   "Mehdi Taremi":"Мехди Тареми","Yoane Wissa":"Йоан Висса","Patrik Schick":"Патрик Шик",
   // Бонусные вопросы — дополнительные имена
-  "Harry Kane":"Гарри Кейн","Lautaro Martinez":"Лаутаро Мартинес",
-  "Bruno Fernandes":"Бруну Фернандеш","Antoine Griezmann":"Антуан Гризманн",
+  "Harry Kane":"Гарри Кейн","Lautaro Martinez":"Лаутаро Мартинес","Jamal Musiala":"Джамал Мусиала",
+  "Kevin De Bruyne":"Кевин Де Брёйне","Bruno Fernandes":"Бруну Фернандеш","Antoine Griezmann":"Антуан Гризманн",
   "Bernardo Silva":"Бернарду Силва","Lamine Yamal":"Ламин Ямаль","Endrick":"Эндрик",
   "Kenan Yildiz":"Кенан Йылдыз","Arda Guler":"Арда Гюлер","Warren Zaire-Emery":"Уоррен Заир-Эмери",
   "Estevao":"Эстевао","Alejandro Garnacho":"Алехандро Гарначо","Kobbie Mainoo":"Коби Майну",
   "Pau Cubarsi":"Пау Кубарси","Gavi":"Гави","Alisson":"Алисон","Mike Maignan":"Майк Меньян",
   "Gianluigi Donnarumma":"Джанлуиджи Доннарумма","Thibaut Courtois":"Тибо Куртуа",
   "Unai Simon":"Унаи Симон","Jordan Pickford":"Джордан Пикфорд","Jan Sommer":"Ян Зоммер",
-  "Manuel Neuer":"Мануэль Нойер","Romelu Lukaku":"Ромелу Лукаку",
+  "Manuel Neuer":"Мануэль Нойер","Virgil van Dijk":"Вирджил ван Дейк","Romelu Lukaku":"Ромелу Лукаку",
   "Olivier Giroud":"Оливье Жиру","Raphael Varane":"Рафаэль Варан","Sergio Ramos":"Серхио Рамос",
   "Memphis Depay":"Мемфис Депай",
 };
@@ -3505,7 +3498,6 @@ function AdminFfcPanel({ session, showToast, onRoundCreated }) {
     name: "", round_no: "", opens_at: "", deadline: "2026-06-11T21:00", status: "upcoming"
   });
   const [busy, setBusy] = useState(false);
-  const [playersFiltered, setPlayersFiltered] = useState(false);
   const token = session?.access_token;
 
   const STAT_FIELDS = [
@@ -3532,72 +3524,16 @@ function AdminFfcPanel({ session, showToast, onRoundCreated }) {
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
-    const [pr, ro, ce, le, optR, linR] = await Promise.all([
+    const [pr, ro, ce, le] = await Promise.all([
       supa("ffc_players?select=*&order=name.asc&limit=5000", { token }),
       supa("ffc_rounds?select=*&order=created_at.desc", { token }),
       supa("ffc_cup_entries?select=*,profiles(name)&order=created_at.desc", { token }),
       supa("ffc_league_entries?select=*,profiles(name)&order=points.desc", { token }),
-      supa("ffc_round_draft_options?select=id,player_name,national_team,slot_key&limit=5000", { token }),
-      supa("ffc_lineups?select=draft_answers,captain_option_id&limit=5000", { token }),
     ]);
+    if (pr.ok) setPlayers(await pr.json());
     if (ro.ok) setRounds(await ro.json());
     if (ce.ok) setCupEntries(await ce.json());
     if (le.ok) setLeagueEntries(await le.json());
-
-    if (pr.ok) {
-      const allPlayers = await pr.json();
-
-      // Собираем все option_id которые выбрали участники
-      const chosenOptionIds = new Set();
-      if (linR.ok) {
-        const lineups = await linR.json();
-        lineups.forEach(l => {
-          const raw = typeof l.draft_answers === "string"
-            ? JSON.parse(l.draft_answers || "{}") : (l.draft_answers || {});
-          Object.values(raw).forEach(val => {
-            if (val) chosenOptionIds.add(String(typeof val === "object" ? (val.option_id || val.id || val.optionId) : val));
-          });
-          if (l.captain_option_id) chosenOptionIds.add(String(l.captain_option_id));
-        });
-      }
-
-      // Строим карту option_id → player_name из ffc_round_draft_options
-      const optMap = {};
-      if (optR.ok) {
-        const opts = await optR.json();
-        opts.forEach(o => { optMap[o.id] = o.player_name; });
-      }
-
-      // Имена игроков выбранных хоть кем-то (нормализуем для сравнения)
-      const chosenNamesNorm = new Set();
-      // Считаем пики по нормализованному имени
-      const pickCounts = {};
-      chosenOptionIds.forEach(oid => {
-        const name = optMap[oid];
-        if (name) {
-          const key = name.trim().toLowerCase();
-          chosenNamesNorm.add(key);
-          pickCounts[key] = (pickCounts[key] || 0) + 1;
-        }
-      });
-
-      // Помечаем игроков: выбран ли хоть кем-то, и сколько раз
-      const enriched = allPlayers.map(p => {
-        const key = String(p.name || "").trim().toLowerCase();
-        const picks = pickCounts[key] || 0;
-        const chosenByNorm = chosenNamesNorm.has(key);
-        return { ...p, _picks: picks, _chosen: chosenByNorm };
-      });
-
-      // Показываем только выбранных, отсортированных по кол-ву выборов (убыв.), потом по имени
-      const chosen = enriched
-        .filter(p => p._chosen)
-        .sort((a, b) => b._picks - a._picks || (a.name || "").localeCompare(b.name || ""));
-
-      // Если ни одного выбранного — показываем всех (нет данных о выборах)
-      setPlayers(chosen.length > 0 ? chosen : enriched.sort((a, b) => (a.name || "").localeCompare(b.name || "")));
-      setPlayersFiltered(chosen.length > 0);
-    }
   }
 
   async function loadFixturesForRound(rid) {
@@ -3965,21 +3901,13 @@ function AdminFfcPanel({ session, showToast, onRoundCreated }) {
           </div>
 
           {/* Список игроков */}
-          <div style={{ fontSize: 12, color: "rgba(240,237,230,.4)", marginBottom: 8 }}>
-            {playersFiltered
-              ? <><span style={{ color: "#86EFAC", fontWeight: 600 }}>{players.length} игроков выбрано участниками</span> <span style={{ color: "rgba(240,237,230,.3)" }}>(из 60 в драфте)</span></>
-              : <>{players.length} игроков в базе</>
-            }
-          </div>
+          <div style={{ fontSize: 12, color: "rgba(240,237,230,.4)", marginBottom: 8 }}>{players.length} игроков в базе</div>
           <div style={{ display: "grid", gap: 4 }}>
             {players.map((p) => (
               <div key={p.id} className="mr">
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: p.is_active ? "#F0EDE6" : "rgba(240,237,230,.3)" }}>
                     {p.tier === "star" ? "⭐ " : ""}{p.name}
-                    {p._picks > 0 && (
-                      <span style={{ fontSize: 10, color: "#F59E0B", fontWeight: 700, marginLeft: 7 }}>×{p._picks}</span>
-                    )}
                   </div>
                   <div style={{ fontSize: 10, color: "rgba(240,237,230,.4)" }}>
                     {p.national_team} · {p.position} · {p.tier === "star" ? "Звезда" : "Обычный"}
@@ -4176,4032 +4104,6 @@ function AdminFfcPanel({ session, showToast, onRoundCreated }) {
 // ── ADMIN FORECAST TABLE ──
 // Таблица по образцу Excel: групповой турнир / плей-офф / вопросы / результаты.
 // В неё попадают только одобренные организатором участники, а результаты можно заносить прямо здесь.
-// ══════════════════════════════════════════════════════════════════
-// ПУБЛИЧНАЯ ТАБЛИЦА ПРОГНОЗОВ
-// Показывается всем когда PREDICTIONS_LOCKED = true
-// Матчи × участники, локальный симулятор счёта
-// ══════════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════════
-// БЛОК ПУБЛИЧНЫХ СОСТАВОВ — Битва клубов, 1-й тур
-// Read-only, без email, только имя + позиции + капитан
-// ══════════════════════════════════════════════════════════════════
-
-function publicDisplayNameOverride(name) {
-  const s = String(name || "");
-  const n = s.trim();
-  if (n === "Ксения П" || n === "Ксения Ge") return "Xenia Ge";
-  if (n === "Ваня П" || n === "Ваня Cl" || n === "Иван П") return "Иван Cl";
-  if (n === "Валерий П" || n === "Валерий GP") return "Валерия GP";
-  return s;
-}
-
-function PublicLineupsBlock() {
-  const [lineups, setLineups] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [lineupsDebug, setLineupsDebug] = React.useState(null);
-  const [playerScores, setPlayerScores] = React.useState({}); // option_id → points
-
-  // Fallback-словарь опций (те же данные что в ADMIN_FFC_FALLBACK_DRAFT_CSV)
-  const FALLBACK_OPTIONS = React.useMemo(() => {
-    const rows = [
-      // coach
-      ["coach","Тренер",1,"Lionel Scaloni","Аргентина"],
-      ["coach","Тренер",2,"Didier Deschamps","Франция"],
-      ["coach","Тренер",3,"Julian Nagelsmann","Германия"],
-      ["coach","Тренер",4,"Luis de la Fuente","Испания"],
-      ["coach","Тренер",5,"Marcelo Bielsa","Уругвай"],
-      // goalkeeper
-      ["goalkeeper","Вратарь",1,"Guillermo Ochoa","Мексика"],
-      ["goalkeeper","Вратарь",2,"Ronwen Williams","ЮАР"],
-      ["goalkeeper","Вратарь",3,"Mat Ryan","Австралия"],
-      ["goalkeeper","Вратарь",4,"Gregor Kobel","Швейцария"],
-      ["goalkeeper","Вратарь",5,"Emiliano Martinez","Аргентина"],
-      // defender1
-      ["defender1","Защитник 1",1,"Achraf Hakimi","Марокко"],
-      ["defender1","Защитник 1",2,"Virgil van Dijk","Нидерланды"],
-      ["defender1","Защитник 1",3,"Kalidou Koulibaly","Сенегал"],
-      ["defender1","Защитник 1",4,"Josko Gvardiol","Хорватия"],
-      ["defender1","Защитник 1",5,"Wilfried Singo","Кот-д'Ивуар"],
-      // defender2
-      ["defender2","Защитник 2",1,"Kim Min-jae","Республика Корея"],
-      ["defender2","Защитник 2",2,"Marquinhos","Бразилия"],
-      ["defender2","Защитник 2",3,"John Stones","Англия"],
-      ["defender2","Защитник 2",4,"Alphonso Davies","Канада"],
-      ["defender2","Защитник 2",5,"Nuno Mendes","Португалия"],
-      // defender3
-      ["defender3","Защитник из андердогов",1,"Liberato Cacace","Новая Зеландия"],
-      ["defender3","Защитник из андердогов",2,"Stopira","Кабо-Верде"],
-      ["defender3","Защитник из андердогов",3,"Michael Amir Murillo","Панама"],
-      ["defender3","Защитник из андердогов",4,"Abdukodir Khusanov","Узбекистан"],
-      ["defender3","Защитник из андердогов",5,"Jurien Gaari","Кюрасао"],
-      // defender4
-      ["defender4","Защитник 4",1,"Sead Kolasinac","Босния и Герцеговина"],
-      ["defender4","Защитник 4",2,"Lucas Mendes","Катар"],
-      ["defender4","Защитник 4",3,"Chris Richards","США"],
-      ["defender4","Защитник 4",4,"Andy Robertson","Шотландия"],
-      ["defender4","Защитник 4",5,"Antonee Robinson","США"],
-      // midfielder1
-      ["midfielder1","Полузащитник 1",1,"Jude Bellingham","Англия"],
-      ["midfielder1","Полузащитник 1",2,"Pedri","Испания"],
-      ["midfielder1","Полузащитник 1",3,"Federico Valverde","Уругвай"],
-      ["midfielder1","Полузащитник 1",4,"Kevin De Bruyne","Бельгия"],
-      ["midfielder1","Полузащитник 1",5,"Jamal Musiala","Германия"],
-      // midfielder2
-      ["midfielder2","Полузащитник 2",1,"Granit Xhaka","Швейцария"],
-      ["midfielder2","Полузащитник 2",2,"Hakan Calhanoglu","Турция"],
-      ["midfielder2","Полузащитник 2",3,"Moises Caicedo","Эквадор"],
-      ["midfielder2","Полузащитник 2",4,"Takefusa Kubo","Япония"],
-      ["midfielder2","Полузащитник 2",5,"Mohammed Kudus","Гана"],
-      // midfielder3
-      ["midfielder3","Полузащитник из андердогов",1,"Zidane Iqbal","Ирак"],
-      ["midfielder3","Полузащитник из андердогов",2,"Noor Al-Rawabdeh","Иордания"],
-      ["midfielder3","Полузащитник из андердогов",3,"Jean-Ricner Bellegarde","Гаити"],
-      ["midfielder3","Полузащитник из андердогов",4,"Aissa Laidouni","Тунис"],
-      ["midfielder3","Полузащитник из андердогов",5,"Jackson Irvine","Австралия"],
-      // midfielder4
-      ["midfielder4","Полузащитник 4",1,"Miguel Almiron","Парагвай"],
-      ["midfielder4","Полузащитник 4",2,"Ismael Bennacer","Алжир"],
-      ["midfielder4","Полузащитник 4",3,"Marcel Sabitzer","Австрия"],
-      ["midfielder4","Полузащитник 4",4,"Richard Rios","Колумбия"],
-      ["midfielder4","Полузащитник 4",5,"Salem Al-Dawsari","Саудовская Аравия"],
-      // forward1
-      ["forward1","Нападающий 1",1,"Kylian Mbappe","Франция"],
-      ["forward1","Нападающий 1",2,"Эрлинг Холанд","Норвегия"],
-      ["forward1","Нападающий 1",3,"Lionel Messi","Аргентина"],
-      ["forward1","Нападающий 1",4,"Vinicius Jr","Бразилия"],
-      ["forward1","Нападающий 1",5,"Cristiano Ronaldo","Португалия"],
-      // forward2
-      ["forward2","Нападающий 2",1,"Mohamed Salah","Египет"],
-      ["forward2","Нападающий 2",2,"Alexander Isak","Швеция"],
-      ["forward2","Нападающий 2",3,"Mehdi Taremi","Иран"],
-      ["forward2","Нападающий 2",4,"Yoane Wissa","ДР Конго"],
-      ["forward2","Нападающий 2",5,"Patrik Schick","Чехия"],
-    ];
-    // uuid по той же схеме: slotOrder*100 + optionNo
-    const slotOrderMap = { coach:1, goalkeeper:2, defender1:3, defender2:4, defender3:5, defender4:6, midfielder1:7, midfielder2:8, midfielder3:9, midfielder4:10, forward1:11, forward2:12 };
-    const map = {}; // optionId → {slot_key, slot_label, player_name, national_team}
-    rows.forEach(([slotKey, slotLabel, optionNo, playerName, natTeam]) => {
-      const slotOrder = slotOrderMap[slotKey] || 99;
-      const tail = String(slotOrder * 100 + optionNo).padStart(12, "0");
-      const id = `00000000-0000-4000-8000-${tail}`;
-      map[id] = { slot_key: slotKey, slot_label: slotLabel, player_name: playerName, national_team: natTeam };
-    });
-    return map;
-  }, []);
-
-  // Порядок слотов для отображения
-  const SLOT_ORDER = ["coach","goalkeeper","defender1","defender2","defender3","defender4","midfielder1","midfielder2","midfielder3","midfielder4","forward1","forward2"];
-  const SLOT_LABELS = { coach:"Тр", goalkeeper:"Вр", defender1:"Защ", defender2:"Защ", defender3:"Защ", defender4:"Защ", midfielder1:"Пл", midfielder2:"Пл", midfielder3:"Пл", midfielder4:"Пл", forward1:"Нап", forward2:"Нап" };
-
-  React.useEffect(() => { loadLineups(); }, []);
-
-  async function loadLineups() {
-    setLoading(true);
-    try {
-      const PAGE = 1000;
-      async function fetchAnon(path) {
-        const rows = [];
-        for (let page = 0; page < 20; page++) {
-          const sep = path.includes("?") ? "&" : "?";
-          const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}${sep}limit=${PAGE}&offset=${page * PAGE}`, {
-            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
-          });
-          if (!r.ok) {
-            const errText = await r.text().catch(() => "");
-            throw new Error(`${r.status} ${errText.slice(0, 160)}`);
-          }
-          const chunk = await r.json().catch(() => []);
-          const arr = Array.isArray(chunk) ? chunk : [];
-          rows.push(...arr);
-          if (arr.length < PAGE) break;
-        }
-        return rows;
-      }
-
-      async function fetchLineupsSafe() {
-        // Важно: не фильтруем по ffc_rounds и не запрашиваем старые classic-поля.
-        // На проде разные версии таблицы ffc_lineups, и один лишний столбец в select даёт 400 → пустой экран.
-        const queries = [
-          "ffc_lineups?select=id,user_id,round_id,lineup_status,submitted_at,updated_at,draft_answers,captain_option_id&order=updated_at.desc.nullslast,submitted_at.desc.nullslast",
-          "ffc_lineups?select=id,user_id,lineup_status,submitted_at,draft_answers,captain_option_id&order=submitted_at.desc.nullslast",
-          "ffc_lineups?select=id,user_id,lineup_status,draft_answers,captain_option_id",
-        ];
-        for (const q of queries) {
-          const rows = await fetchAnon(q).catch(() => []);
-          if (Array.isArray(rows) && rows.length > 0) return rows;
-        }
-        return [];
-      }
-
-      const [lineupRows, profileRows, draftOptionRows, ffc_player_rows, scoreRows] = await Promise.all([
-        fetchLineupsSafe(),
-        fetchAnon("profiles?select=id,name,display_name&order=name.asc").catch(() => []),
-        fetchAnon("ffc_round_draft_options?select=id,slot_key,player_name,national_team").catch(() => []),
-        fetchAnon("ffc_players?select=id,name,national_team,position").catch(() => []),
-        fetchAnon("ffc_round_player_scores?select=*&order=updated_at.desc.nullslast&limit=5000").catch(() => []),
-      ]);
-
-      // maps для расшифровки
-      const profileMap = {};
-      profileRows.forEach(p => { if (p.id) profileMap[p.id] = p; if (p.user_id) profileMap[p.user_id] = p; });
-
-      const draftOptMap = {}; // id → {slot_key, player_name, national_team}
-      draftOptionRows.forEach(o => { if (o.id) draftOptMap[o.id] = o; });
-      Object.entries(FALLBACK_OPTIONS).forEach(([id, o]) => { if (!draftOptMap[id]) draftOptMap[id] = o; });
-
-      const ffc_player_map = {}; // id → {name, national_team, position}
-      ffc_player_rows.forEach(p => { if (p.id) ffc_player_map[p.id] = p; });
-
-      // Карта очков: option_id → points + name/nameTeam aliases.
-      // Это нужно, потому что у одного и того же игрока в составах могут быть разные option_id.
-      const scoresMap = {};
-      (Array.isArray(scoreRows) ? scoreRows : []).forEach(r => {
-        const id = String(r.player_id || r.option_id || "");
-        if (!id) return;
-        const pts = r.points;
-        // rows отсортированы по updated_at desc, поэтому не затираем свежий результат старым дублем.
-        if (scoresMap[id] === undefined) scoresMap[id] = pts;
-
-        const opt = draftOptMap[id];
-        const pl = ffc_player_map[id];
-        const nm = r.player_name || opt?.player_name || pl?.name;
-        const tm = r.national_team || opt?.national_team || pl?.national_team;
-        if (nm) {
-          const nk = `name:${ffcCleanPlayerKey(nm, tm)}`;
-          const ntk = `nameTeam:${ffcPlayerNameTeamKey(nm, tm)}`;
-          if (scoresMap[nk] === undefined) scoresMap[nk] = pts;
-          if (scoresMap[ntk] === undefined) scoresMap[ntk] = pts;
-        }
-      });
-      setPlayerScores(scoresMap);
-      setLineupsDebug({ lineupRows: lineupRows.length, profiles: profileRows.length, draftOptions: draftOptionRows.length, players: ffc_player_rows.length, scores: scoreRows.length });
-
-      // Дедупликация по user_id: берём лучший состав (submitted > draft, не пустой)
-      const byUser = {};
-      lineupRows.forEach(l => {
-        if (!l.user_id) return;
-        const hasDraft = l.draft_answers && JSON.stringify(l.draft_answers) !== "{}" && l.draft_answers !== null;
-        const hasClassic = !!(l.coach_id || l.goalkeeper_id);
-        if (!hasDraft && !hasClassic) return; // пустой — пропускаем
-        const existing = byUser[l.user_id];
-        if (!existing) { byUser[l.user_id] = { ...l, _hasDraft: hasDraft }; return; }
-        const existingSubmitted = existing.lineup_status === "submitted" || existing.submitted_at;
-        const thisSubmitted = l.lineup_status === "submitted" || l.submitted_at;
-        if (!existingSubmitted && thisSubmitted) byUser[l.user_id] = { ...l, _hasDraft: hasDraft };
-      });
-
-      // Расшифровка игрока по id (опция → ffc_players → fallback)
-      function resolvePlayer(optionId) {
-        if (!optionId) return null;
-        const sid = String(optionId);
-        if (draftOptMap[sid]) return { name: draftOptMap[sid].player_name, team: draftOptMap[sid].national_team, slot_key: draftOptMap[sid].slot_key };
-        if (FALLBACK_OPTIONS[sid]) return { name: FALLBACK_OPTIONS[sid].player_name, team: FALLBACK_OPTIONS[sid].national_team, slot_key: FALLBACK_OPTIONS[sid].slot_key };
-        if (ffc_player_map[sid]) return { name: ffc_player_map[sid].name, team: ffc_player_map[sid].national_team, slot_key: null };
-        return { name: `[${sid.slice(0, 8)}…]`, team: "?", slot_key: null };
-      }
-
-      function getSlotPoints(optionId, resolved) {
-        const id = String(optionId || "");
-        if (scoresMap[id] !== undefined && scoresMap[id] !== null) return Number(scoresMap[id]);
-
-        const byNameTeam = scoresMap[`nameTeam:${ffcPlayerNameTeamKey(resolved?.name, resolved?.team)}`];
-        if (byNameTeam !== undefined && byNameTeam !== null) return Number(byNameTeam);
-
-        const byName = scoresMap[`name:${ffcCleanPlayerKey(resolved?.name, resolved?.team)}`];
-        if (byName !== undefined && byName !== null) return Number(byName);
-
-        return null;
-      }
-
-      // Строим карточки
-      const cards = Object.values(byUser).map(l => {
-        const profile = profileMap[l.user_id] || {};
-        const name = publicDisplayNameOverride(profile.display_name || profile.name || String(l.user_id).slice(0, 8));
-        const isSubmitted = l.lineup_status === "submitted" || !!l.submitted_at;
-
-        // Пробуем draft_answers (новый формат)
-        let slots = []; // [{slot_key, slot_label, player_name, national_team, isCaptain}]
-        let captainName = null;
-        try {
-          const raw = typeof l.draft_answers === "string" ? JSON.parse(l.draft_answers) : l.draft_answers;
-          if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-            // Формат: {slot_key: optionId} или {slot_key: {option_id, ...}}
-            const slotEntries = Object.entries(raw);
-            if (slotEntries.length > 0) {
-              SLOT_ORDER.forEach(slotKey => {
-                const val = raw[slotKey];
-                if (!val) return;
-                const optionId = typeof val === "object" ? (val.option_id || val.id || val.optionId) : String(val);
-                const resolved = resolvePlayer(optionId);
-                const label = SLOT_LABELS[slotKey] || slotKey;
-                const isCaptain = optionId && optionId === l.captain_option_id;
-                slots.push({ slot_key: slotKey, label, option_id: optionId, player_name: resolved?.name || optionId, national_team: resolved?.team || "", points: getSlotPoints(optionId, resolved), isCaptain });
-                if (isCaptain) captainName = resolved?.name || optionId;
-              });
-            }
-          }
-        } catch {}
-
-        // Fallback: classic format (coach_id, goalkeeper_id, ...)
-        if (slots.length === 0) {
-          const CLASSIC_ROLES = [
-            ["coach_id", "coach", "Тренер"],
-            ["goalkeeper_id", "goalkeeper", "Вратарь"],
-            ["defender_id", "defender1", "Защитник 1"],
-            ["defender2_id", "defender2", "Защитник 2"],
-            ["midfielder_id", "midfielder1", "Полузащитник 1"],
-            ["midfielder2_id", "midfielder2", "Полузащитник 2"],
-            ["forward_id", "forward1", "Нападающий 1"],
-            ["forward2_id", "forward2", "Нападающий 2"],
-            ["bench_player_id", "bench", "Запасной"],
-          ];
-          CLASSIC_ROLES.forEach(([field, slotKey, label]) => {
-            const pid = l[field];
-            if (!pid) return;
-            const resolved = resolvePlayer(pid) || ffc_player_map[pid] || { name: `[${String(pid).slice(0,8)}]`, team: "" };
-            const isCaptain = pid === l.captain_player_id;
-            slots.push({ slot_key: slotKey, label, option_id: pid, player_name: resolved.name, national_team: resolved.national_team || resolved.team || "", points: getSlotPoints(pid, { name: resolved.name, team: resolved.national_team || resolved.team || "" }), isCaptain });
-            if (isCaptain) captainName = resolved.name;
-          });
-        }
-
-        return { user_id: l.user_id, name, isSubmitted, slots, captainName, submittedAt: l.submitted_at };
-      }).filter(c => c.slots.length > 0);
-
-      // Сортировка: по тому же clubSeedHash что в PublicClubGroupsBlock
-      cards.sort((a, b) => clubSeedHash(a.name) - clubSeedHash(b.name));
-      // Показываем все опубликованные составы, включая Xenia Ge.
-      const filtered = cards.filter(c => !isExcludedFromClubGroups(c.name));
-      setLineups(filtered);
-      setLineupsDebug({ total: cards.length, shown: filtered.length });
-    } catch (e) {
-      console.error("PublicLineupsBlock error", e);
-      setLineupsDebug({ error: e?.message || String(e) });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Строим группы и пары — точно так же как PublicClubGroupsBlock
-  const [round, setRound] = React.useState(1);
-
-  const groups = React.useMemo(() => {
-    const g = { A: [], B: [], C: [] };
-    lineups.forEach((card, i) => {
-      g[["A","B","C"][i % 3]].push(card);
-    });
-    return g;
-  }, [lineups]);
-
-  // Все пары выбранного тура по всем группам
-  const matchPairs = React.useMemo(() => {
-    const roundPairs = CLUB_GROUP_ROUNDS[round - 1] || [];
-    const result = [];
-    ["A","B","C"].forEach(gKey => {
-      const members = groups[gKey];
-      roundPairs.forEach(([ai, bi]) => {
-        const home = members[ai];
-        const away = members[bi];
-        if (home && away) result.push({ home, away, group: gKey });
-      });
-    });
-    return result;
-  }, [groups, round]);
-
-  if (loading) return <div style={{ padding: "20px", color: "rgba(240,237,230,.4)", fontSize: 13, textAlign: "center" }}>Загружаю составы…</div>;
-  if (lineups.length === 0) {
-    return (
-      <div style={{ padding: 18, border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, background: "rgba(245,158,11,.06)", color: "#FDE68A", fontSize: 13 }}>
-        Составы пока не найдены или недоступны для публичного просмотра.<br/>
-        <span style={{ color: "rgba(240,237,230,.55)" }}>Диагностика: {lineupsDebug ? JSON.stringify(lineupsDebug) : "нет данных"}</span><br/>
-        <span style={{ color: "rgba(240,237,230,.55)" }}>Если в админке составы есть, открой SELECT для anon/authenticated на public.ffc_lineups.</span>
-      </div>
-    );
-  }
-
-  const orderedSlots = (slots = []) => {
-    const rank = Object.fromEntries(SLOT_ORDER.map((k, i) => [k, i]));
-    return [...slots].sort((a, b) => (rank[a.slot_key] ?? 99) - (rank[b.slot_key] ?? 99));
-  };
-
-  return (
-    <div style={{ marginTop: 8 }}>
-      {/* Заголовок + переключатель туров */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "rgba(240,237,230,.4)", textTransform: "uppercase", letterSpacing: 1 }}>
-          {lineups.length} участников · Тур {round}
-        </div>
-        <div style={{ display: "flex", gap: 5 }}>
-          {[1,2,3,4,5].map(r => (
-            <button key={r} onClick={() => setRound(r)} style={{
-              padding: "5px 11px", borderRadius: 5, cursor: "pointer",
-              border: round === r ? "1px solid rgba(245,158,11,.7)" : "1px solid rgba(255,255,255,.1)",
-              background: round === r ? "rgba(245,158,11,.18)" : "rgba(255,255,255,.04)",
-              color: round === r ? "#FDE68A" : "rgba(240,237,230,.5)",
-              fontFamily: "Barlow Condensed,sans-serif", fontWeight: 800, fontSize: 12,
-            }}>Тур {r}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Пары согласно календарю — по группам */}
-      {["A","B","C"].map(gKey => {
-        const groupPairs = matchPairs.filter(m => m.group === gKey);
-        if (!groupPairs.length) return null;
-        return (
-          <div key={gKey} style={{ marginBottom: 24 }}>
-            <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 900, color: "#86EFAC", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>
-              Группа {gKey}
-            </div>
-            {groupPairs.map(({ home, away }, pi) => (
-              <div key={pi} style={{ marginBottom: 16 }}>
-                {/* VS шапка */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                  <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 800, color: "#86EFAC", flex: 1, textAlign: "right" }}>{home.name}</div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                    <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, color: "#F59E0B", padding: "2px 14px", background: "rgba(245,158,11,.1)", border: "1px solid rgba(245,158,11,.3)", borderRadius: 6 }}>VS</div>
-                    {(() => {
-                      const calcScore = (card) => {
-                        let total = 0;
-                        let hasAny = false;
-                        orderedSlots(card.slots).forEach(s => {
-                          const pts = s.points ?? (s.option_id !== undefined ? playerScores[s.option_id] : undefined) ?? playerScores[`nameTeam:${ffcPlayerNameTeamKey(s.player_name, s.national_team)}`] ?? playerScores[`name:${ffcCleanPlayerKey(s.player_name, s.national_team)}`];
-                          if (pts !== undefined && pts !== null) {
-                            hasAny = true;
-                            const p = Number(pts);
-                            total += s.isCaptain ? p * 1.5 : p;
-                          }
-                        });
-                        return hasAny ? total : null;
-                      };
-                      const hScore = calcScore(home);
-                      const aScore = calcScore(away);
-                      if (hScore === null && aScore === null) return null;
-                      const hs = hScore ?? 0;
-                      const as = aScore ?? 0;
-                      const hWin = hs > as, aWin = as > hs;
-                      return (
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
-                          <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 900, color: hWin ? "#86EFAC" : "rgba(240,237,230,.5)" }}>{hs % 1 !== 0 ? hs.toFixed(1) : hs}</span>
-                          <span style={{ fontSize: 12, color: "rgba(240,237,230,.3)" }}>:</span>
-                          <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 900, color: aWin ? "#86EFAC" : "rgba(240,237,230,.5)" }}>{as % 1 !== 0 ? as.toFixed(1) : as}</span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 800, color: "#93C5FD", flex: 1 }}>{away.name}</div>
-                </div>
-
-                {/* Таблица игроков */}
-                <div style={{ background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 10, overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ background: "rgba(0,0,0,.2)" }}>
-                        <th style={{ padding: "6px 10px", textAlign: "right", fontSize: 10, color: "rgba(134,239,172,.6)", fontWeight: 700, width: "35%" }}>
-                          {home.captainName && <span style={{ color: "#FDE68A" }}>★ {home.captainName}</span>}
-                        </th>
-                        <th style={{ padding: "6px 6px", textAlign: "center", fontSize: 10, color: "rgba(240,237,230,.3)", fontWeight: 400, width: "12%" }}>Очки</th>
-                        <th style={{ padding: "6px 6px", textAlign: "center", fontSize: 10, color: "rgba(240,237,230,.3)", fontWeight: 400, width: "6%" }}>vs</th>
-                        <th style={{ padding: "6px 6px", textAlign: "center", fontSize: 10, color: "rgba(240,237,230,.3)", fontWeight: 400, width: "12%" }}>Очки</th>
-                        <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, color: "rgba(147,197,253,.6)", fontWeight: 700, width: "35%" }}>
-                          {away.captainName && <span style={{ color: "#FDE68A" }}>★ {away.captainName}</span>}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orderedSlots(home.slots).map((ls, si) => {
-                        const rs = orderedSlots(away.slots)[si];
-                        const lPts = ls.points ?? (ls.option_id !== undefined ? playerScores[ls.option_id] : undefined) ?? playerScores[`nameTeam:${ffcPlayerNameTeamKey(ls.player_name, ls.national_team)}`] ?? playerScores[`name:${ffcCleanPlayerKey(ls.player_name, ls.national_team)}`];
-                        const rPts = rs ? (rs.points ?? (rs.option_id !== undefined ? playerScores[rs.option_id] : undefined) ?? playerScores[`nameTeam:${ffcPlayerNameTeamKey(rs.player_name, rs.national_team)}`] ?? playerScores[`name:${ffcCleanPlayerKey(rs.player_name, rs.national_team)}`]) : undefined;
-                        const ptsStyle = (pts) => ({
-                          display: "inline-block", minWidth: 28, padding: "1px 5px", borderRadius: 4,
-                          background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)",
-                          color: pts === undefined || pts === null ? "rgba(240,237,230,.3)" : pts > 0 ? "#86EFAC" : "rgba(240,237,230,.35)",
-                          fontFamily: "Oswald,sans-serif", fontWeight: 800, fontSize: 11, textAlign: "center"
-                        });
-                        const isSame = ls.player_name && rs?.player_name && ls.player_name === rs.player_name;
-                        return (
-                          <tr key={si} style={{ borderTop: "1px solid rgba(255,255,255,.04)", background: isSame ? "rgba(245,158,11,.04)" : "transparent" }}>
-                            <td style={{ padding: "5px 10px", textAlign: "right", color: ls.isCaptain ? "#FDE68A" : "#F0EDE6", fontWeight: ls.isCaptain ? 800 : 500 }}>
-                              {ls.isCaptain ? "★ " : ""}{ls.player_name}
-                              <span style={{ fontSize: 10, color: "rgba(240,237,230,.3)", marginLeft: 4 }}>{ls.national_team}</span>
-                            </td>
-                            <td style={{ padding: "5px 6px", textAlign: "center" }}>
-                              <span style={ptsStyle(lPts)}>{lPts !== undefined && lPts !== null ? lPts : "—"}</span>
-                            </td>
-                            <td style={{ padding: "5px 6px", textAlign: "center", fontSize: 10, color: "rgba(240,237,230,.2)" }}>·</td>
-                            <td style={{ padding: "5px 6px", textAlign: "center" }}>
-                              <span style={ptsStyle(rPts)}>{rPts !== undefined && rPts !== null ? rPts : "—"}</span>
-                            </td>
-                            <td style={{ padding: "5px 10px", textAlign: "left", color: rs?.isCaptain ? "#FDE68A" : "#F0EDE6", fontWeight: rs?.isCaptain ? 800 : 500 }}>
-                              {rs ? <>{rs.isCaptain ? "★ " : ""}{rs.player_name}<span style={{ fontSize: 10, color: "rgba(240,237,230,.3)", marginLeft: 4 }}>{rs.national_team}</span></> : <span style={{ color: "rgba(240,237,230,.2)" }}>—</span>}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-
-
-
-const CLUB_TOUR2_QUESTIONS = [
-  "ЮАР проиграет Чехии?",
-  "Швейцария — Босния и Герцеговина: в матче будет хотя бы 4 ЖК?",
-  "Канада забьёт больше голов, чем Мексика во 2-м туре?",
-  "Шотландия — Марокко: обе команды забьют?",
-  "В матчах Турция — Парагвай и США — Австралия будет хотя бы один пенальти?",
-  "Нидерланды одержат победу над Швецией?",
-  "Германия забьёт больше, чем Бразилия?",
-  "Кюрасао пропустит больше, чем Кабо-Верде?",
-  "Япония забьёт Тунису после 60-й минуты?",
-  "Испания подаст 6 или больше угловых в матче с Саудовской Аравией?",
-  "Иран получит больше карточек, чем Бельгия?",
-  "Новая Зеландия забьёт Египту?",
-  "Месси отдаст голевую передачу в матче с Австрией?",
-  "Мбаппе забьёт в первом тайме Ираку?",
-  "Холанд отыграет весь матч против Сенегала?",
-  "Алжир забьёт Иордании во втором тайме?",
-  "Роналду забьёт Узбекистану?",
-  "Кейн нанесёт 3 или больше ударов по воротам Ганы?",
-  "Хорватия забьёт Панаме головой?",
-  "Колумбия выиграет у ДР Конго с разницей минимум в два гола?"
-];
-
-const CLUB_TOUR3_QUESTIONS = [
-  "Мексика забьёт Чехии в первом тайме?",
-  "ЮАР проиграет Корее с разницей в 2+ гола?",
-  "Босния и Герцеговина подаст больше угловых, чем Канада?",
-  "Бразилия забьёт Шотландии минимум 3 гола?",
-  "Марокко получит больше жёлтых карточек, чем Гаити?",
-  "Турция — США: обе команды забьют?",
-  "Австралия забьёт Парагваю первой?",
-  "Германия выиграет у Эквадора всухую?",
-  "Кот-д’Ивуар забьёт Кюрасао в обоих таймах?",
-  "Нидерланды подадут 6 или больше угловых в матче с Тунисом?",
-  "Япония забьёт Швеции до 30-й минуты?",
-  "Бельгия нанесёт больше ударов в створ, чем Новая Зеландия?",
-  "Иран получит хотя бы 3 жёлтые карточки в матче с Египтом?",
-  "Испания выиграет первый тайм у Уругвая?",
-  "Саудовская Аравия забьёт Кабо-Верде?",
-  "Сенегал — Ирак: в матче будет 4 гола?",
-  "Иордания и Алжир пропустят в сумме хотя бы 5 голов?",
-  "Португалия и Узбекистан в сумме забьют хотя бы 3 гола?",
-  "Англия забьёт Панаме минимум 2 гола во втором тайме?",
-  "Гана подаст 3 или больше угловых в матче с Хорватией?",
-  "Роналду нанесёт хотя бы 3 удара по воротам Узбекистана?",
-  "Холанд забьёт Франции или отдаст голевую передачу?"
-];
-
-
-const CLUB_ROUND21_SOURCE = "club_round_2_1_public_form";
-const CLUB_ROUND21_LABEL = "2-1 тур";
-const CLUB_ROUND21_PUBLIC_LABEL = "2-й тур";
-
-const CLUB_R2_GROUP_KEYS = ["A", "B", "C", "D", "E", "F"];
-const CLUB_R2_SNAKE_GROUPS = {
-  A: [1, 12, 13, 24],
-  B: [2, 11, 14, 23],
-  C: [3, 10, 15, 22],
-  D: [4, 9, 16, 21],
-  E: [5, 8, 17, 20],
-  F: [6, 7, 18, 19],
-};
-const FFC_FIX_1ON1_GROUPS_CALENDAR_20260619 = true;
-const CLUB_R2_ROUNDS = [
-  [[0, 3], [1, 2]],
-  [[0, 2], [3, 1]],
-  [[0, 1], [2, 3]],
-];
-
-// В режиме «1 на 1» каждый выбранный тур показывает и считает только 2 матча группы.
-// Тур 1: 1–4 и 2–3, тур 2/3 — отдельные будущие туры.
-function visibleClubR2Pairs(roundNo) {
-  return CLUB_R2_ROUNDS[Math.max(0, Number(roundNo || 1) - 1)] || [];
-}
-
-function clubRound2NameKey(name) {
-  const raw = String(name || "")
-    .trim()
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[“”"']/g, "")
-    .replace(/[\\/|]+/g, " ")
-    .replace(/[_]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // Ручные склейки имён 2-го тура с участниками/сеяными 1-го тура.
-  // Нужно, чтобы "Илья Крикун/команда Геленджик" не создавал нового игрока,
-  // а попадал в посев как Илья Крикун и получал его базовое место.
-  const aliases = [
-    [["андрей дубровин", "дубровин андрей"], "андрей дубровин"],
-    [["илья крикун команда геленджик", "илья крикун геленджик"], "илья крикун"],
-    [["альберт крейзи бойз энд герлс", "альберт crazy boys and girls", "альберт crazy girls and boys"], "альберт"],
-    [["никита крикун геленджик", "nikita крикун геленджик", "никита"], "nikita"],
-    [["дмитрий паздников", "dmitry pazdnikov", "dmitriy pazdnikov", "pazdnikov dmitry", "pazdnikov dmitriy", "паздников дмитрий", "pazdnikov.dmitriy"], "pazdnikov.dmitriy"],
-    [["mrj", "mr j", "kirill mr j gj", "кирилл mr j gj", "кирилл mrj", "kirill mrj"], "kirill mr j gj"],
-    [["юрий аманатов гелендик", "юрий аманатов геленджик", "аманатов юрий гелендик", "аманатов юрий геленджик"], "аманатов юрий"],
-    [["антон команда парковая тим", "антон парковая тим", "антон команда парковая team"], "антон воробей"],
-  ];
-
-  for (const [variants, canonical] of aliases) {
-    if (variants.some(v => raw === v || raw.includes(v))) return canonical;
-  }
-
-  return raw;
-}
-
-function isHiddenClubRound2Name(name) {
-  // Василия возвращаем в турнир. Ничего не скрываем на уровне посева;
-  // дубли склеиваются по clubRound2NameKey, остаётся самая свежая отправка.
-  return false;
-}
-
-function clubRound2AnswerFor(row, idx) {
-  const a = typeof row?.answers === "string" ? (() => { try { return JSON.parse(row.answers || "{}"); } catch { return {}; } })() : (row?.answers || {});
-  return a[String(idx + 1)] || a[idx + 1] || "—";
-}
-
-function clubRound2CreatedMs(row) {
-  const t = Date.parse(row?.created_at || row?.updated_at || 0);
-  return Number.isFinite(t) ? t : 0;
-}
-
-function isClubRound21Row(row) {
-  const src = String(row?.source || "").toLowerCase();
-  return src === CLUB_ROUND21_SOURCE || src.includes("round_2_1") || src.includes("round21");
-}
-
-
-function buildLatestClubRound2Rows(rows, includeFn = null) {
-  const map = {};
-  (Array.isArray(rows) ? rows : []).forEach(r => {
-    const name = String(r?.name || "").trim();
-    if (!name || isHiddenClubRound2Name(name)) return;
-    if (includeFn) {
-      if (!includeFn(r)) return;
-    } else if (isClubRound21Row(r)) {
-      return;
-    }
-    const key = clubRound2NameKey(name);
-    if (!map[key] || clubRound2CreatedMs(r) > clubRound2CreatedMs(map[key])) map[key] = r;
-  });
-  return map;
-}
-
-function buildClubRound2RowsDiagnostics(rows) {
-  const buckets = {};
-  const hidden = [];
-  (Array.isArray(rows) ? rows : []).forEach(r => {
-    const rawName = String(r?.name || "").trim() || "—";
-    if (isHiddenClubRound2Name(rawName)) {
-      hidden.push(rawName);
-      return;
-    }
-    const key = clubRound2NameKey(rawName);
-    if (!buckets[key]) buckets[key] = [];
-    buckets[key].push(rawName);
-  });
-  const duplicateGroups = Object.entries(buckets)
-    .filter(([, names]) => names.length > 1)
-    .map(([key, names]) => ({ key, names: Array.from(new Set(names)) }));
-  return {
-    raw: Array.isArray(rows) ? rows.length : 0,
-    hidden,
-    visibleRaw: Object.values(buckets).reduce((sum, names) => sum + names.length, 0),
-    unique: Object.keys(buckets).length,
-    duplicateGroups,
-  };
-}
-
-function buildClubRound2OfficialMap(rows) {
-  const picked = {};
-  (Array.isArray(rows) ? rows : []).forEach(r => {
-    let no = Number(r?.question_no || r?.question || r?.q_no || 0);
-    // fallback-хранилище через bonus_official_answers: question_id = "round2_1"..."round2_20"
-    if (!no && r?.question_id) {
-      const m = String(r.question_id).match(/round2[_-]?(\d+)/i);
-      if (m) no = Number(m[1]);
-    }
-    if (!no) return;
-    let ans = r?.answer ?? r?.correct_answer ?? "";
-    if (Array.isArray(ans)) ans = ans[0] || "";
-    ans = String(ans).trim();
-    if (!ans) return;
-    const ms = Date.parse(r?.updated_at || r?.created_at || 0) || 0;
-    const key = String(no);
-    if (!picked[key] || ms >= picked[key].ms) picked[key] = { ans, ms };
-  });
-  const map = {};
-  Object.entries(picked).forEach(([k, v]) => { map[k] = v.ans; });
-  return map;
-}
-
-function clubRound2Score(row, officialMap) {
-  if (!row) return 0;
-  let score = 0;
-  CLUB_TOUR2_QUESTIONS.forEach((_, i) => {
-    const correct = String(officialMap?.[String(i + 1)] || "").trim();
-    if (!correct) return;
-    if (clubRound2AnswerFor(row, i) === correct) score += 2;
-  });
-  return score;
-}
-
-function buildClubRound21OfficialMap(rows) {
-  const picked = {};
-  (Array.isArray(rows) ? rows : []).forEach(r => {
-    let no = Number(r?.question_no || r?.question || r?.q_no || 0);
-    if (!no && r?.question_id) {
-      const m = String(r.question_id).match(/round21[_-]?(\d+)/i) || String(r.question_id).match(/round2_1[_-]?(\d+)/i);
-      if (m) no = Number(m[1]);
-    }
-    if (!no) return;
-    let ans = r?.answer ?? r?.correct_answer ?? "";
-    if (Array.isArray(ans)) ans = ans[0] || "";
-    ans = String(ans).trim();
-    if (!ans) return;
-    const ms = Date.parse(r?.updated_at || r?.created_at || 0) || 0;
-    const key = String(no);
-    if (!picked[key] || ms >= picked[key].ms) picked[key] = { ans, ms };
-  });
-  const map = {};
-  Object.entries(picked).forEach(([k, v]) => { map[k] = v.ans; });
-  return map;
-}
-
-function clubRound21Score(row, officialMap) {
-  if (!row) return 0;
-  let score = 0;
-  CLUB_TOUR3_QUESTIONS.forEach((_, i) => {
-    const correct = String(officialMap?.[String(i + 1)] || "").trim();
-    if (!correct) return;
-    if (clubRound2AnswerFor(row, i) === correct) score += 2;
-  });
-  return score;
-}
-
-function clubRoundScoreByRound(row, roundNo, round2Official, round21Official) {
-  if (Number(roundNo) === 1) return clubRound2Score(row?.round2Row || row, round2Official);
-  if (Number(roundNo) === 2) return clubRound21Score(row?.round21Row || row, round21Official);
-  return null;
-}
-
-
-function buildClubRound2SeededRows(lineupRows, round2Rows, cardTotal, fmtTotal, round21Rows = []) {
-  const latest = buildLatestClubRound2Rows(round2Rows);
-  const latest21 = buildLatestClubRound2Rows(round21Rows, isClubRound21Row);
-  const used = new Set();
-
-  const base = (Array.isArray(lineupRows) ? lineupRows : [])
-    .map(card => {
-      const key = clubRound2NameKey(card?.name);
-      const row2 = latest[key];
-      if (!row2) return null; // в группы попадают только те, кто прислал прогноз на 2-й тур
-      used.add(key);
-      return {
-        name: card?.name || "—",
-        seedSource: "1-й тур",
-        baseTotal: cardTotal(card),
-        baseTotalText: fmtTotal(cardTotal(card)),
-        round2Row: row2,
-        round21Row: latest21[key] || null,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => Number(b.baseTotal || 0) - Number(a.baseTotal || 0) || a.name.localeCompare(b.name, "ru"));
-
-  Object.values(latest)
-    .sort((a, b) => clubRound2CreatedMs(a) - clubRound2CreatedMs(b))
-    .forEach(row => {
-      const key = clubRound2NameKey(row?.name);
-      if (used.has(key)) return;
-      used.add(key);
-      base.push({
-        name: row.name,
-        seedSource: "2-й тур",
-        baseTotal: null,
-        baseTotalText: "новый",
-        round2Row: row,
-        round21Row: latest21[key] || null,
-      });
-    });
-
-  return base.map((r, i) => ({ ...r, seed: i + 1 }));
-}
-
-function buildClubRound2Groups(seeded) {
-  const out = {};
-  CLUB_R2_GROUP_KEYS.forEach(g => {
-    out[g] = (CLUB_R2_SNAKE_GROUPS[g] || []).map(seedNo => seeded[seedNo - 1]).filter(Boolean);
-  });
-  return out;
-}
-
-function clubRound2RoundHasScore(roundNo, round2Official = {}, round21Official = {}) {
-  if (Number(roundNo) === 1) return Object.values(round2Official || {}).filter(Boolean).length > 0;
-  if (Number(roundNo) === 2) return Object.values(round21Official || {}).filter(Boolean).length > 0;
-  return false;
-}
-
-function buildClubRound2GroupStandings(groupMembers, round2Official, maxRound = 0, round21Official = {}) {
-  const rows = (groupMembers || []).map(p => ({
-    ...p,
-    score: Number(maxRound) === 2 ? clubRound21Score(p.round21Row, round21Official) : clubRound2Score(p.round2Row, round2Official),
-    played: 0,
-    wins: 0,
-    draws: 0,
-    losses: 0,
-    tablePoints: 0,
-  }));
-
-  for (let roundNo = 1; roundNo <= Math.min(3, Number(maxRound || 0)); roundNo++) {
-    if (!clubRound2RoundHasScore(roundNo, round2Official, round21Official)) continue;
-    visibleClubR2Pairs(roundNo).forEach(([a, b]) => {
-      const A = rows[a], B = rows[b];
-      if (!A || !B) return;
-      const scoreA = clubRoundScoreByRound(A, roundNo, round2Official, round21Official);
-      const scoreB = clubRoundScoreByRound(B, roundNo, round2Official, round21Official);
-      if (scoreA == null || scoreB == null) return;
-      A.played++; B.played++;
-      if (scoreA > scoreB) { A.wins++; A.tablePoints += 3; B.losses++; }
-      else if (scoreA < scoreB) { B.wins++; B.tablePoints += 3; A.losses++; }
-      else { A.draws++; B.draws++; A.tablePoints++; B.tablePoints++; }
-    });
-  }
-
-  return rows.sort((a, b) =>
-    b.tablePoints - a.tablePoints ||
-    b.score - a.score ||
-    Number(a.seed || 999) - Number(b.seed || 999) ||
-    a.name.localeCompare(b.name, "ru")
-  );
-}
-
-function clubRound2SqlBlock() {
-  return `CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-
-CREATE TABLE IF NOT EXISTS public.ffc_round2_answers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  answers JSONB NOT NULL,
-  questions JSONB,
-  source TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.ffc_round2_official_answers (
-  question_no INTEGER PRIMARY KEY,
-  answer TEXT NOT NULL CHECK (answer IN ('Да','Нет')),
-  points INTEGER NOT NULL DEFAULT 2,
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE public.ffc_round2_answers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ffc_round2_official_answers ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "ffc_round2_answers_public_insert" ON public.ffc_round2_answers;
-CREATE POLICY "ffc_round2_answers_public_insert"
-ON public.ffc_round2_answers
-FOR INSERT TO anon, authenticated
-WITH CHECK (true);
-
-DROP POLICY IF EXISTS "ffc_round2_answers_public_select" ON public.ffc_round2_answers;
-CREATE POLICY "ffc_round2_answers_public_select"
-ON public.ffc_round2_answers
-FOR SELECT TO anon, authenticated
-USING (true);
-
-DROP POLICY IF EXISTS "ffc_round2_official_public_select" ON public.ffc_round2_official_answers;
-CREATE POLICY "ffc_round2_official_public_select"
-ON public.ffc_round2_official_answers
-FOR SELECT TO anon, authenticated
-USING (true);
-
-DROP POLICY IF EXISTS "ffc_round2_official_admin_write" ON public.ffc_round2_official_answers;
-CREATE POLICY "ffc_round2_official_admin_write"
-ON public.ffc_round2_official_answers
-FOR ALL TO authenticated
-USING (true)
-WITH CHECK (true);
-
-GRANT SELECT, INSERT ON public.ffc_round2_answers TO anon, authenticated;
-GRANT SELECT ON public.ffc_round2_official_answers TO anon, authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.ffc_round2_official_answers TO authenticated;`;
-}
-
-
-function ClubRound2Form({ showToast }) {
-  const [name, setName] = React.useState(() => {
-    try { return localStorage.getItem("ffc_round2_name") || ""; } catch { return ""; }
-  });
-  const [answers, setAnswers] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem("ffc_round2_answers") || "{}"); } catch { return {}; }
-  });
-  const [saving, setSaving] = React.useState(false);
-  const [saved, setSaved] = React.useState(false);
-  const [err, setErr] = React.useState("");
-
-  React.useEffect(() => {
-    try { localStorage.setItem("ffc_round2_name", name); } catch {}
-  }, [name]);
-
-  React.useEffect(() => {
-    try { localStorage.setItem("ffc_round2_answers", JSON.stringify(answers)); } catch {}
-  }, [answers]);
-
-  const answeredCount = Object.values(answers).filter(Boolean).length;
-
-  async function submit() {
-    const cleanName = name.trim();
-    setErr("");
-    if (cleanName.length < 2) {
-      setErr("Укажи имя — так я пойму, чей это прогноз.");
-      return;
-    }
-    if (answeredCount < CLUB_TOUR2_QUESTIONS.length) {
-      setErr(`Ответь на все вопросы: сейчас ${answeredCount}/${CLUB_TOUR2_QUESTIONS.length}.`);
-      return;
-    }
-    setSaving(true);
-    try {
-      const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      const payloadFull = {
-        id,
-        name: cleanName,
-        answers,
-        questions: CLUB_TOUR2_QUESTIONS,
-        source: "club_round_2_public_form",
-        created_at: new Date().toISOString()
-      };
-      const payloadNoId = {
-        name: cleanName,
-        answers,
-        questions: CLUB_TOUR2_QUESTIONS,
-        source: "club_round_2_public_form",
-        created_at: payloadFull.created_at
-      };
-      const payloadMinimal = {
-        name: cleanName,
-        answers
-      };
-
-      async function tryInsert(payload) {
-        return await supa("ffc_round2_answers", {
-          method: "POST",
-          headers: { Prefer: "return=minimal" },
-          body: JSON.stringify(payload)
-        });
-      }
-
-      let r = await tryInsert(payloadFull);
-      let errText = r.ok ? "" : await r.clone().text().catch(() => "");
-
-      // Если таблица создана в более простом виде или default id настроен иначе — пробуем мягкие варианты.
-      if (!r.ok && /column|schema cache|created_at|source|questions|id|PGRST204|PGRST205/i.test(errText)) {
-        r = await tryInsert(payloadNoId);
-        errText = r.ok ? "" : await r.clone().text().catch(() => "");
-      }
-      if (!r.ok && /column|schema cache|created_at|source|questions|id|PGRST204|PGRST205/i.test(errText)) {
-        r = await tryInsert(payloadMinimal);
-        errText = r.ok ? "" : await r.clone().text().catch(() => "");
-      }
-
-      if (!r.ok) {
-        throw new Error(errText || `HTTP ${r.status}`);
-      }
-
-      setSaved(true);
-      showToast?.("✓ Ответы 2-го тура отправлены");
-    } catch (e) {
-      const msg = String(e?.message || e || "");
-      setErr("Не удалось сохранить в базу. Скорее всего, не выполнен SQL для public insert/RLS. Ошибка Supabase: " + msg.slice(0, 220));
-      console.error("[ClubRound2Form] save error", e);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function buildCopyText() {
-    return [
-      `Имя: ${name.trim() || "—"}`,
-      "Ответы 2-го тура:",
-      ...CLUB_TOUR2_QUESTIONS.map((q, i) => `${i + 1}. ${q} — ${answers[String(i + 1)] || "—"}`)
-    ].join("\n");
-  }
-
-  const formUrl = (() => {
-    try { return `${window.location.origin}${window.location.pathname}?ffc2=1`; } catch { return "?ffc2=1"; }
-  })();
-
-  return (
-    <div style={{ maxWidth: 920, margin: "0 auto" }}>
-      <div style={{ textAlign: "center", marginBottom: 18 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(26px,4vw,48px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase", letterSpacing: ".03em" }}>
-          📝 1 на 1 · 2-й тур
-        </div>
-        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 13, marginTop: 6 }}>
-          Можно отправить без регистрации: укажи имя и ответь Да/Нет.
-        </div>
-      </div>
-
-      <div style={{ background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.18)", borderRadius: 10, padding: 12, marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: "rgba(147,197,253,.82)", marginBottom: 5 }}>Прямая ссылка только на эту форму:</div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <code style={{ color: "#93C5FD", fontSize: 12, wordBreak: "break-all" }}>{formUrl}</code>
-          <button className="mini-btn" onClick={() => navigator.clipboard?.writeText(formUrl).then(() => showToast?.("Ссылка скопирована"))}>копировать</button>
-        </div>
-      </div>
-
-      {saved && (
-        <div style={{ background: "rgba(22,163,74,.10)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 10, padding: 14, color: "#86EFAC", fontWeight: 800, marginBottom: 14 }}>
-          ✓ Ответы отправлены. Можно закрывать страницу.
-        </div>
-      )}
-
-      <div style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
-        <label style={{ display: "block", color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontWeight: 900, marginBottom: 8 }}>Имя</label>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="Например: Алексей / Команда Петровых"
-          style={{ width: "100%", height: 42, borderRadius: 8, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.07)", color: "#F0EDE6", padding: "0 12px", fontSize: 15 }}
-        />
-      </div>
-
-      <div style={{ display: "grid", gap: 10 }}>
-        {CLUB_TOUR2_QUESTIONS.map((q, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "34px 1fr auto", gap: 10, alignItems: "center", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: "10px 12px" }}>
-            <div style={{ fontFamily: "Oswald,sans-serif", color: "#F59E0B", fontWeight: 900, textAlign: "center" }}>{i + 1}</div>
-            <div style={{ color: "#F0EDE6", fontSize: 14, lineHeight: 1.35 }}>{q}</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {["Да", "Нет"].map(v => (
-                <button
-                  key={v}
-                  onClick={() => setAnswers(p => ({ ...p, [String(i + 1)]: v }))}
-                  style={{ minWidth: 54, padding: "7px 10px", borderRadius: 7, cursor: "pointer", border: answers[String(i + 1)] === v ? "1px solid rgba(245,158,11,.75)" : "1px solid rgba(255,255,255,.12)", background: answers[String(i + 1)] === v ? "rgba(245,158,11,.18)" : "rgba(255,255,255,.04)", color: answers[String(i + 1)] === v ? "#FDE68A" : "rgba(240,237,230,.62)", fontWeight: 800 }}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {err && (
-        <div style={{ marginTop: 12, color: "#FCA5A5", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: 10, fontSize: 13 }}>
-          <div>{err}</div>
-          <button
-            className="mini-btn"
-            style={{ marginTop: 10 }}
-            onClick={() => navigator.clipboard?.writeText(buildCopyText()).then(() => showToast?.("Ответы скопированы"))}
-          >
-            Скопировать ответы вручную
-          </button>
-        </div>
-      )}
-
-      <button className="bp" disabled={saving} onClick={submit} style={{ width: "100%", marginTop: 16, opacity: saving ? .65 : 1 }}>
-        {saving ? "Сохраняю…" : `Отправить ответы (${answeredCount}/${CLUB_TOUR2_QUESTIONS.length})`}
-      </button>
-
-      <details style={{ marginTop: 18 }}>
-        <summary style={{ cursor: "pointer", color: "rgba(240,237,230,.38)", fontSize: 11 }}>SQL для формы 2-го тура, если не сохраняется</summary>
-        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", background: "rgba(0,0,0,.32)", color: "rgba(240,237,230,.62)", borderRadius: 8, padding: 12, fontSize: 10, marginTop: 8 }}>{`CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-
-CREATE TABLE IF NOT EXISTS public.ffc_round2_answers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  answers JSONB NOT NULL,
-  questions JSONB,
-  source TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE public.ffc_round2_answers ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "ffc_round2_answers_public_insert" ON public.ffc_round2_answers;
-CREATE POLICY "ffc_round2_answers_public_insert"
-ON public.ffc_round2_answers
-FOR INSERT TO anon, authenticated
-WITH CHECK (true);
-
-DROP POLICY IF EXISTS "ffc_round2_answers_admin_select" ON public.ffc_round2_answers;
-CREATE POLICY "ffc_round2_answers_admin_select"
-ON public.ffc_round2_answers
-FOR SELECT TO authenticated
-USING (true);
-
-GRANT INSERT ON public.ffc_round2_answers TO anon, authenticated;
-GRANT SELECT ON public.ffc_round2_answers TO authenticated;
-
--- После выполнения SQL подожди 10–20 секунд и обнови страницу формы.`}</pre>
-      </details>
-    </div>
-  );
-}
-
-
-
-
-
-function ClubRound3Form({ showToast }) {
-  const [name, setName] = React.useState(() => {
-    try { return localStorage.getItem("ffc_round21_name") || ""; } catch { return ""; }
-  });
-  const [answers, setAnswers] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem("ffc_round21_answers") || "{}"); } catch { return {}; }
-  });
-  const [saving, setSaving] = React.useState(false);
-  const [saved, setSaved] = React.useState(false);
-  const [err, setErr] = React.useState("");
-
-  React.useEffect(() => { try { localStorage.setItem("ffc_round21_name", name); } catch {} }, [name]);
-  React.useEffect(() => { try { localStorage.setItem("ffc_round21_answers", JSON.stringify(answers)); } catch {} }, [answers]);
-
-  const answeredCount = Object.values(answers).filter(Boolean).length;
-  const formUrl = (() => { try { return `${window.location.origin}${window.location.pathname}?ffc21=1`; } catch { return "?ffc21=1"; } })();
-
-  async function submit() {
-    const cleanName = name.trim();
-    setErr("");
-    if (cleanName.length < 2) { setErr("Укажи имя — так я пойму, чей это прогноз."); return; }
-    if (answeredCount < CLUB_TOUR3_QUESTIONS.length) { setErr(`Ответь на все вопросы: сейчас ${answeredCount}/${CLUB_TOUR3_QUESTIONS.length}.`); return; }
-    setSaving(true);
-    try {
-      const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      const created_at = new Date().toISOString();
-      const payloads = [
-        { id, name: cleanName, answers, questions: CLUB_TOUR3_QUESTIONS, source: "club_round_2_1_public_form", created_at },
-        { name: cleanName, answers, questions: CLUB_TOUR3_QUESTIONS, source: "club_round_2_1_public_form", created_at },
-        { name: cleanName, answers }
-      ];
-      let lastText = "";
-      for (const payload of payloads) {
-        const r = await supa("ffc_round21_answers", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(payload) });
-        if (r.ok) { setSaved(true); showToast?.("✓ Ответы 2-1 тура отправлены"); return; }
-        lastText = await r.clone().text().catch(() => `HTTP ${r.status}`);
-        if (!/column|schema cache|created_at|source|questions|id|PGRST204|PGRST205/i.test(lastText)) break;
-      }
-      throw new Error(lastText || "Не удалось сохранить");
-    } catch (e) {
-      setErr("Не удалось сохранить в базу. Скорее всего, нужно выполнить SQL для ffc_round21_answers/RLS. Ошибка: " + String(e?.message || e).slice(0, 220));
-    } finally { setSaving(false); }
-  }
-
-  const sql = `CREATE EXTENSION IF NOT EXISTS pgcrypto;
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-CREATE TABLE IF NOT EXISTS public.ffc_round21_answers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  answers JSONB NOT NULL,
-  questions JSONB,
-  source TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE public.ffc_round21_answers ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "ffc_round21_answers_public_insert" ON public.ffc_round21_answers;
-CREATE POLICY "ffc_round21_answers_public_insert" ON public.ffc_round21_answers FOR INSERT TO anon, authenticated WITH CHECK (true);
-DROP POLICY IF EXISTS "ffc_round21_answers_public_select" ON public.ffc_round21_answers;
-CREATE POLICY "ffc_round21_answers_public_select" ON public.ffc_round21_answers FOR SELECT TO anon, authenticated USING (true);
-GRANT SELECT, INSERT ON public.ffc_round21_answers TO anon, authenticated;
-SELECT COUNT(*) FROM public.ffc_round21_answers;`;
-
-  function copyAnswersText() {
-    return [`Имя: ${name.trim() || "—"}`, "Ответы 2-1 тура:", ...CLUB_TOUR3_QUESTIONS.map((q, i) => `${i + 1}. ${q} — ${answers[String(i + 1)] || "—"}`)].join("\n");
-  }
-
-  return (
-    <div style={{ maxWidth: 920, margin: "0 auto" }}>
-      <div style={{ textAlign: "center", marginBottom: 18 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(26px,4vw,44px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>📝 1 на 1 · 2-й тур</div>
-        <div style={{ color: "rgba(240,237,230,.50)", fontSize: 13, marginTop: 6 }}>2-1 тур: 22 вопроса Да/Нет. Без входа в аккаунт — укажи имя и отправь прогноз.</div>
-      </div>
-
-      <div style={{ background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.20)", borderRadius: 10, padding: 12, marginBottom: 14 }}>
-        <div style={{ color: "#BFDBFE", fontSize: 12, marginBottom: 6 }}>Прямая ссылка для участников</div>
-        <input readOnly value={formUrl} onFocus={e => e.target.select()} style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,.25)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 8, padding: "9px 10px", color: "#F0EDE6", fontSize: 12 }} />
-        <button className="sb" style={{ marginTop: 8, fontSize: 11 }} onClick={() => { navigator.clipboard?.writeText(formUrl); showToast?.("Ссылка скопирована"); }}>Скопировать ссылку</button>
-      </div>
-
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Имя / ник" style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,.04)", border: "1px solid rgba(245,158,11,.22)", borderRadius: 10, padding: "12px 14px", color: "#F0EDE6", fontSize: 16, marginBottom: 14 }} />
-
-      <div style={{ display: "grid", gap: 10 }}>
-        {CLUB_TOUR3_QUESTIONS.map((q, i) => {
-          const no = i + 1;
-          const val = answers[String(no)] || "";
-          return (
-            <div key={no} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12, alignItems: "center", background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 12, padding: "12px 14px" }}>
-              <div style={{ fontFamily: "Oswald,sans-serif", color: "#F59E0B", fontSize: 22, fontWeight: 900 }}>{no}</div>
-              <div style={{ color: "#F0EDE6", fontSize: 15, fontWeight: 700, lineHeight: 1.25 }}>{q}</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["Да", "Нет"].map(v => (
-                  <button key={v} onClick={() => setAnswers(p => ({ ...p, [String(no)]: v }))} style={{ minWidth: 66, padding: "9px 12px", borderRadius: 8, cursor: "pointer", border: val === v ? "1px solid rgba(245,158,11,.8)" : "1px solid rgba(255,255,255,.14)", background: val === v ? "rgba(245,158,11,.22)" : "rgba(255,255,255,.04)", color: val === v ? "#FDE68A" : "rgba(240,237,230,.65)", fontWeight: 900 }}>{v}</button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {err && <div style={{ marginTop: 12, color: "#FCA5A5", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: 10, fontSize: 13 }}>{err}<br/><button className="mini-btn" style={{ marginTop: 8 }} onClick={() => navigator.clipboard?.writeText(copyAnswersText()).then(() => showToast?.("Ответы скопированы"))}>Скопировать ответы вручную</button></div>}
-      {saved && <div style={{ marginTop: 12, color: "#86EFAC", background: "rgba(22,163,74,.08)", border: "1px solid rgba(22,163,74,.25)", borderRadius: 8, padding: 10, fontSize: 13 }}>✓ Ответы сохранены. Можно закрыть страницу.</div>}
-      <button className="bp" disabled={saving} onClick={submit} style={{ width: "100%", marginTop: 16, opacity: saving ? .65 : 1 }}>{saving ? "Сохраняю…" : `Отправить ответы (${answeredCount}/${CLUB_TOUR3_QUESTIONS.length})`}</button>
-
-      <details style={{ marginTop: 18, color: "rgba(240,237,230,.45)", fontSize: 12 }}>
-        <summary style={{ cursor: "pointer", color: "#FDE68A" }}>SQL для формы 2-1 тура, если сохранение не работает</summary>
-        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", background: "rgba(0,0,0,.28)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: 12, fontSize: 10 }}>{sql}</pre>
-      </details>
-    </div>
-  );
-}
-
-function readClubRound2OfficialLocal() {
-  try {
-    const raw = localStorage.getItem("ffc_round2_official_answers_local");
-    const obj = raw ? JSON.parse(raw) : {};
-    return obj && typeof obj === "object" ? obj : {};
-  } catch { return {}; }
-}
-function writeClubRound2OfficialLocal(map) {
-  try { localStorage.setItem("ffc_round2_official_answers_local", JSON.stringify(map || {})); } catch {}
-}
-
-
-function AdminRound21AnswersPanel({ session, showToast }) {
-  const token = session?.access_token;
-  const [rows, setRows] = React.useState([]);
-  const [official, setOfficial] = React.useState({});
-  const [loading, setLoading] = React.useState(true);
-  const [err, setErr] = React.useState("");
-  const [saving, setSaving] = React.useState({});
-
-  React.useEffect(() => { loadRows(); }, []);
-
-  async function loadRows() {
-    setLoading(true);
-    setErr("");
-    try {
-      const [r, off] = await Promise.all([
-        supa(`ffc_round2_answers?select=*&source=eq.${CLUB_ROUND21_SOURCE}&order=created_at.desc&limit=1000`, { token }),
-        supa("bonus_official_answers?select=*&question_id=like.round21_%&order=updated_at.desc.nullslast&limit=100", { token }).catch(() => null),
-      ]);
-      if (!r.ok) throw new Error(await r.clone().text().catch(() => `HTTP ${r.status}`));
-      setRows(await r.json().catch(() => []));
-      if (off?.ok) setOfficial(buildClubRound21OfficialMap(await off.json().catch(() => [])));
-    } catch (e) {
-      setErr(String(e?.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function answerFor(row, i) { return clubRound2AnswerFor(row, i); }
-  function created(row) { try { return row.created_at ? new Date(row.created_at).toLocaleString("ru-RU") : "—"; } catch { return String(row.created_at || "—"); } }
-
-  async function saveOfficial(no, answer) {
-    setSaving(p => ({ ...p, [no]: true }));
-    setErr("");
-    const qid = `round21_${no}`;
-    const payload = { question_id: qid, answer, points: 2, status: "final", updated_at: new Date().toISOString() };
-    try {
-      let r = await supa(`bonus_official_answers?question_id=eq.${encodeURIComponent(qid)}`, {
-        method: "PATCH", token, headers: { Prefer: "return=representation" }, body: JSON.stringify(payload)
-      });
-      let patched = [];
-      if (r.ok) patched = await r.clone().json().catch(() => []);
-      if (!r.ok || !Array.isArray(patched) || patched.length === 0) {
-        r = await supa("bonus_official_answers", { method: "POST", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify(payload) });
-      }
-      if (!r.ok) {
-        const t = await r.clone().text().catch(() => "");
-        if (/points|status|PGRST204|schema cache/i.test(t)) {
-          const minimal = { question_id: qid, answer, updated_at: payload.updated_at };
-          r = await supa("bonus_official_answers", { method: "POST", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify(minimal) });
-        }
-      }
-      if (!r.ok) throw new Error(await r.clone().text().catch(() => `HTTP ${r.status}`));
-      setOfficial(p => ({ ...p, [String(no)]: answer }));
-      showToast?.(`✓ 2-й тур Q${no}: ${answer}`);
-    } catch (e) {
-      setErr(String(e?.message || e));
-    } finally {
-      setSaving(p => ({ ...p, [no]: false }));
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "#FDE68A" }}>📝 Ответы 2-1 тура</span>
-        <span className="tag tg">{rows.length} отправлено</span>
-        <span className="tag tr">верных {Object.values(official).filter(Boolean).length}/{CLUB_TOUR3_QUESTIONS.length}</span>
-        <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadRows}>↻ Обновить</button>
-      </div>
-      <div style={{ background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12, padding: 12, marginBottom: 14 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, color: "#FDE68A", marginBottom: 8 }}>Верные ответы 2-го тура групп</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
-          {CLUB_TOUR3_QUESTIONS.map((q, i) => {
-            const no = i + 1; const val = official[String(no)] || "";
-            return (
-              <div key={no} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: 10 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}><b style={{ color: "#F59E0B" }}>{no}</b><span style={{ color: "#F0EDE6", fontSize: 12 }}>{q}</span></div>
-                <div style={{ display: "flex", gap: 6 }}>{["Да", "Нет"].map(v => <button key={v} disabled={saving[no]} onClick={() => saveOfficial(no, v)} style={{ flex: 1, padding: "7px 8px", borderRadius: 8, cursor: "pointer", border: val === v ? "1px solid rgba(34,197,94,.65)" : "1px solid rgba(255,255,255,.12)", background: val === v ? "rgba(22,163,74,.18)" : "rgba(255,255,255,.04)", color: val === v ? "#86EFAC" : "rgba(240,237,230,.62)", fontWeight: 900 }}>{v}</button>)}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {err && <div style={{ marginBottom: 12, color: "#FCA5A5", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: 10, fontSize: 12 }}>{err}</div>}
-      {loading ? <div style={{ color: "rgba(240,237,230,.55)", padding: 14 }}>Загружаю…</div> : (
-        <div style={{ overflowX: "auto", background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12 }}>
-          <table style={{ borderCollapse: "collapse", minWidth: 1800, width: "100%" }}>
-            <thead><tr style={{ background: "rgba(245,158,11,.09)" }}><th style={{ padding: 8, textAlign: "left", color: "#FDE68A" }}>Имя</th><th style={{ padding: 8, color: "rgba(240,237,230,.62)" }}>Дата</th>{CLUB_TOUR3_QUESTIONS.map((_, i) => <th key={i} style={{ padding: 8, color: "rgba(240,237,230,.62)" }}>Q{i+1}</th>)}</tr></thead>
-            <tbody>{rows.map((row, ri) => <tr key={row.id || ri} style={{ borderTop: "1px solid rgba(255,255,255,.05)" }}><td style={{ padding: 8, color: "#F0EDE6", fontWeight: 800 }}>{row.name}</td><td style={{ padding: 8, color: "rgba(240,237,230,.55)", fontSize: 11 }}>{created(row)}</td>{CLUB_TOUR3_QUESTIONS.map((_, i) => <td key={i} style={{ padding: 8, textAlign: "center", color: answerFor(row, i) === "Да" ? "#93C5FD" : "#FCA5A5", fontWeight: 900 }}>{answerFor(row, i)}</td>)}</tr>)}</tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AdminRound2AnswersPanel({ session, showToast }) {
-  const token = session?.access_token;
-  const [rows, setRows] = React.useState([]);
-  const [official, setOfficial] = React.useState({});
-  const [loading, setLoading] = React.useState(true);
-  const [err, setErr] = React.useState("");
-  const [officialErr, setOfficialErr] = React.useState("");
-  const [saving, setSaving] = React.useState({});
-
-  React.useEffect(() => { loadRows(); }, []);
-
-  async function loadRows() {
-    setLoading(true);
-    setErr("");
-    setOfficialErr("");
-    try {
-      const r = await supa("ffc_round2_answers?select=*&order=created_at.desc&limit=1000", { token });
-      if (!r.ok) {
-        const t = await r.clone().text().catch(() => "");
-        throw new Error(t || `HTTP ${r.status}`);
-      }
-      const data = await r.json().catch(() => []);
-      setRows(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setErr(String(e?.message || e));
-    }
-
-    try {
-      let data2 = [];
-
-      const r2 = await supa("ffc_round2_official_answers?select=*&order=question_no.asc", { token }).catch(() => null);
-      if (r2?.ok) {
-        data2.push(...(await r2.json().catch(() => [])));
-      }
-
-      // Всегда читаем резервное хранилище тоже: если основная таблица пустая/не видна,
-      // ответы всё равно подтянутся из bonus_official_answers.
-      const fb = await supa("bonus_official_answers?select=*&question_id=like.round2_%&order=updated_at.desc.nullslast&limit=100", { token }).catch(() => null);
-      if (fb?.ok) {
-        data2.push(...(await fb.json().catch(() => [])));
-      }
-
-      const merged = { ...readClubRound2OfficialLocal(), ...buildClubRound2OfficialMap(data2) };
-      setOfficial(merged);
-      writeClubRound2OfficialLocal(merged);
-    } catch (e) {
-      const local = readClubRound2OfficialLocal();
-      if (Object.keys(local).length) setOfficial(local);
-      setOfficialErr(String(e?.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function answerFor(row, i) {
-    return clubRound2AnswerFor(row, i);
-  }
-
-  function created(row) {
-    if (!row.created_at) return "—";
-    try { return new Date(row.created_at).toLocaleString("ru-RU"); } catch { return String(row.created_at); }
-  }
-
-  function csvEscape(v) {
-    const s = String(v ?? "");
-    return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  }
-
-  function exportCsv() {
-    const header = ["Имя", "Дата", "Очки", ...CLUB_TOUR2_QUESTIONS.map((q, i) => `${i + 1}. ${q}`)];
-    const lines = [
-      header.map(csvEscape).join(";"),
-      ...rows.map(row => [row.name || "—", created(row), clubRound2Score(row, official), ...CLUB_TOUR2_QUESTIONS.map((_, i) => answerFor(row, i))].map(csvEscape).join(";"))
-    ];
-    const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ffc_round2_answers_${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showToast?.("CSV выгружен");
-  }
-
-  async function saveOfficialAnswer(questionNo, answer) {
-    setSaving(p => ({ ...p, [questionNo]: true }));
-    setOfficialErr("");
-    const qid = `round2_${questionNo}`;
-    const now = new Date().toISOString();
-    const ffcPayload = { question_no: questionNo, answer, points: 2, updated_at: now };
-    const bonusFull = { question_id: qid, answer, points: 2, status: "final", updated_at: now };
-    const bonusMinimal = { question_id: qid, answer, updated_at: now };
-    let savedSomewhere = false;
-    const errors = [];
-
-    async function tryJson(r) {
-      try { return await r.clone().json(); } catch { return null; }
-    }
-
-    // 1) Основная таблица 2-го тура, если она создана.
-    try {
-      const r = await supa(`ffc_round2_official_answers?on_conflict=question_no`, {
-        method: "POST",
-        token,
-        headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-        body: JSON.stringify(ffcPayload)
-      });
-      if (r.ok) savedSomewhere = true;
-      else errors.push(await r.clone().text().catch(() => `HTTP ${r.status}`));
-    } catch (e) {
-      errors.push(String(e?.message || e));
-    }
-
-    // 2) Резервное хранилище: сначала PATCH существующей строки, потом POST новой.
-    async function saveBonus(payload) {
-      const patch = await supa(`bonus_official_answers?question_id=eq.${encodeURIComponent(qid)}`, {
-        method: "PATCH",
-        token,
-        headers: { Prefer: "return=representation" },
-        body: JSON.stringify(payload)
-      });
-      if (patch.ok) {
-        const patched = await tryJson(patch);
-        if (Array.isArray(patched) && patched.length > 0) return true;
-      }
-
-      const post = await supa(`bonus_official_answers`, {
-        method: "POST",
-        token,
-        headers: { Prefer: "return=representation" },
-        body: JSON.stringify(payload)
-      });
-      if (post.ok) return true;
-
-      const postText = await post.clone().text().catch(() => "");
-      if (/duplicate|unique|constraint/i.test(postText)) {
-        const patch2 = await supa(`bonus_official_answers?question_id=eq.${encodeURIComponent(qid)}`, {
-          method: "PATCH",
-          token,
-          headers: { Prefer: "return=representation" },
-          body: JSON.stringify(payload)
-        });
-        if (patch2.ok) return true;
-      }
-      throw new Error(postText || `HTTP ${post.status}`);
-    }
-
-    try {
-      await saveBonus(bonusFull);
-      savedSomewhere = true;
-    } catch (e1) {
-      const msg = String(e1?.message || e1);
-      errors.push(msg);
-      if (/PGRST204|could not find.*points|column.*points|status|schema cache/i.test(msg)) {
-        try {
-          await saveBonus(bonusMinimal);
-          savedSomewhere = true;
-        } catch (e2) {
-          errors.push(String(e2?.message || e2));
-        }
-      }
-    }
-
-    if (savedSomewhere) {
-      const next = { ...official, [String(questionNo)]: answer };
-      setOfficial(next);
-      writeClubRound2OfficialLocal(next);
-      try { window.dispatchEvent(new CustomEvent("ffc-round2-official-updated", { detail: { questionNo, answer } })); } catch {}
-      showToast?.(`✓ Q${questionNo}: ${answer}`);
-
-      // Через короткую паузу перечитываем из базы, чтобы после обновления страницы всё совпадало.
-      setTimeout(() => { try { loadRows(); } catch {} }, 350);
-    } else {
-      setOfficialErr("Не удалось сохранить ответ. " + errors.join(" | ").slice(0, 500));
-    }
-
-    setSaving(p => ({ ...p, [questionNo]: false }));
-  }
-
-  const visibleRows = rows.filter(r => !isHiddenClubRound2Name(r?.name));
-  const officialCount = Object.values(official || {}).filter(Boolean).length;
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "#FDE68A" }}>📝 Ответы 2-го тура</span>
-        <span className="tag tg">{visibleRows.length} отправлено</span>
-        <span className="tag tr">верных {officialCount}/{CLUB_TOUR2_QUESTIONS.length}</span>
-        <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadRows}>↻ Обновить</button>
-        <button className="sb" style={{ fontSize: 11 }} onClick={exportCsv} disabled={!visibleRows.length}>CSV</button>
-      </div>
-
-      <div style={{ background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12, padding: 12, marginBottom: 14 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, color: "#FDE68A", marginBottom: 8 }}>
-          Верные ответы — 2 балла за каждый
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
-          {CLUB_TOUR2_QUESTIONS.map((q, i) => {
-            const no = i + 1;
-            const val = official[String(no)] || "";
-            return (
-              <div key={no} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: 10 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
-                  <div style={{ fontFamily: "Oswald,sans-serif", color: "#F59E0B", fontWeight: 900, minWidth: 24 }}>{no}</div>
-                  <div style={{ color: "#F0EDE6", fontSize: 12, lineHeight: 1.25 }}>{q}</div>
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {["Да", "Нет"].map(v => (
-                    <button
-                      key={v}
-                      disabled={saving[no]}
-                      onClick={() => saveOfficialAnswer(no, v)}
-                      style={{
-                        flex: 1,
-                        padding: "7px 8px",
-                        borderRadius: 8,
-                        cursor: "pointer",
-                        border: val === v ? "1px solid rgba(34,197,94,.65)" : "1px solid rgba(255,255,255,.12)",
-                        background: val === v ? "rgba(22,163,74,.18)" : "rgba(255,255,255,.04)",
-                        color: val === v ? "#86EFAC" : "rgba(240,237,230,.62)",
-                        fontWeight: 900
-                      }}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {officialErr && (
-          <div style={{ marginTop: 10, color: "#FCA5A5", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: 10, fontSize: 12 }}>
-            Не удалось сохранить/загрузить верные ответы: {officialErr}
-          </div>
-        )}
-      </div>
-
-      {loading && <div style={{ padding: 20, color: "rgba(240,237,230,.4)", fontSize: 13 }}>Загружаю ответы…</div>}
-
-      {!loading && (err || officialErr) && (
-        <details style={{ marginBottom: 14 }}>
-          <summary style={{ cursor: "pointer", color: "#FDE68A", fontSize: 12 }}>SQL для таблиц 2-го тура и прав</summary>
-          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", background: "rgba(0,0,0,.32)", color: "rgba(240,237,230,.62)", borderRadius: 8, padding: 12, fontSize: 10, marginTop: 8 }}>{clubRound2SqlBlock()}</pre>
-        </details>
-      )}
-
-      {!loading && err && (
-        <div style={{ background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.28)", borderRadius: 10, padding: 14, marginBottom: 14, color: "#FCA5A5", fontSize: 12 }}>
-          Не удалось загрузить ответы участников: {err}
-        </div>
-      )}
-
-      {!loading && !err && visibleRows.length === 0 && (
-        <div style={{ padding: 22, color: "rgba(240,237,230,.45)", fontSize: 13, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 10 }}>
-          Ответов пока нет. После отправки формы по ссылке <code>?ffc2=1</code> они появятся здесь.
-        </div>
-      )}
-
-      {!loading && !err && visibleRows.length > 0 && (
-        <div style={{ overflowX: "auto", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12, background: "rgba(255,255,255,.03)" }}>
-          <table style={{ borderCollapse: "collapse", minWidth: 1900, width: "100%" }}>
-            <thead>
-              <tr style={{ background: "rgba(245,158,11,.09)" }}>
-                <th style={{ position: "sticky", left: 0, zIndex: 3, background: "#102010", padding: "8px 10px", color: "#FDE68A", textAlign: "left", minWidth: 160 }}>Имя</th>
-                <th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", minWidth: 70 }}>Очки</th>
-                <th style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "left", minWidth: 130 }}>Дата</th>
-                {CLUB_TOUR2_QUESTIONS.map((q, i) => (
-                  <th key={i} title={q} style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "center", minWidth: 74, fontSize: 10 }}>
-                    Q{i + 1}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map((row, ri) => (
-                <tr key={row.id || `${row.name}_${ri}`} style={{ borderTop: "1px solid rgba(255,255,255,.05)" }}>
-                  <td style={{ position: "sticky", left: 0, zIndex: 2, background: ri % 2 ? "#071a07" : "#0b1d0b", padding: "8px 10px", color: "#F0EDE6", fontWeight: 800 }}>{row.name || "—"}</td>
-                  <td style={{ padding: "8px 10px", color: "#FDE68A", fontWeight: 900, textAlign: "center" }}>{clubRound2Score(row, official)}</td>
-                  <td style={{ padding: "8px 10px", color: "rgba(240,237,230,.48)", fontSize: 11, whiteSpace: "nowrap" }}>{created(row)}</td>
-                  {CLUB_TOUR2_QUESTIONS.map((_, i) => {
-                    const ans = answerFor(row, i);
-                    const correct = official[String(i + 1)];
-                    const isOk = correct && ans === correct;
-                    return (
-                      <td key={i} style={{ padding: "8px 10px", textAlign: "center", color: isOk ? "#86EFAC" : ans === "Да" ? "#93C5FD" : ans === "Нет" ? "#FCA5A5" : "rgba(240,237,230,.25)", fontWeight: 900 }}>
-                        {ans}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ padding: "10px 12px", color: "rgba(240,237,230,.42)", fontSize: 11 }}>
-            В открытой/админской таблице скрыта только точная тестовая запись «Василий». Если у игрока есть дубли отправок, берётся одна самая свежая. Наведи на Q1–Q20, чтобы увидеть вопрос.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-function ClubBattleInfoBlock() {
-  const cards = [
-    {
-      title: "Формат 2-го тура",
-      icon: "🏆",
-      items: [
-        "24 участника разделены на 6 групп по 4.",
-        "Каждый сыграет с каждым внутри своей группы: 3 тура, 3 матча на участника.",
-        "Победа в паре — 3 очка, ничья — 1 очко, поражение — 0.",
-        "В 1/8 финала выйдут по 2 лучших из каждой группы, а также 4 лучших третьих места.",
-      ],
-    },
-    {
-      title: "Как считается матч",
-      icon: "⚔️",
-      items: [
-        "Матч 1 на 1 считается по ответам Да/Нет на 20 вопросов 2-го тура.",
-        "За каждый верный ответ участник получает 2 балла.",
-        "В паре побеждает тот, кто набрал больше баллов за верные ответы.",
-        "Если суммы равны — ничья.",
-      ],
-    },
-    {
-      title: "Вратарь",
-      icon: "🧤",
-      items: [
-        "Вышел в старте — 2 балла, вышел на замену — 1 балл.",
-        "+6 — сухой матч.",
-        "+3 — победа сборной.",
-        "+8 — отбитый пенальти.",
-        "−1 — каждый пропущенный гол.",
-        "−1 — жёлтая карточка, −4 — красная карточка.",
-      ],
-    },
-    {
-      title: "Защитник",
-      icon: "🛡️",
-      items: [
-        "Вышел в старте — 2 балла, вышел на замену — 1 балл.",
-        "+5 — сухой матч.",
-        "+8 — гол.",
-        "+5 — ассист.",
-        "+2 — победа сборной.",
-        "−1 — жёлтая карточка, −4 — красная карточка.",
-      ],
-    },
-    {
-      title: "Полузащитник",
-      icon: "🎯",
-      items: [
-        "Вышел в старте — 2 балла, вышел на замену — 1 балл.",
-        "+6 — гол.",
-        "+5 — ассист.",
-        "+2 — победа сборной.",
-        "−1 — жёлтая карточка, −4 — красная карточка.",
-      ],
-    },
-    {
-      title: "Нападающий",
-      icon: "⚽",
-      items: [
-        "Вышел в старте — 2 балла, вышел на замену — 1 балл.",
-        "+5 — гол.",
-        "+3 дополнительно — дубль.",
-        "+6 дополнительно — хет-трик.",
-        "+4 — ассист.",
-        "+2 — победа сборной.",
-        "−3 — незабитый пенальти.",
-        "−1 — жёлтая карточка, −4 — красная карточка.",
-      ],
-    },
-    {
-      title: "Тренер",
-      icon: "🧠",
-      items: [
-        "+5 — победа сборной.",
-        "+2 — ничья.",
-        "+2 — если команда забила 3+ гола.",
-        "−2 — красная карточка у команды.",
-      ],
-    },
-    {
-      title: "Тай-брейки в группе",
-      icon: "📊",
-      items: [
-        "1. Очки.",
-        "2. Разница очков состава в матчах группы.",
-        "3. Набранные очки состава.",
-        "4. Личная встреча.",
-        "5. При полном равенстве — решение организатора / дополнительный критерий.",
-      ],
-    },
-  ];
-
-  return (
-    <div>
-      <div style={{ textAlign: "center", marginBottom: 18 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(26px,3vw,44px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase", letterSpacing: ".03em" }}>
-          ℹ️ 1 на 1 · Инфо
-        </div>
-        <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 6 }}>
-          Правила турнира и начисление очков за игроков состава.
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-        {cards.map((card) => (
-          <div key={card.title} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(245,158,11,.20)", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ padding: "11px 13px", background: "rgba(245,158,11,.09)", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 20 }}>{card.icon}</span>
-              <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>{card.title}</span>
-            </div>
-            <div style={{ padding: "12px 14px" }}>
-              {card.items.map((item, idx) => (
-                <div key={idx} style={{ display: "flex", gap: 8, marginBottom: idx === card.items.length - 1 ? 0 : 7, color: "rgba(240,237,230,.76)", fontSize: 13, lineHeight: 1.35 }}>
-                  <span style={{ color: "#86EFAC", fontWeight: 900 }}>•</span>
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ marginTop: 14, padding: 14, borderRadius: 12, border: "1px solid rgba(34,197,94,.22)", background: "rgba(22,163,74,.07)", color: "rgba(240,237,230,.72)", fontSize: 13, lineHeight: 1.45 }}>
-        <b style={{ color: "#86EFAC" }}>Важно:</b> очки конкретных игроков/тренеров проставляются организатором после матчей. Таблица групп обновляется по результатам матчей участников.
-      </div>
-    </div>
-  );
-}
-
-
-function clubBattleNameKey(str) {
-  return String(str || "")
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[“”«»"]/g, "")
-    .replace(/[^a-zа-я0-9_ ]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isExcludedFromClubGroups(name) {
-  // Никого не скрываем: состав Xenia Ge снова участвует в публичной Битве клубов.
-  return false;
-}
-
-function clubSeedHash(str) {
-  let h = 2166136261;
-  const s = String(str || "");
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-const CLUB_GROUP_ROUNDS = [
-  [[0, 5], [1, 4], [2, 3]],
-  [[0, 4], [5, 3], [1, 2]],
-  [[0, 3], [4, 2], [5, 1]],
-  [[0, 2], [3, 1], [4, 5]],
-  [[0, 1], [2, 5], [3, 4]],
-];
-
-
-function ffcCleanPlayerKey(name, team = "") {
-  const rawName = String(name || "");
-  const n0 = rawName
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[“”«»"']/g, "")
-    .replace(/[^a-zа-я0-9]+/g, " ")
-    .trim();
-
-  const aliases = {
-    "andrew robertson": "andy robertson",
-    "andy robertson": "andy robertson",
-    "энди робертсон": "andy robertson",
-    "ендри робертсон": "andy robertson",
-    "ендрю робертсон": "andy robertson",
-    "эндри робертсон": "andy robertson",
-    "эндрю робертсон": "andy robertson",
-
-    "granit xhaka": "granit xhaka",
-    "гранит джака": "granit xhaka",
-    "гранит шака": "granit xhaka",
-    "гранит хака": "granit xhaka",
-
-    "erling haaland": "erling haaland",
-    "эрлинг холанд": "erling haaland",
-    "ерлинг холанд": "erling haaland",
-    "haaland": "erling haaland",
-    "холанд": "erling haaland",
-
-    "kylian mbappe": "kylian mbappe",
-    "килиан мбаппе": "kylian mbappe",
-    "mbappe": "kylian mbappe",
-    "мбаппе": "kylian mbappe",
-
-    "kevin de bruyne": "kevin de bruyne",
-    "кевин де брейне": "kevin de bruyne",
-    "кевин де брёйне": "kevin de bruyne",
-    "кевин де брюине": "kevin de bruyne",
-
-    "virgil van dijk": "virgil van dijk",
-    "вирджил ван дейк": "virgil van dijk",
-    "виргил ван дайк": "virgil van dijk",
-    "вирджил ван дайк": "virgil van dijk",
-    "ван дейк": "virgil van dijk",
-
-    "julian nagelsmann": "julian nagelsmann",
-    "юлиан нагельсманн": "julian nagelsmann",
-    "didier deschamps": "didier deschamps",
-    "дидье дешам": "didier deschamps",
-    "emiliano martinez": "emiliano martinez",
-    "эмилиано мартинес": "emiliano martinez",
-    "gregor kobel": "gregor kobel",
-    "грегор кобель": "gregor kobel",
-  };
-
-  return aliases[n0] || n0;
-}
-
-function ffcPlayerNameTeamKey(name, team = "") {
-  const n = ffcCleanPlayerKey(name, "");
-  const t = String(team || "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[^a-zа-я0-9]+/g, " ")
-    .trim();
-  return `${n}|${t}`;
-}
-
-const ADDITIVE_BONUS_QUESTION_IDS = new Set([
-  "player_scores_header",
-  "player_gets_yellow_card",
-  "player_sent_off",
-  "player_scores_as_sub",
-  "player_scores_free_kick",
-  "goalkeeper_saves_penalty",
-  "player_misses_penalty",
-]);
-
-function isAdditiveBonusQuestion(qid) {
-  return ADDITIVE_BONUS_QUESTION_IDS.has(String(qid || ""));
-}
-
-function isFinalBonusOfficialRow(qid, row) {
-  if (!row) return false;
-  // Для ВСЕХ бонусных вопросов кнопка «+ зачёт» означает только промежуточный зачёт.
-  // Остальные ответы остаются нейтральными и могут стать верными позже.
-  // Неверными они становятся только после явного закрытия вопроса кнопкой «только».
-  return row.status === "final";
-}
-
-function bonusOfficialAllowsScoring(row) {
-  return !!row && ["open", "confirmed", "final"].includes(String(row.status || ""));
-}
-
-function bonusAnswerList(value) {
-  if (value === undefined || value === null || value === "") return [];
-  if (Array.isArray(value)) return value.flatMap(bonusAnswerList);
-  if (typeof value === "object") {
-    const candidate = value.answer ?? value.value ?? value.name ?? value.player_name ?? value.playerName ?? value.custom ?? value.other ?? value.text;
-    if (candidate !== undefined && candidate !== null) return bonusAnswerList(candidate);
-    return [];
-  }
-  const raw = String(value).trim();
-  if (!raw) return [];
-  if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
-    try { return bonusAnswerList(JSON.parse(raw)); } catch {}
-  }
-  // Официальные ответы админа можно ввести через запятую: игрок 1, игрок 2, ...
-  return raw.split(",").map(x => x.trim()).filter(Boolean);
-}
-
-function normalizeBonusAnswer(value) {
-  return ffcCleanPlayerKey(String(value || ""));
-}
-
-function bonusAnswerMatches(userAnswer, officialAnswer) {
-  const users = bonusAnswerList(userAnswer).map(normalizeBonusAnswer).filter(Boolean);
-  const officials = bonusAnswerList(officialAnswer).map(normalizeBonusAnswer).filter(Boolean);
-  if (!users.length || !officials.length) return false;
-  return users.some(u => officials.includes(u));
-}
-
-// В старых базах могли накопиться дубли bonus_official_answers.
-// Выбираем подтверждённую, непустую и самую свежую строку для каждого вопроса.
-function buildBonusOfficialMap(rows) {
-  const map = {};
-  const scoreRow = (r) => {
-    const nonEmpty = bonusAnswerList(r?.answer).length > 0 ? 10000000000000 : 0;
-    const statusRank = r?.status === "final" ? 30000000000000
-      : r?.status === "open" ? 20000000000000
-      : r?.status === "confirmed" ? 20000000000000
-      : 0;
-    const ts = Date.parse(r?.updated_at || r?.created_at || 0) || 0;
-    return statusRank + nonEmpty + ts;
-  };
-  (Array.isArray(rows) ? rows : []).forEach(r => {
-    const qid = String(r?.question_id || "");
-    if (!qid) return;
-    if (!map[qid] || scoreRow(r) > scoreRow(map[qid])) map[qid] = r;
-  });
-  return map;
-}
-
-
-function PublicClubGroupsBlock({ mode = "groups", session = null }) {
-  const [cards, setCards] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [debug, setDebug] = React.useState(null);
-  const [round, setRound] = React.useState(1);
-  const [roundGroup, setRoundGroup] = React.useState("A");
-  const [roundScores, setRoundScores] = React.useState({});
-  const [round2Rows, setRound2Rows] = React.useState([]);
-  const [round2Official, setRound2Official] = React.useState({});
-  const [round21Rows, setRound21Rows] = React.useState([]);
-  const [round21Official, setRound21Official] = React.useState({});
-  const [round2Debug, setRound2Debug] = React.useState(null);
-  const [isRound2Mobile, setIsRound2Mobile] = React.useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 720 : false
-  );
-
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onResize = () => setIsRound2Mobile(window.innerWidth < 720);
-    onResize();
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
-    };
-  }, []);
-
-  // Страховка от вечной загрузки: если Supabase/сеть подвисли у пользователя,
-  // всё равно показываем вкладку с диагностикой, а не бесконечное "Загружаю группы…".
-  React.useEffect(() => {
-    const t = setTimeout(() => {
-      setLoading(false);
-      setDebug(d => d || { warning: "timeout_fallback" });
-    }, 7000);
-    return () => clearTimeout(t);
-  }, []);
-
-  const SLOT_ORDER = ["coach","goalkeeper","defender1","defender2","defender3","defender4","midfielder1","midfielder2","midfielder3","midfielder4","forward1","forward2"];
-  const SLOT_LABELS = { coach:"Тр", goalkeeper:"Вр", defender1:"Защ", defender2:"Защ", defender3:"Защ", defender4:"Защ", midfielder1:"Пл", midfielder2:"Пл", midfielder3:"Пл", midfielder4:"Пл", forward1:"Нап", forward2:"Нап" };
-
-  const FALLBACK_OPTIONS = React.useMemo(() => {
-    const rows = [
-      ["coach","Тренер",1,"Lionel Scaloni","Аргентина"],["coach","Тренер",2,"Didier Deschamps","Франция"],["coach","Тренер",3,"Julian Nagelsmann","Германия"],["coach","Тренер",4,"Luis de la Fuente","Испания"],["coach","Тренер",5,"Marcelo Bielsa","Уругвай"],
-      ["goalkeeper","Вратарь",1,"Guillermo Ochoa","Мексика"],["goalkeeper","Вратарь",2,"Ronwen Williams","ЮАР"],["goalkeeper","Вратарь",3,"Mat Ryan","Австралия"],["goalkeeper","Вратарь",4,"Gregor Kobel","Швейцария"],["goalkeeper","Вратарь",5,"Emiliano Martinez","Аргентина"],
-      ["defender1","Защитник 1",1,"Achraf Hakimi","Марокко"],["defender1","Защитник 1",2,"Virgil van Dijk","Нидерланды"],["defender1","Защитник 1",3,"Kalidou Koulibaly","Сенегал"],["defender1","Защитник 1",4,"Josko Gvardiol","Хорватия"],["defender1","Защитник 1",5,"Wilfried Singo","Кот-д'Ивуар"],
-      ["defender2","Защитник 2",1,"Kim Min-jae","Республика Корея"],["defender2","Защитник 2",2,"Marquinhos","Бразилия"],["defender2","Защитник 2",3,"John Stones","Англия"],["defender2","Защитник 2",4,"Alphonso Davies","Канада"],["defender2","Защитник 2",5,"Nuno Mendes","Португалия"],
-      ["defender3","Защитник из андердогов",1,"Liberato Cacace","Новая Зеландия"],["defender3","Защитник из андердогов",2,"Stopira","Кабо-Верде"],["defender3","Защитник из андердогов",3,"Michael Amir Murillo","Панама"],["defender3","Защитник из андердогов",4,"Abdukodir Khusanov","Узбекистан"],["defender3","Защитник из андердогов",5,"Jurien Gaari","Кюрасао"],
-      ["defender4","Защитник 4",1,"Sead Kolasinac","Босния и Герцеговина"],["defender4","Защитник 4",2,"Lucas Mendes","Катар"],["defender4","Защитник 4",3,"Chris Richards","США"],["defender4","Защитник 4",4,"Andy Robertson","Шотландия"],["defender4","Защитник 4",5,"Antonee Robinson","США"],
-      ["midfielder1","Полузащитник 1",1,"Jude Bellingham","Англия"],["midfielder1","Полузащитник 1",2,"Pedri","Испания"],["midfielder1","Полузащитник 1",3,"Federico Valverde","Уругвай"],["midfielder1","Полузащитник 1",4,"Kevin De Bruyne","Бельгия"],["midfielder1","Полузащитник 1",5,"Jamal Musiala","Германия"],
-      ["midfielder2","Полузащитник 2",1,"Granit Xhaka","Швейцария"],["midfielder2","Полузащитник 2",2,"Hakan Calhanoglu","Турция"],["midfielder2","Полузащитник 2",3,"Moises Caicedo","Эквадор"],["midfielder2","Полузащитник 2",4,"Takefusa Kubo","Япония"],["midfielder2","Полузащитник 2",5,"Mohammed Kudus","Гана"],
-      ["midfielder3","Полузащитник из андердогов",1,"Zidane Iqbal","Ирак"],["midfielder3","Полузащитник из андердогов",2,"Noor Al-Rawabdeh","Иордания"],["midfielder3","Полузащитник из андердогов",3,"Jean-Ricner Bellegarde","Гаити"],["midfielder3","Полузащитник из андердогов",4,"Aissa Laidouni","Тунис"],["midfielder3","Полузащитник из андердогов",5,"Jackson Irvine","Австралия"],
-      ["midfielder4","Полузащитник 4",1,"Miguel Almiron","Парагвай"],["midfielder4","Полузащитник 4",2,"Ismael Bennacer","Алжир"],["midfielder4","Полузащитник 4",3,"Marcel Sabitzer","Австрия"],["midfielder4","Полузащитник 4",4,"Richard Rios","Колумбия"],["midfielder4","Полузащитник 4",5,"Salem Al-Dawsari","Саудовская Аравия"],
-      ["forward1","Нападающий 1",1,"Kylian Mbappe","Франция"],["forward1","Нападающий 1",2,"Эрлинг Холанд","Норвегия"],["forward1","Нападающий 1",3,"Lionel Messi","Аргентина"],["forward1","Нападающий 1",4,"Vinicius Jr","Бразилия"],["forward1","Нападающий 1",5,"Cristiano Ronaldo","Португалия"],
-      ["forward2","Нападающий 2",1,"Mohamed Salah","Египет"],["forward2","Нападающий 2",2,"Alexander Isak","Швеция"],["forward2","Нападающий 2",3,"Mehdi Taremi","Иран"],["forward2","Нападающий 2",4,"Yoane Wissa","ДР Конго"],["forward2","Нападающий 2",5,"Patrik Schick","Чехия"],
-    ];
-    const slotOrderMap = { coach:1, goalkeeper:2, defender1:3, defender2:4, defender3:5, defender4:6, midfielder1:7, midfielder2:8, midfielder3:9, midfielder4:10, forward1:11, forward2:12 };
-    const map = {};
-    rows.forEach(([slotKey, slotLabel, optionNo, playerName, natTeam]) => {
-      const tail = String((slotOrderMap[slotKey] || 99) * 100 + optionNo).padStart(12, "0");
-      map[`00000000-0000-4000-8000-${tail}`] = { slot_key: slotKey, slot_label: slotLabel, player_name: playerName, national_team: natTeam };
-    });
-    return map;
-  }, []);
-
-  React.useEffect(() => { loadCards(); loadRound2PublicData(); }, []);
-  React.useEffect(() => {
-    const h = () => loadRound2PublicData();
-    window.addEventListener("ffc-round2-official-updated", h);
-    return () => window.removeEventListener("ffc-round2-official-updated", h);
-  }, [session?.access_token]);
-
-  async function loadRound2PublicData() {
-    try {
-      const [answerRows, round21AnswerRows, officialRowsMain, officialRowsFallback, round21OfficialRows] = await Promise.all([
-        fetchAnon("ffc_round2_answers?select=*&order=created_at.asc").catch(e => {
-          setRound2Debug({ answersError: e?.message || String(e) });
-          return [];
-        }),
-        fetchAnon(`ffc_round2_answers?select=*&source=eq.${CLUB_ROUND21_SOURCE}&order=created_at.asc`).catch(e => {
-          setRound2Debug({ round21AnswersError: e?.message || String(e) });
-          return [];
-        }),
-        fetchAnon("ffc_round2_official_answers?select=*&order=question_no.asc").catch(e => {
-          setRound2Debug({ officialError: e?.message || String(e) });
-          return [];
-        }),
-        fetchAnon("bonus_official_answers?select=*&question_id=like.round2_%&order=updated_at.desc.nullslast").catch(e => {
-          setRound2Debug({ fallbackError: e?.message || String(e) });
-          return [];
-        }),
-        fetchAnon("bonus_official_answers?select=*&question_id=like.round21_%&order=updated_at.desc.nullslast").catch(e => {
-          setRound2Debug({ round21OfficialError: e?.message || String(e) });
-          return [];
-        }),
-      ]);
-      setRound2Rows(Array.isArray(answerRows) ? answerRows : []);
-      setRound21Rows(Array.isArray(round21AnswerRows) ? round21AnswerRows : []);
-      setRound2Official(buildClubRound2OfficialMap([...(Array.isArray(officialRowsMain) ? officialRowsMain : []), ...(Array.isArray(officialRowsFallback) ? officialRowsFallback : [])]));
-      setRound21Official(buildClubRound21OfficialMap(round21OfficialRows));
-    } catch (e) {
-      setRound2Debug({ error: e?.message || String(e) });
-    }
-  }
-
-  async function fetchAnon(path) {
-    const PAGE = 1000;
-
-    async function readWithToken(bearerToken) {
-      const rows = [];
-      for (let page = 0; page < 20; page++) {
-        const sep = path.includes("?") ? "&" : "?";
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 6500);
-        let r;
-        try {
-          r = await fetch(`${SUPABASE_URL}/rest/v1/${path}${sep}limit=${PAGE}&offset=${page * PAGE}`, {
-            cache: "no-store",
-            signal: ctrl.signal,
-            headers: {
-              apikey: SUPABASE_KEY,
-              Authorization: `Bearer ${bearerToken}`,
-              "Cache-Control": "no-cache",
-              Pragma: "no-cache"
-            }
-          });
-        } finally {
-          clearTimeout(timer);
-        }
-        if (!r.ok) throw new Error(`${path}: ${r.status} ${(await r.text().catch(() => "")).slice(0, 180)}`);
-        const arr = await r.json().catch(() => []);
-        if (!Array.isArray(arr)) break;
-        rows.push(...arr);
-        if (arr.length < PAGE) break;
-      }
-      return rows;
-    }
-
-    const token = session?.access_token;
-    if (token) {
-      let authRows = null;
-      try {
-        authRows = await readWithToken(token);
-        if (Array.isArray(authRows) && authRows.length > 0) return authRows;
-      } catch (e) {
-        console.warn("[1on1] auth fetch failed, fallback anon", path, e);
-      }
-      try {
-        const anonRows = await readWithToken(SUPABASE_KEY);
-        if (Array.isArray(anonRows) && anonRows.length > 0) return anonRows;
-      } catch (e) {
-        if (Array.isArray(authRows)) return authRows;
-        throw e;
-      }
-      return Array.isArray(authRows) ? authRows : [];
-    }
-
-    return await readWithToken(SUPABASE_KEY);
-  }
-
-  async function fetchLineupsSafe() {
-    const queries = [
-      "ffc_lineups?select=id,user_id,round_id,lineup_status,submitted_at,updated_at,draft_answers,captain_option_id&order=updated_at.desc.nullslast,submitted_at.desc.nullslast",
-      "ffc_lineups?select=id,user_id,lineup_status,submitted_at,draft_answers,captain_option_id&order=submitted_at.desc.nullslast",
-      "ffc_lineups?select=id,user_id,lineup_status,draft_answers,captain_option_id",
-    ];
-    for (const q of queries) {
-      try {
-        const rows = await fetchAnon(q);
-        if (rows.length) return rows;
-      } catch {}
-    }
-    return [];
-  }
-
-  async function fetchScoresSafe() {
-    const queries = [
-      "ffc_round_player_scores?select=player_id,option_id,points,player_name,national_team,round_id",
-      "ffc_round_player_scores?select=player_id,option_id,points,round_id",
-      "ffc_round_player_scores?select=*",
-    ];
-    for (const q of queries) {
-      try {
-        const rows = await fetchAnon(q);
-        if (Array.isArray(rows)) return rows;
-      } catch {}
-    }
-    return [];
-  }
-
-  function buildScoreMap(scoreRows, optionMap, playerMap) {
-    const map = {};
-    (scoreRows || []).forEach(r => {
-      const id = String(r.player_id || r.option_id || "");
-      if (!id) return;
-      map[id] = r;
-      const opt = optionMap[id];
-      const pl = playerMap[id];
-      const nm = r.player_name || opt?.player_name || pl?.name;
-      const tm = r.national_team || opt?.national_team || pl?.national_team;
-      if (nm) {
-        map[`name:${ffcCleanPlayerKey(nm, tm)}`] = r;
-        map[`nameTeam:${ffcPlayerNameTeamKey(nm, tm)}`] = r;
-      }
-    });
-    return map;
-  }
-
-  function scoreForResolvedOption(scoreMap, optionId, resolved) {
-    const id = String(optionId || "");
-    const direct = scoreMap[id]?.points;
-    if (direct !== undefined && direct !== null) return Number(direct);
-
-    const byNameTeam = scoreMap[`nameTeam:${ffcPlayerNameTeamKey(resolved?.name, resolved?.team)}`]?.points;
-    if (byNameTeam !== undefined && byNameTeam !== null) return Number(byNameTeam);
-
-    const byName = scoreMap[`name:${ffcCleanPlayerKey(resolved?.name, resolved?.team)}`]?.points;
-    if (byName !== undefined && byName !== null) return Number(byName);
-
-    return null;
-  }
-
-  async function loadCards() {
-    setLoading(true);
-    try {
-      const [lineupRows, profileRows, draftOptionRows, ffcPlayerRows, scoreRows] = await Promise.all([
-        fetchLineupsSafe().catch(() => []),
-        fetchAnon("profiles?select=id,name,display_name&order=name.asc").catch(() => []),
-        fetchAnon("ffc_round_draft_options?select=id,slot_key,player_name,national_team").catch(() => []),
-        fetchAnon("ffc_players?select=id,name,national_team,position").catch(() => []),
-        fetchScoresSafe().catch(() => []),
-      ]);
-
-      const profileMap = {};
-      profileRows.forEach(p => { if (p.id) profileMap[p.id] = p; if (p.user_id) profileMap[p.user_id] = p; });
-
-      const optMap = {};
-      draftOptionRows.forEach(o => { if (o.id) optMap[o.id] = o; });
-      Object.entries(FALLBACK_OPTIONS).forEach(([id, o]) => { if (!optMap[id]) optMap[id] = o; });
-      const playerMap = {};
-      ffcPlayerRows.forEach(p => { if (p.id) playerMap[p.id] = p; });
-
-      const scoreMap = buildScoreMap(scoreRows, optMap, playerMap);
-      setRoundScores(scoreMap);
-
-      function resolvePlayer(optionId) {
-        if (!optionId) return null;
-        const sid = String(optionId);
-        if (optMap[sid]) return { name: optMap[sid].player_name, team: optMap[sid].national_team, slot_key: optMap[sid].slot_key };
-        if (FALLBACK_OPTIONS[sid]) return { name: FALLBACK_OPTIONS[sid].player_name, team: FALLBACK_OPTIONS[sid].national_team, slot_key: FALLBACK_OPTIONS[sid].slot_key };
-        if (playerMap[sid]) return { name: playerMap[sid].name, team: playerMap[sid].national_team, slot_key: null };
-        return { name: `[${sid.slice(0, 8)}…]`, team: "?", slot_key: null };
-      }
-
-      const byUser = {};
-      lineupRows.forEach(l => {
-        if (!l.user_id) return;
-        const hasDraft = l.draft_answers && JSON.stringify(l.draft_answers) !== "{}" && l.draft_answers !== null;
-        if (!hasDraft) return;
-        const old = byUser[l.user_id];
-        if (!old || String(l.lineup_status) === "submitted" || (l.updated_at || "") > (old.updated_at || "")) byUser[l.user_id] = l;
-      });
-
-      const loaded = Object.values(byUser).map(l => {
-        const profile = profileMap[l.user_id] || {};
-        const name = publicDisplayNameOverride(profile.display_name || profile.name || String(l.user_id).slice(0, 8));
-        const raw = typeof l.draft_answers === "string" ? JSON.parse(l.draft_answers || "{}") : (l.draft_answers || {});
-        const slots = [];
-        SLOT_ORDER.forEach(slotKey => {
-          const val = raw?.[slotKey];
-          if (!val) return;
-          const optionId = typeof val === "object" ? (val.option_id || val.id || val.optionId) : String(val);
-          const resolved = resolvePlayer(optionId);
-          slots.push({
-            slot_key: slotKey,
-            option_id: optionId,
-            label: SLOT_LABELS[slotKey] || slotKey,
-            player_name: resolved?.name || optionId,
-            national_team: resolved?.team || "",
-            points: scoreForResolvedOption(scoreMap, optionId, resolved),
-            isCaptain: optionId && optionId === l.captain_option_id,
-          });
-        });
-        return { user_id: l.user_id, name, slots, submittedAt: l.submitted_at, isSubmitted: String(l.lineup_status) === "submitted" || !!l.submitted_at };
-      }).filter(c => c.slots.length > 0 && !isExcludedFromClubGroups(c.name));
-
-      loaded.sort((a, b) => clubSeedHash(a.name) - clubSeedHash(b.name));
-      setCards(loaded);
-      setDebug({ lineupRows: lineupRows.length, profiles: profileRows.length, scores: scoreRows.length, usable: loaded.length, shown: loaded.length, excluded: 0 });
-    } catch (e) {
-      setDebug({ error: e?.message || String(e) });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const groups = React.useMemo(() => {
-    const g = { A: [], B: [], C: [] };
-    cards.forEach((card, i) => {
-      const groupKey = ["A", "B", "C"][i % 3];
-      g[groupKey].push(card);
-    });
-    return g;
-  }, [cards]);
-
-  const matchesByGroup = React.useMemo(() => {
-    const out = {};
-    Object.entries(groups).forEach(([gKey, members]) => {
-      out[gKey] = CLUB_GROUP_ROUNDS.map((roundPairs, ri) => ({
-        round: ri + 1,
-        matches: roundPairs.map(([a, b]) => ({ home: members[a] || null, away: members[b] || null })).filter(m => m.home && m.away),
-      }));
-    });
-    return out;
-  }, [groups]);
-
-  function slotRows(card) {
-    const rank = Object.fromEntries(SLOT_ORDER.map((k, i) => [k, i]));
-    return [...(card?.slots || [])].sort((a, b) => (rank[a.slot_key] ?? 99) - (rank[b.slot_key] ?? 99));
-  }
-
-  function LineupMini({ card }) {
-    const rows = slotRows(card);
-    const bySlot = Object.fromEntries(rows.map(s => [s.slot_key, s]));
-    const coach = bySlot.coach;
-    const gk = bySlot.goalkeeper;
-    const defenders = ["defender1","defender2","defender3","defender4"].map(k => bySlot[k]).filter(Boolean);
-    const midfielders = ["midfielder1","midfielder2","midfielder3","midfielder4"].map(k => bySlot[k]).filter(Boolean);
-    const forwards = ["forward1","forward2"].map(k => bySlot[k]).filter(Boolean);
-
-    function PlayerChip({ slot }) {
-      if (!slot) return <div style={{ width: 128, height: 42 }} />;
-      return (
-        <div style={{
-          minWidth: 118,
-          maxWidth: 150,
-          padding: "6px 8px",
-          borderRadius: 10,
-          background: slot.isCaptain ? "rgba(245,158,11,.22)" : "rgba(2,6,23,.60)",
-          border: slot.isCaptain ? "1px solid rgba(245,158,11,.65)" : "1px solid rgba(134,239,172,.22)",
-          boxShadow: slot.isCaptain ? "0 0 0 1px rgba(245,158,11,.12)" : "none",
-          textAlign: "center"
-        }}>
-          <div style={{ fontSize: 10, color: "rgba(240,237,230,.50)", lineHeight: 1.1, marginBottom: 2 }}>
-            {slot.label}
-          </div>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 12, color: slot.isCaptain ? "#FDE68A" : "#F0EDE6", fontWeight: 900, lineHeight: 1.05 }}>
-            {slot.isCaptain ? "★ " : ""}{slot.player_name}
-          </div>
-          <div style={{ fontSize: 9, color: "rgba(240,237,230,.45)", lineHeight: 1.05, marginTop: 2 }}>
-            {slot.national_team || "—"} · очки {slot.points ?? "—"}
-          </div>
-        </div>
-      );
-    }
-
-    function Row({ children, top }) {
-      return (
-        <div style={{
-          position: "absolute",
-          left: 10,
-          right: 10,
-          top,
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: 8,
-          flexWrap: "nowrap"
-        }}>
-          {children}
-        </div>
-      );
-    }
-
-    return (
-      <div style={{ flex: 1, minWidth: 560, background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 16, overflow: "hidden" }}>
-        <div style={{ padding: "9px 12px", background: "rgba(22,163,74,.10)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, color: "#F0EDE6", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <span>{card?.name || "—"}</span>
-          <span style={{ fontSize: 12, color: "#86EFAC", letterSpacing: ".08em" }}>4-4-2</span>
-        </div>
-
-        <div style={{
-          position: "relative",
-          minHeight: 555,
-          background: "linear-gradient(180deg, rgba(22,101,52,.45), rgba(5,46,22,.55))",
-          borderTop: "1px solid rgba(255,255,255,.06)",
-          overflow: "hidden"
-        }}>
-          <div style={{ position: "absolute", inset: 14, border: "1px solid rgba(255,255,255,.16)", borderRadius: 120 }} />
-          <div style={{ position: "absolute", left: "50%", top: 14, bottom: 14, width: 1, background: "rgba(255,255,255,.12)" }} />
-          <div style={{ position: "absolute", left: "50%", top: "50%", width: 110, height: 110, marginLeft: -55, marginTop: -55, border: "1px solid rgba(255,255,255,.14)", borderRadius: "50%" }} />
-          <div style={{ position: "absolute", left: "50%", top: "50%", width: 8, height: 8, marginLeft: -4, marginTop: -4, background: "rgba(255,255,255,.18)", borderRadius: "50%" }} />
-
-          {coach && (
-            <div style={{ position: "absolute", left: 16, top: 16, width: 150 }}>
-              <div style={{ fontSize: 10, color: "rgba(240,237,230,.45)", marginBottom: 4 }}>Тренер на бровке</div>
-              <PlayerChip slot={coach} />
-            </div>
-          )}
-
-          <Row top={28}>{forwards.map((s, i) => <PlayerChip key={s.slot_key || i} slot={s} />)}</Row>
-          <Row top={150}>{midfielders.map((s, i) => <PlayerChip key={s.slot_key || i} slot={s} />)}</Row>
-          <Row top={295}>{defenders.map((s, i) => <PlayerChip key={s.slot_key || i} slot={s} />)}</Row>
-          <Row top={430}><PlayerChip slot={gk} /></Row>
-        </div>
-      </div>
-    );
-  }
-
-
-  function MatchPitchCombined({ home, away, group, roundNo }) {
-    const slotKeys = {
-      coach: ["coach"],
-      goalkeeper: ["goalkeeper"],
-      defenders: ["defender1","defender2","defender3","defender4"],
-      midfielders: ["midfielder1","midfielder2","midfielder3","midfielder4"],
-      forwards: ["forward1","forward2"],
-    };
-
-    function bySlot(card) {
-      return Object.fromEntries(slotRows(card).map(s => [s.slot_key, s]));
-    }
-
-    const homeMap = bySlot(home);
-    const awayMap = bySlot(away);
-
-    function chipStyle(side, role, captain) {
-      const border = captain ? "1px solid rgba(245,158,11,.75)" : side === "home" ? "1px solid rgba(134,239,172,.24)" : "1px solid rgba(147,197,253,.28)";
-      const bg = captain ? "rgba(245,158,11,.22)" : side === "home" ? "rgba(2,44,34,.82)" : "rgba(15,23,42,.82)";
-      return {
-        position: "absolute",
-        transform: "translate(-50%, -50%)",
-        width: role === "coach" ? 128 : 118,
-        minHeight: 44,
-        padding: "5px 7px",
-        borderRadius: 10,
-        background: bg,
-        border,
-        boxShadow: captain ? "0 0 0 1px rgba(245,158,11,.16), 0 8px 20px rgba(0,0,0,.24)" : "0 8px 18px rgba(0,0,0,.18)",
-        textAlign: "center",
-        zIndex: role === "coach" ? 4 : 3,
-      };
-    }
-
-    function Player({ slot, side, x, y, role }) {
-      if (!slot) return null;
-      return (
-        <div style={{ ...chipStyle(side, role, slot.isCaptain), left: `${x}%`, top: `${y}%` }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 11, color: slot.isCaptain ? "#FDE68A" : "#F0EDE6", fontWeight: 900, lineHeight: 1.1 }}>
-            {slot.isCaptain ? "★ " : ""}{slot.player_name}
-          </div>
-          <div style={{ fontSize: 8.5, color: "rgba(240,237,230,.45)", lineHeight: 1.05, marginTop: 2 }}>
-            {slot.national_team || "—"} · очки {slot.points ?? "—"}
-          </div>
-        </div>
-      );
-    }
-
-    function SideFormation({ cardMap, side }) {
-      const isHome = side === "home";
-      const x = {
-        gk: isHome ? 7 : 93,
-        def: isHome ? 20 : 80,
-        mid: isHome ? 34 : 66,
-        fw: isHome ? 47 : 53,
-        coach: isHome ? 9 : 91,
-      };
-      const defY = [22, 40, 60, 78];
-      const midY = [22, 40, 60, 78];
-      const fwY = [38, 62];
-
-      return (
-        <>
-          <Player slot={cardMap.coach} side={side} x={x.coach} y={8} role="coach" />
-          <Player slot={cardMap.goalkeeper} side={side} x={x.gk} y={50} role="gk" />
-
-          {slotKeys.defenders.map((key, i) => (
-            <Player key={`${side}-${key}`} slot={cardMap[key]} side={side} x={x.def} y={defY[i]} role="def" />
-          ))}
-          {slotKeys.midfielders.map((key, i) => (
-            <Player key={`${side}-${key}`} slot={cardMap[key]} side={side} x={x.mid} y={midY[i]} role="mid" />
-          ))}
-          {slotKeys.forwards.map((key, i) => (
-            <Player key={`${side}-${key}`} slot={cardMap[key]} side={side} x={x.fw} y={fwY[i]} role="fw" />
-          ))}
-        </>
-      );
-    }
-
-    return (
-      <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.20)", borderRadius: 16, overflow: "hidden" }}>
-        <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "rgba(0,0,0,.18)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 20, fontWeight: 900 }}>
-            Группа {group} · Тур {roundNo}: {home.name} — {away.name}
-            <span style={{ marginLeft: 12, color: "#86EFAC" }}>
-              {slotRows(home).reduce((s, x) => s + (x.points == null ? 0 : Number(x.points)), 0)}
-              :
-              {slotRows(away).reduce((s, x) => s + (x.points == null ? 0 : Number(x.points)), 0)}
-            </span>
-          </div>
-          <div style={{ color: "#86EFAC", fontFamily: "Oswald,sans-serif", fontWeight: 900, fontSize: 16 }}>4-4-2 vs 4-4-2</div>
-        </div>
-
-        <div style={{
-          position: "relative",
-          height: 620,
-          background: "linear-gradient(90deg, rgba(22,101,52,.52), rgba(5,46,22,.72) 50%, rgba(22,101,52,.52))",
-          overflow: "hidden"
-        }}>
-          <div style={{ position: "absolute", inset: 18, border: "1px solid rgba(255,255,255,.18)", borderRadius: 26 }} />
-          <div style={{ position: "absolute", left: "50%", top: 18, bottom: 18, width: 1, background: "rgba(255,255,255,.16)" }} />
-          <div style={{ position: "absolute", left: "50%", top: "50%", width: 118, height: 118, marginLeft: -59, marginTop: -59, border: "1px solid rgba(255,255,255,.16)", borderRadius: "50%" }} />
-          <div style={{ position: "absolute", left: "50%", top: "50%", width: 8, height: 8, marginLeft: -4, marginTop: -4, background: "rgba(255,255,255,.18)", borderRadius: "50%" }} />
-
-          <div style={{ position: "absolute", left: 18, top: "35%", width: 55, height: "30%", border: "1px solid rgba(255,255,255,.13)", borderLeft: 0, borderRadius: "0 18px 18px 0" }} />
-          <div style={{ position: "absolute", right: 18, top: "35%", width: 55, height: "30%", border: "1px solid rgba(255,255,255,.13)", borderRight: 0, borderRadius: "18px 0 0 18px" }} />
-
-          <div style={{ position: "absolute", left: 20, top: 16, color: "#86EFAC", fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900 }}>{home.name}</div>
-          <div style={{ position: "absolute", right: 20, top: 16, color: "#93C5FD", fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, textAlign: "right" }}>{away.name}</div>
-          <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", color: "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: 42, fontWeight: 900, textShadow: "0 4px 16px rgba(0,0,0,.5)", zIndex: 2 }}>VS</div>
-
-          <SideFormation cardMap={homeMap} side="home" />
-          <SideFormation cardMap={awayMap} side="away" />
-        </div>
-      </div>
-    );
-  }
-
-
-  if (loading) return (
-    <div style={{ padding: 24, textAlign: "center", color: "rgba(240,237,230,.45)" }}>
-      Загружаю группы…
-      <div style={{ marginTop: 10, fontSize: 11, color: "rgba(240,237,230,.32)" }}>
-        Если экран завис, нажми «Обновить» или открой страницу с параметром ?v=now.
-      </div>
-    </div>
-  );
-
-  if (cards.length === 0) {
-    return (
-      <div style={{ padding: 18, border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, background: "rgba(245,158,11,.06)", color: "#FDE68A", fontSize: 13 }}>
-        Составы пока не найдены.<br/>
-        <span style={{ color: "rgba(240,237,230,.55)" }}>Диагностика: {debug ? JSON.stringify(debug) : "нет данных"}</span>
-      </div>
-    );
-  }
-
-  function cardTotal(card) {
-    return slotRows(card).reduce((sum, s) => {
-      const p = s.points == null ? 0 : Number(s.points);
-      return sum + (s.isCaptain ? p * 1.5 : p);
-    }, 0);
-  }
-
-  function fmtTotal(n) {
-    return Number(n || 0) % 1 === 0 ? String(Number(n || 0)) : Number(n || 0).toFixed(1);
-  }
-
-  if (mode === "predictions") {
-    return (
-      <div>
-        <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>📋 Все прогнозы режима 1 на 1</div>
-          <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 5 }}>Опубликованные составы участников и очки игроков.</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(310px, 1fr))", gap: 12 }}>
-          {cards.map((card, idx) => (
-            <div key={card.user_id || idx} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ padding: "10px 12px", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", background: "rgba(0,0,0,.18)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
-                <div style={{ fontFamily: "Oswald,sans-serif", color: "#F0EDE6", fontSize: 18, fontWeight: 900 }}>{idx + 1}. {card.name}</div>
-                <div style={{ fontFamily: "Oswald,sans-serif", color: "#F59E0B", fontSize: 18, fontWeight: 900 }}>{fmtTotal(cardTotal(card))}</div>
-              </div>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <tbody>
-                  {slotRows(card).map((s, i) => (
-                    <tr key={s.slot_key || i} style={{ borderTop: "1px solid rgba(255,255,255,.05)" }}>
-                      <td style={{ padding: "6px 8px", fontSize: 10, color: "rgba(240,237,230,.42)", width: 52 }}>{s.label}</td>
-                      <td style={{ padding: "6px 8px", fontSize: 12, color: s.isCaptain ? "#FDE68A" : "#F0EDE6", fontWeight: s.isCaptain ? 900 : 600 }}>{s.isCaptain ? "★ " : ""}{s.player_name}</td>
-                      <td style={{ padding: "6px 8px", fontSize: 10, color: "rgba(240,237,230,.45)" }}>{s.national_team || "—"}</td>
-                      <td style={{ padding: "6px 8px", textAlign: "center", fontFamily: "Oswald,sans-serif", color: s.points == null ? "rgba(240,237,230,.28)" : "#86EFAC", fontWeight: 900 }}>{s.points ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "round2predictions") {
-    const latestMap = buildLatestClubRound2Rows(round2Rows);
-    const rows = Object.values(latestMap).sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ru"));
-    const officialCount = Object.values(round2Official || {}).filter(Boolean).length;
-
-    function AnswerChip({ row, i }) {
-      const ans = clubRound2AnswerFor(row, i);
-      const correct = round2Official[String(i + 1)];
-      const isOk = correct && ans === correct;
-      const isBad = correct && ans && ans !== "—" && ans !== correct;
-      return (
-        <div title={CLUB_TOUR2_QUESTIONS[i]} style={{
-          display: "grid",
-          gridTemplateColumns: "34px 1fr auto",
-          gap: 8,
-          alignItems: "center",
-          padding: "7px 8px",
-          borderRadius: 8,
-          background: isOk ? "rgba(22,163,74,.13)" : isBad ? "rgba(239,68,68,.08)" : "rgba(255,255,255,.035)",
-          border: isOk ? "1px solid rgba(34,197,94,.22)" : isBad ? "1px solid rgba(239,68,68,.18)" : "1px solid rgba(255,255,255,.07)",
-        }}>
-          <div style={{ color: "rgba(240,237,230,.42)", fontFamily: "Oswald,sans-serif", fontWeight: 900 }}>Q{i + 1}</div>
-          <div style={{ color: "rgba(240,237,230,.62)", fontSize: 11, lineHeight: 1.18, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {CLUB_TOUR2_QUESTIONS[i]}
-          </div>
-          <div style={{ color: isOk ? "#86EFAC" : ans === "Да" ? "#93C5FD" : ans === "Нет" ? "#FCA5A5" : "rgba(240,237,230,.25)", fontWeight: 900 }}>
-            {ans}
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div>
-        <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>📋 Все прогнозы · 2-й тур</div>
-          <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 5 }}>
-            Открытые ответы участников на 20 вопросов Да/Нет. Верный ответ — 2 балла.
-          </div>
-          <div style={{ marginTop: 8, color: "#86EFAC", fontSize: 12 }}>
-            Прогнозов: {rows.length} · официальных ответов внесено: {officialCount}/{CLUB_TOUR2_QUESTIONS.length}
-          </div>
-        </div>
-        {rows.length === 0 ? (
-          <div style={{ padding: 18, border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, background: "rgba(245,158,11,.06)", color: "#FDE68A", fontSize: 13 }}>
-            Ответы 2-го тура пока не найдены или недоступны для публичного просмотра.
-          </div>
-        ) : isRound2Mobile ? (
-          <div style={{ display: "grid", gap: 12 }}>
-            <div style={{ padding: "10px 12px", border: "1px solid rgba(147,197,253,.18)", borderRadius: 10, background: "rgba(59,130,246,.07)", color: "#BFDBFE", fontSize: 12, lineHeight: 1.35 }}>
-              Мобильный вид: все ответы раскрыты карточками, без горизонтальной прокрутки таблицы.
-            </div>
-            {rows.map((row, ri) => (
-              <div key={row.id || `${row.name}_${ri}`} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 14, overflow: "hidden" }}>
-                <div style={{ padding: "10px 12px", background: "rgba(245,158,11,.08)", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                  <div style={{ color: "#F0EDE6", fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, lineHeight: 1.1 }}>{row.name || "—"}</div>
-                  <div style={{ color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 20, fontWeight: 900, whiteSpace: "nowrap" }}>{clubRound2Score(row, round2Official)} очк.</div>
-                </div>
-                <div style={{ padding: 10, display: "grid", gap: 7 }}>
-                  {CLUB_TOUR2_QUESTIONS.map((_, i) => <AnswerChip key={i} row={row} i={i} />)}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ overflowX: "auto", background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12 }}>
-            <table style={{ borderCollapse: "collapse", minWidth: 1800, width: "100%" }}>
-              <thead>
-                <tr style={{ background: "rgba(245,158,11,.09)" }}>
-                  <th style={{ position: "sticky", left: 0, zIndex: 3, background: "#102010", padding: "8px 10px", color: "#FDE68A", textAlign: "left", minWidth: 160 }}>Участник</th>
-                  <th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center" }}>Очки</th>
-                  {CLUB_TOUR2_QUESTIONS.map((q, i) => (
-                    <th key={i} title={q} style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "center", minWidth: 74, fontSize: 10 }}>Q{i + 1}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, ri) => (
-                  <tr key={row.id || `${row.name}_${ri}`} style={{ borderTop: "1px solid rgba(255,255,255,.05)" }}>
-                    <td style={{ position: "sticky", left: 0, zIndex: 2, background: ri % 2 ? "#071a07" : "#0b1d0b", padding: "8px 10px", color: "#F0EDE6", fontWeight: 800 }}>{row.name || "—"}</td>
-                    <td style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "center", fontWeight: 900 }}>{clubRound2Score(row, round2Official)}</td>
-                    {CLUB_TOUR2_QUESTIONS.map((_, i) => {
-                      const ans = clubRound2AnswerFor(row, i);
-                      const correct = round2Official[String(i + 1)];
-                      const isOk = correct && ans === correct;
-                      return (
-                        <td key={i} style={{ padding: "8px 10px", textAlign: "center", color: isOk ? "#86EFAC" : ans === "Да" ? "#93C5FD" : ans === "Нет" ? "#FCA5A5" : "rgba(240,237,230,.25)", fontWeight: 900 }}>
-                          {ans}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{ padding: "10px 12px", color: "rgba(240,237,230,.42)", fontSize: 11 }}>
-              В открытом доступе скрыта только точная тестовая запись «Василий». Если у игрока есть дубли отправок, берётся одна самая свежая. Наведи на Q1–Q20, чтобы увидеть полный текст вопроса.
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (mode === "table") {
-    const seededAll = buildClubRound2SeededRows(cards, round2Rows, cardTotal, fmtTotal, round21Rows);
-    const seeded = seededAll.slice(0, 24);
-    const reserves = seededAll.slice(24);
-    const officialCount = Object.values(round2Official || {}).filter(Boolean).length;
-    const r2Diag = buildClubRound2RowsDiagnostics(round2Rows);
-
-    return (
-      <div>
-        <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>🏆 Таблица сеяных</div>
-          <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 5 }}>
-            В посев попадают только 24 участника, которые прислали прогноз на 2-й тур. Сортировка — по базе 1-го тура, новые участники ниже.
-          </div>
-          <div style={{ marginTop: 8, color: "#86EFAC", fontSize: 12 }}>
-            Участников в сетке: {seeded.length}/24 · официальных ответов внесено: {officialCount}/{CLUB_TOUR2_QUESTIONS.length}
-          </div>
-        </div>
-
-
-        {seeded.length < 24 && (
-          <div style={{ background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.28)", borderRadius: 10, padding: 12, marginBottom: 14, color: "#FCA5A5", fontSize: 12, lineHeight: 1.45 }}>
-            <b>Диагностика 2-го тура:</b> сейчас в посеве {seeded.length}/24.
-            В базе отправок: {r2Diag.raw}, скрыто: {r2Diag.hidden.length ? r2Diag.hidden.join(", ") : "—"}, уникальных после склейки: {r2Diag.unique}.
-            {r2Diag.duplicateGroups.length > 0 && (
-              <div style={{ marginTop: 6 }}>
-                Склеенные дубли: {r2Diag.duplicateGroups.map(g => `${g.names.join(" / ")} → ${g.key}`).join("; ")}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{ overflowX: "auto", background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12 }}>
-          <table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "rgba(245,158,11,.09)" }}>
-                {["#", "Участник", "База", "2-й тур", "Очки 2-го тура"].map(h => (
-                  <th key={h} style={{ padding: "9px 10px", textAlign: h === "Участник" ? "left" : "center", color: "rgba(240,237,230,.62)", fontSize: 11, textTransform: "uppercase" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {seededAll.map((r, i) => {
-                const hasR2 = !!r.round2Row;
-                const r2Score = clubRound2Score(r.round2Row, round2Official);
-                return (
-                  <tr key={`${r.name}_${i}`} style={{ borderTop: "1px solid rgba(255,255,255,.05)", opacity: i >= 24 ? .58 : 1 }}>
-                    <td style={{ padding: "8px 10px", textAlign: "center", color: i < 24 ? "#F59E0B" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 17, fontWeight: 900 }}>{i + 1}</td>
-                    <td style={{ padding: "8px 10px", color: "#F0EDE6", fontWeight: 850 }}>{r.name}</td>
-                    <td style={{ padding: "8px 10px", textAlign: "center", color: r.seedSource === "1-й тур" ? "#86EFAC" : "#93C5FD", fontWeight: 800 }}>{r.baseTotalText}</td>
-                    <td style={{ padding: "8px 10px", textAlign: "center", color: hasR2 ? "#86EFAC" : "rgba(240,237,230,.3)", fontWeight: 900 }}>{hasR2 ? "есть" : "—"}</td>
-                    <td style={{ padding: "8px 10px", textAlign: "center", color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 17, fontWeight: 900 }}>{hasR2 ? r2Score : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div style={{ padding: "9px 12px", color: "rgba(240,237,230,.42)", fontSize: 11 }}>
-            Основные 24 строки идут в группы. {reserves.length > 0 ? `Резерв после 24-го места: ${reserves.length}.` : "Резерва после 24-го места нет."} Те, кто не прислал прогноз на 2-й тур, в посев не попадают.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "current2") {
-    const seededAll = buildClubRound2SeededRows(cards, round2Rows, cardTotal, fmtTotal, round21Rows);
-    const seeded = seededAll.slice(0, 24);
-    const groupsR2 = buildClubRound2Groups(seeded);
-    const officialCount = Object.values(round2Official || {}).filter(Boolean).length;
-    const official21Count = Object.values(round21Official || {}).filter(Boolean).length;
-    const activeGroup = CLUB_R2_GROUP_KEYS.includes(roundGroup) ? roundGroup : "A";
-    const members = groupsR2[activeGroup] || [];
-    const standings = buildClubRound2GroupStandings(members, round2Official, round, round21Official);
-    const currentPairs = visibleClubR2Pairs(round);
-
-    const thirdPlaces = CLUB_R2_GROUP_KEYS
-      .map(g => ({ group: g, row: buildClubRound2GroupStandings(groupsR2[g] || [], round2Official, round, round21Official)[2] }))
-      .filter(x => x.row)
-      .sort((a, b) => b.row.tablePoints - a.row.tablePoints || b.row.score - a.row.score || Number(a.row.seed || 999) - Number(b.row.seed || 999));
-
-    const MatchRow = ({ A, B, small = false, roundNo = 1 }) => {
-      if (!A || !B) return null;
-      const hasScore = typeof clubRound2RoundHasScore === "function" ? clubRound2RoundHasScore(roundNo, round2Official, round21Official) : true;
-      const sa = hasScore ? clubRoundScoreByRound(A, roundNo, round2Official, round21Official) : null;
-      const sb = hasScore ? clubRoundScoreByRound(B, roundNo, round2Official, round21Official) : null;
-      const aw = hasScore && sa > sb, bw = hasScore && sb > sa;
-      return (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "center", padding: small ? "6px 0" : "10px 0", borderTop: "1px solid rgba(255,255,255,.06)" }}>
-          <div style={{ textAlign: "right", color: aw ? "#86EFAC" : "#F0EDE6", fontWeight: aw ? 900 : 700, lineHeight: 1.15 }}>
-            <span style={{ color: "rgba(240,237,230,.35)", marginRight: 4 }}>#{A.seed}</span>{A.name}
-          </div>
-          <div style={{ minWidth: small ? 46 : 56, textAlign: "center", color: hasScore ? "#FDE68A" : "rgba(240,237,230,.34)", fontFamily: "Oswald,sans-serif", fontSize: small ? 18 : 24, fontWeight: 900 }}>{hasScore ? `${sa}:${sb}` : "—:—"}</div>
-          <div style={{ color: bw ? "#86EFAC" : "#F0EDE6", fontWeight: bw ? 900 : 700, lineHeight: 1.15 }}>
-            <span style={{ color: "rgba(240,237,230,.35)", marginRight: 4 }}>#{B.seed}</span>{B.name}
-          </div>
-        </div>
-      );
-    };
-
-    return (
-      <div>
-        <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>🗓️ Группы и календарь · 1 на 1</div>
-          <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 5 }}>
-            24 участника · 6 групп по 4. Сейчас Тур 1 считается по первому набору Да/Нет, Тур 2 — по форме 2-1 тура. Тур 3 пока без счёта.
-          </div>
-          <div style={{ marginTop: 8, color: "#86EFAC", fontSize: 12 }}>
-            Тур 1: верных {officialCount}/{CLUB_TOUR2_QUESTIONS.length} · Тур 2: верных {official21Count}/{CLUB_TOUR3_QUESTIONS.length}
-          </div>
-        </div>
-
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          {CLUB_R2_GROUP_KEYS.map(g => (
-            <button key={g} onClick={() => setRoundGroup(g)} style={{
-              padding: "8px 14px", borderRadius: 7, cursor: "pointer",
-              border: activeGroup === g ? "1px solid rgba(245,158,11,.75)" : "1px solid rgba(255,255,255,.12)",
-              background: activeGroup === g ? "rgba(245,158,11,.20)" : "rgba(255,255,255,.04)",
-              color: activeGroup === g ? "#FDE68A" : "rgba(240,237,230,.58)",
-              fontFamily: "Barlow Condensed,sans-serif", fontWeight: 900, fontSize: 13,
-            }}>Группа {g}</button>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
-          {[1,2,3].map(r => (
-            <button key={r} onClick={() => setRound(r)} style={{
-              padding: "6px 12px", borderRadius: 6, cursor: "pointer",
-              border: round === r ? "1px solid rgba(34,197,94,.72)" : "1px solid rgba(255,255,255,.1)",
-              background: round === r ? "rgba(22,163,74,.18)" : "rgba(255,255,255,.04)",
-              color: round === r ? "#86EFAC" : "rgba(240,237,230,.55)",
-              fontFamily: "Barlow Condensed,sans-serif", fontWeight: 800,
-            }}>Тур {r}</button>
-          ))}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(330px, .9fr) minmax(420px, 1.1fr)", gap: 14, alignItems: "start", marginBottom: 20 }}>
-          <div style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(245,158,11,.22)", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ padding: "10px 12px", background: "rgba(245,158,11,.09)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 22, fontWeight: 900 }}>Группа {activeGroup}</span>
-              <span style={{ color: "rgba(240,237,230,.46)", fontSize: 11 }}>{members.map(m => `#${m.seed}`).join(" · ")}</span>
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  {["#", "Игрок", "Б", "И", "В", "Н", "П", "О"].map(h => (
-                    <th key={h} style={{ padding: "7px 6px", color: "rgba(240,237,230,.45)", fontSize: 10, textAlign: h === "Игрок" ? "left" : "center" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {standings.map((r, i) => (
-                  <tr key={r.name} style={{ borderTop: "1px solid rgba(255,255,255,.05)", background: i < 2 ? "rgba(22,163,74,.06)" : i === 2 ? "rgba(245,158,11,.04)" : "transparent" }}>
-                    <td style={{ padding: "7px 6px", textAlign: "center", color: "#F59E0B", fontWeight: 900 }}>{i + 1}</td>
-                    <td style={{ padding: "7px 6px", color: "#F0EDE6", fontWeight: 800, lineHeight: 1.15 }}><span style={{ color: "rgba(240,237,230,.35)", marginRight: 4 }}>#{r.seed}</span>{r.name}</td>
-                    <td style={{ padding: "7px 6px", textAlign: "center", color: "#86EFAC", fontWeight: 900 }}>{r.score}</td>
-                    <td style={{ padding: "7px 6px", textAlign: "center", color: "rgba(240,237,230,.52)" }}>{r.played}</td>
-                    <td style={{ padding: "7px 6px", textAlign: "center", color: "#86EFAC" }}>{r.wins}</td>
-                    <td style={{ padding: "7px 6px", textAlign: "center", color: "#FDE68A" }}>{r.draws}</td>
-                    <td style={{ padding: "7px 6px", textAlign: "center", color: "#FCA5A5" }}>{r.losses}</td>
-                    <td style={{ padding: "7px 6px", textAlign: "center", color: "#F59E0B", fontWeight: 900 }}>{r.tablePoints}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.22)", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ padding: "10px 12px", background: "rgba(245,158,11,.09)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 22, fontWeight: 900 }}>Матчи группы {activeGroup}</span>
-              <span style={{ color: "#86EFAC", fontSize: 12, fontWeight: 900 }}>Текущий: тур {round}</span>
-            </div>
-            <div style={{ padding: 14 }}>
-              <div style={{ color: "#86EFAC", fontSize: 12, fontWeight: 900, textTransform: "uppercase", marginBottom: 4 }}>Тур {round}</div>
-              {currentPairs.map(([a, b], pi) => <MatchRow key={`cur_${pi}`} A={members[a]} B={members[b]} roundNo={round} />)}
-
-            </div>
-          </div>
-        </div>
-
-        <div style={{ color: "rgba(240,237,230,.50)", fontSize: 12, background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: 12 }}>
-          В 1/8 финала выходят 1–2 места из каждой группы + 4 лучших третьих места.
-          Лучшие третьи после выбранного тура: {thirdPlaces.slice(0, 4).map(x => `${x.row.name} (${x.group}, ${x.row.tablePoints} очк.)`).join(" · ") || "—"}.
-        </div>
-      </div>
-    );
-  }
-
-
-  if (mode === "current") {
-    const allCurrent = Object.entries(matchesByGroup).flatMap(([gKey, rounds]) => (rounds[round - 1]?.matches || []).map(m => ({ ...m, group: gKey })));
-    return (
-      <div>
-        <div style={{ textAlign: "center", marginBottom: 16 }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,40px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>⚔️ Текущий матч</div>
-          <div style={{ color: "rgba(240,237,230,.45)", fontSize: 13, marginTop: 4 }}>Состав против состава — тур {round} из 5 · каждый с каждым.</div>
-        </div>
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-          {[1,2,3,4,5].map(r => {
-            const isCurrent = r === 1; // Тур 1 — первый тур ЧМ, сейчас актуален
-            return (
-              <button key={r} onClick={() => setRound(r)} style={{
-                padding: "7px 14px", borderRadius: 6,
-                border: round === r ? "1px solid rgba(245,158,11,.7)" : "1px solid rgba(255,255,255,.1)",
-                background: round === r ? "rgba(245,158,11,.18)" : "rgba(255,255,255,.04)",
-                color: round === r ? "#FDE68A" : "rgba(240,237,230,.55)",
-                fontFamily: "Barlow Condensed,sans-serif", fontWeight: 800, cursor: "pointer",
-                position: "relative",
-              }}>
-                Тур {r}
-                {isCurrent && (
-                  <span style={{ position: "absolute", top: -8, right: -4, fontSize: 9, background: "#22C55E", color: "#000", borderRadius: 4, padding: "1px 5px", fontWeight: 900, letterSpacing: .3 }}>NOW</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        {/* Краткий список пар тура из календаря */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8, marginBottom: 20 }}>
-          {Object.entries(matchesByGroup).map(([gKey, rounds]) => {
-            const roundMatches = rounds[round - 1]?.matches || [];
-            return (
-              <div key={gKey} style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 8, padding: "8px 12px" }}>
-                <div style={{ color: "#86EFAC", fontFamily: "Oswald,sans-serif", fontWeight: 900, fontSize: 13, marginBottom: 6 }}>Группа {gKey} · Тур {round}</div>
-                {roundMatches.map((m, i) => (
-                  <div key={i} style={{ fontSize: 12, color: "#F0EDE6", margin: "3px 0" }}>
-                    <span style={{ color: "#86EFAC" }}>{m.home?.name}</span>
-                    <span style={{ color: "rgba(240,237,230,.35)", margin: "0 5px" }}>—</span>
-                    <span style={{ color: "#93C5FD" }}>{m.away?.name}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display: "grid", gap: 14 }}>
-          {allCurrent.map((m, i) => (
-            <MatchPitchCombined key={i} home={m.home} away={m.away} group={m.group} roundNo={round} />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div style={{ textAlign: "center", marginBottom: 18 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>🏆 Группы Битвы клубов</div>
-        <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 5 }}>
-          18 участников. Победа — 3 очка, ничья — 1 очко. В четвертьфинал выходят 1–2 места каждой группы + 2 лучших третьих места.
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14, marginBottom: 18 }}>
-        {Object.entries(groups).map(([gKey, members]) => (
-          <div key={gKey} style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.22)", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ padding: "10px 12px", background: "rgba(245,158,11,.10)", fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 22, fontWeight: 900 }}>Группа {gKey}</div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><th style={{ textAlign:"left", padding: 8, color:"rgba(240,237,230,.45)", fontSize: 10 }}>#</th><th style={{ textAlign:"left", padding: 8, color:"rgba(240,237,230,.45)", fontSize: 10 }}>Игрок</th><th style={{ textAlign:"center", padding: 8, color:"rgba(240,237,230,.45)", fontSize: 10 }}>И</th><th style={{ textAlign:"center", padding: 8, color:"rgba(240,237,230,.45)", fontSize: 10 }}>О</th></tr></thead>
-              <tbody>
-                {members.map((m, i) => (
-                  <tr key={m.user_id} style={{ borderTop: "1px solid rgba(255,255,255,.05)" }}>
-                    <td style={{ padding: 8, color: "#F59E0B", fontWeight: 800 }}>{i+1}</td>
-                    <td style={{ padding: 8, color: "#F0EDE6", fontWeight: 700 }}>{m.name}</td>
-                    <td style={{ padding: 8, textAlign: "center", color: "rgba(240,237,230,.45)" }}>0</td>
-                    <td style={{ padding: 8, textAlign: "center", color: "#86EFAC", fontWeight: 900 }}>0</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 12, padding: 14 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 22, fontWeight: 900, color: "#FDE68A", marginBottom: 10 }}>📅 Календарь: 5 туров, каждый с каждым</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12 }}>
-          {Object.entries(matchesByGroup).map(([gKey, rounds]) => (
-            <div key={gKey} style={{ border: "1px solid rgba(255,255,255,.07)", borderRadius: 10, overflow: "hidden" }}>
-              <div style={{ padding: "8px 10px", background: "rgba(22,163,74,.08)", color: "#86EFAC", fontWeight: 900, fontFamily: "Oswald,sans-serif" }}>Группа {gKey}</div>
-              {rounds.map(r => (
-                <div key={r.round} style={{ padding: "8px 10px", borderTop: "1px solid rgba(255,255,255,.05)" }}>
-                  <div style={{ color: "#F59E0B", fontWeight: 900, fontSize: 12, marginBottom: 4 }}>Тур {r.round}</div>
-                  {r.matches.map((m, i) => (
-                    <div key={i} style={{ color: "#F0EDE6", fontSize: 12, margin: "2px 0" }}>{m.home.name} — {m.away.name}</div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
-  const [loading, setLoading] = React.useState(true);
-  const [participants, setParticipants] = React.useState([]);
-  const [predByUser, setPredByUser] = React.useState({});
-  const [bonusByUser, setBonusByUser] = React.useState({});
-  const [officialResultsMap, setOfficialResultsMap] = React.useState({});
-  const [bonusOfficialMap, setBonusOfficialMap] = React.useState({});
-  const [simScores, setSimScores] = React.useState({}); // локальный симулятор { mid: {h,a} }
-  const [tableSection, setTableSection] = React.useState("groups"); // groups | playoff | questions | leaderboard
-  const [debugInfo, setDebugInfo] = React.useState(null);
-  const [isNarrowViewport, setIsNarrowViewport] = React.useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 760 : false
-  );
-
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onResize = () => setIsNarrowViewport(window.innerWidth < 760);
-    onResize();
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
-    };
-  }, []);
-
-  const allGroupMatches = React.useMemo(() => ALL_GROUPS.flatMap(g => GROUP_MATCHES[g].map(m => ({ ...m, stage: `Группа ${g}` }))), []);
-  const allPlayoffMatches = React.useMemo(() => {
-    const rows = [
-      ...R16.map(m => ({ ...m, stage: "1/16" })),
-      ...R8.map(m => ({ ...m, stage: "1/8" })),
-      ...QF.map(m => ({ ...m, stage: "1/4" })),
-      ...SF.map(m => ({ ...m, stage: "1/2" })),
-      { ...THIRD_MATCH, stage: "За 3-е место" },
-      { ...FINAL_MATCH, stage: "Финал" },
-    ];
-    return rows.some(m => m.id === "m104") ? rows : [...rows, { ...FINAL_MATCH, stage: "Финал" }];
-  }, []);
-
-  // ── нормализация match_id ──
-  const matchIdAliasMap = React.useMemo(() => {
-    const map = {};
-    ALL_GROUPS.forEach(g => {
-      (GROUP_MATCHES[g] || []).forEach((m, idx) => {
-        const aliases = [m.id, String(m.match_no), `№${m.match_no}`, `${g}${idx+1}`, `${g}-${idx+1}`];
-        aliases.forEach(a => { if (a) map[String(a).toLowerCase()] = m.id; });
-      });
-    });
-    [R16, R8, QF, SF, [THIRD_MATCH, FINAL_MATCH]].flat().forEach((m, idx) => {
-      const n = String(m.id || "").replace(/^m/i, "");
-      [m.id, n, `№${n}`, m.label, `po${idx+1}`].forEach(a => { if (a) map[String(a).toLowerCase()] = m.id; });
-    });
-    return map;
-  }, []);
-  function normMid(raw) {
-    if (!raw && raw !== 0) return "";
-    const lower = String(raw).trim().toLowerCase();
-    if (matchIdAliasMap[lower]) return matchIdAliasMap[lower];
-    const n = lower.match(/^(?:m|match[_\s-]?)?(\d{1,3})$/);
-    if (n) return matchIdAliasMap[n[1]] || `m${n[1]}`;
-    return String(raw).trim();
-  }
-  function isPlayoffMid(mid) { return !ALL_GROUP_MATCH_IDS.has(normMid(mid)); }
-
-  // ── Загрузка публичной таблицы. Для вошедшего пользователя сначала используем его токен,
-  // затем при необходимости откатываемся к anon. Это важно для старых RLS-политик,
-  // где SELECT был открыт authenticated, но ещё не открыт anon.
-  React.useEffect(() => {
-    loadPublicData();
-    const onBonusUpdated = () => loadPublicData();
-    window.addEventListener("ffc-bonus-official-updated", onBonusUpdated);
-    return () => window.removeEventListener("ffc-bonus-official-updated", onBonusUpdated);
-  }, [session?.access_token]);
-
-  async function loadPublicData() {
-    setLoading(true);
-    try {
-      const PAGE = 1000;
-      async function fetchAllWithToken(path, bearerToken) {
-        const rows = [];
-        for (let page = 0; page < 50; page++) {
-          const sep = path.includes("?") ? "&" : "?";
-          // Важно: не добавляем произвольные query-параметры типа _cb.
-          // PostgREST воспринимает неизвестные параметры как фильтры и может падать PGRST100.
-          const url = `${SUPABASE_URL}/rest/v1/${path}${sep}limit=${PAGE}&offset=${page * PAGE}`;
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 6500);
-          let r;
-          try {
-            r = await fetch(url, {
-              cache: "no-store",
-              signal: ctrl.signal,
-              headers: {
-              apikey: SUPABASE_KEY,
-              Authorization: `Bearer ${bearerToken}`,
-              "Cache-Control": "no-cache",
-              Pragma: "no-cache"
-              }
-            });
-          } finally {
-            clearTimeout(timer);
-          }
-          if (!r.ok) {
-            const errText = await r.text().catch(() => "");
-            throw Object.assign(new Error(`${r.status} ${errText.slice(0, 180)}`), { status: r.status, path });
-          }
-          const chunk = await r.json().catch(() => []);
-          const arr = Array.isArray(chunk) ? chunk : [];
-          rows.push(...arr);
-          if (arr.length < PAGE) break;
-        }
-        return rows;
-      }
-
-      async function fetchAllAnon(path) {
-        const authToken = session?.access_token;
-        if (authToken) {
-          let authRows = null;
-          try {
-            authRows = await fetchAllWithToken(path, authToken);
-            // Важный фикс: у части пользователей RLS возвращает [] без ошибки для authenticated,
-            // хотя anon-политика читает таблицу нормально. Поэтому при пустом ответе пробуем anon
-            // и берём тот вариант, где строк больше. Это лечит ситуацию "Группы/Плей-офф = 0".
-            if (Array.isArray(authRows) && authRows.length > 0) return authRows;
-          } catch (e) {
-            console.warn("[PublicForecastTable] authenticated fetch failed, fallback to anon", path, e);
-          }
-          try {
-            const anonRows = await fetchAllWithToken(path, SUPABASE_KEY);
-            if (Array.isArray(anonRows) && anonRows.length > 0) return anonRows;
-          } catch (e) {
-            if (Array.isArray(authRows)) return authRows;
-            throw e;
-          }
-          return Array.isArray(authRows) ? authRows : [];
-        }
-        return await fetchAllWithToken(path, SUPABASE_KEY);
-      }
-
-      // profiles грузим отдельно — ловим ошибку RLS, не роняем весь запрос
-      async function fetchProfilesSafe() {
-        try {
-          // email не запрашиваем публично
-          return { rows: await fetchAllAnon("profiles?select=id,name,display_name&order=name.asc"), error: null };
-        } catch (e) {
-          return { rows: [], error: e?.message || String(e) };
-        }
-      }
-
-      // predictions: сначала пробуем забрать также команды плей-офф, если эти поля есть.
-      // Если в базе нет home_team/away_team, откатываемся к старому select и пары ниже считаем из сетки участника.
-      async function fetchPredictionsSafe() {
-        const queries = [
-          "predictions?select=user_id,match_id,home_score,away_score,predicted_winner,penalty_winner,home_team,away_team",
-          "predictions?select=user_id,match_id,home_score,away_score,penalty_winner,home_team,away_team",
-          "predictions?select=user_id,match_id,home_score,away_score,predicted_winner,home_team,away_team",
-          "predictions?select=user_id,match_id,home_score,away_score,penalty_winner",
-          "predictions?select=user_id,match_id,home_score,away_score,predicted_winner",
-        ];
-        for (const q of queries) {
-          try {
-            const rows = await fetchAllAnon(q);
-            if (Array.isArray(rows)) return rows;
-          } catch (e) {}
-        }
-        return [];
-      }
-
-      // official_results грузим отдельно — перехватываем ошибку RLS
-      const officialEndpoint = `${SUPABASE_URL}/rest/v1/official_results?select=match_id,home_score,away_score,penalty_winner,status`;
-      async function fetchOfficialSafe() {
-        async function readWith(bearer) {
-          const url = `${officialEndpoint}&limit=1000`;
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 6500);
-          let r;
-          try {
-            r = await fetch(url, {
-              cache: "no-store",
-              signal: ctrl.signal,
-              headers: {
-                apikey: SUPABASE_KEY,
-                Authorization: `Bearer ${bearer}`,
-                "Cache-Control": "no-cache",
-                Pragma: "no-cache"
-              }
-            });
-          } finally {
-            clearTimeout(timer);
-          }
-          if (!r.ok) {
-            const errText = await r.text().catch(() => "");
-            throw Object.assign(new Error(`HTTP ${r.status}: ${errText.slice(0, 150)}`), { status: r.status });
-          }
-          const data = await r.json().catch(() => []);
-          return Array.isArray(data) ? data : [];
-        }
-        try {
-          let authRows = [];
-          let authError = null;
-          if (session?.access_token) {
-            try { authRows = await readWith(session.access_token); } catch (e) { authError = e; }
-          }
-          if (authRows.length > 0) return { rows: authRows, error: null, status: 200, url: officialEndpoint };
-          try {
-            const anonRows = await readWith(SUPABASE_KEY);
-            if (anonRows.length > 0 || !authError) return { rows: anonRows, error: null, status: 200, url: officialEndpoint };
-          } catch (anonError) {
-            if (authError) throw authError;
-            throw anonError;
-          }
-          return { rows: authRows, error: null, status: 200, url: officialEndpoint };
-        } catch (e) {
-          return { rows: [], error: e?.message || String(e), status: e?.status || null, url: officialEndpoint };
-        }
-      }
-
-      const [profilesResult, predRows, bonusRows, officialResult, bonusOfficialRows] = await Promise.all([
-        fetchProfilesSafe(),
-        fetchPredictionsSafe(),
-        fetchAllAnon("bonus_answers?select=user_id,question_id,answer"),
-        fetchOfficialSafe(),
-        (async () => {
-          try { return await fetchAllAnon("bonus_official_answers?select=*&order=updated_at.desc.nullslast"); }
-          catch {
-            try { return await fetchAllAnon("bonus_official_answers?select=question_id,answer,points,status"); }
-            catch { return await fetchAllAnon("bonus_official_answers?select=question_id,answer").catch(() => []); }
-          }
-        })(),
-      ]);
-
-      const officialRows = officialResult.rows;
-      const officialError = officialResult.error;
-      const officialUrl = officialResult.url;
-      const officialStatus = officialResult.status;
-
-      const profileRows = profilesResult.rows;
-      const profileError = profilesResult.error;
-
-      const profById = {};
-      // profiles.id == predictions.user_id — это один и тот же auth UUID
-      profileRows.forEach(p => { if (p.id) profById[p.id] = p; });
-
-      // прогнозы по user_id → match_id → {h,a,pen}
-      const pbu = {};
-      predRows.forEach(r => {
-        if (!r.user_id || r.match_id === undefined || r.match_id === null) return;
-        const mid = normMid(r.match_id);
-        if (!pbu[r.user_id]) pbu[r.user_id] = {};
-        pbu[r.user_id][mid] = { h: r.home_score, a: r.away_score, pen: r.penalty_winner ?? r.predicted_winner, ph: r.home_team, pa: r.away_team };
-      });
-      setPredByUser(pbu);
-
-      // бонусы
-      const bbu = {};
-      bonusRows.forEach(r => {
-        if (!r.user_id || !r.question_id) return;
-        if (!bbu[r.user_id]) bbu[r.user_id] = {};
-        let ans = r.answer;
-        try { if (typeof ans === "string") ans = JSON.parse(ans); } catch {}
-        bbu[r.user_id][String(r.question_id)] = ans;
-      });
-      setBonusByUser(bbu);
-
-      // официальные результаты
-      const orm = {};
-      officialRows.forEach(r => {
-        if (!r.match_id) return;
-        const mid = normMid(r.match_id);
-        const h = r.home_score ?? r.h ?? null;
-        const a = r.away_score ?? r.a ?? null;
-        if (h === null || a === null) return;
-        orm[mid] = { h, a, pen: r.penalty_winner || r.pen || null, status: r.status };
-      });
-      setOfficialResultsMap(orm);
-
-      // официальные ответы на бонусы
-      const bom = buildBonusOfficialMap(bonusOfficialRows);
-      setBonusOfficialMap(bom);
-      if (Object.keys(bom).length === 0 && session?.access_token) {
-        console.warn("[PublicForecastTable] bonus_official_answers returned 0 rows. Check RLS SELECT policy and grants.");
-      }
-
-      // ── СТРОИМ СПИСОК УЧАСТНИКОВ ──
-      const allGroupMatchIdsLocal = new Set(
-        ALL_GROUPS.flatMap(g => (GROUP_MATCHES[g] || []).map(m => String(m.id)))
-      );
-      const predCountByUser = {};
-      Object.entries(pbu).forEach(([uid, matchMap]) => {
-        let group = 0, playoff = 0;
-        Object.keys(matchMap).forEach(rawMid => {
-          const p = matchMap[rawMid];
-          if (!p || p.h === null || p.h === undefined || p.a === null || p.a === undefined) return;
-          if (allGroupMatchIdsLocal.has(normMid(rawMid))) group++; else playoff++;
-        });
-        predCountByUser[uid] = { group, playoff, total: group + playoff };
-      });
-      const bonusCountByUser = {};
-      Object.entries(bbu).forEach(([uid, qMap]) => { bonusCountByUser[uid] = Object.keys(qMap).length; });
-
-      const getCountsForProfile = (p) => {
-        // profiles.id == predictions.user_id (оба — auth UUID)
-        const uid = String(p.id || "");
-        const pc = predCountByUser[uid];
-        return {
-          group: pc?.group || 0,
-          playoff: pc?.playoff || 0,
-          bonus: bonusCountByUser[uid] || 0,
-        };
-      };
-
-      // Если profiles не загрузились (RLS) — строим синтетические профили из prediction user_id
-      let workingProfiles = profileRows;
-      if (profileRows.length === 0 && Object.keys(pbu).length > 0) {
-        workingProfiles = Object.keys(pbu).map(uid => ({
-          id: uid,
-          user_id: uid,
-          name: null,
-          display_name: null,
-          _synthetic: true,
-        }));
-      }
-
-      // Фильтр полных участников (72г + 32по + 31б)
-      const fullParticipants = workingProfiles.filter(p => {
-        const { group, playoff, bonus } = getCountsForProfile(p);
-        return group >= 72 && playoff >= 32 && bonus >= 31;
-      });
-
-      // Fallback: все у кого есть хоть один прогноз
-      const hasPreds = workingProfiles.filter(p => {
-        const uid = String(p.id || "");
-        return Object.keys(pbu[uid] || {}).length > 0;
-      });
-
-      const parts = fullParticipants.length > 0 ? fullParticipants : hasPreds;
-
-      setDebugInfo({
-        profiles: profileRows.length,
-        profileError,
-        synthProfiles: workingProfiles.filter(p => p._synthetic).length,
-        predsRows: predRows.length,
-        bonusRows: bonusRows.length,
-        officialRows: officialRows.length,
-        officialError,
-        officialUrl,
-        officialStatus,
-        officialSample: officialRows.slice(0, 3).map(r => `${r.match_id}:${r.home_score}-${r.away_score}`),
-        predByUserKeys: Object.keys(pbu).length,
-        fullParticipants: fullParticipants.length,
-        hasPreds: hasPreds.length,
-        usingFallback: fullParticipants.length === 0,
-        usingSync: profileRows.length === 0 && Object.keys(pbu).length > 0,
-        sampleCounts: workingProfiles.slice(0, 3).map(p => ({ name: publicDisplayNameOverride(p.display_name || p.name || String(p.id || "").slice(0, 8)), ...getCountsForProfile(p) })),
-      });
-
-      setParticipants(parts);
-    } catch (e) {
-      console.error("PublicForecastTable load error", e);
-      if (showToast) showToast("Ошибка загрузки таблицы: " + (e?.message || ""));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ── helpers ──
-  function uName(u) {
-    if (u.display_name) return publicDisplayNameOverride(u.display_name);
-    if (u.name) return publicDisplayNameOverride(u.name);
-    if (u._synthetic) return `Участник ${String(u.id || "").slice(0, 6)}`;
-    return String(u.id || "").slice(0, 8);
-  }
-  function predScore(u, mid) {
-    const nm = normMid(mid);
-    // u.id == auth UUID == predictions.user_id
-    const uid = String(u.id || "");
-    const val = predByUser?.[uid]?.[nm];
-    if (val !== undefined && val !== null) return val;
-    // fallback: если синтетический профиль, id уже равен predictions.user_id
-    return null;
-  }
-  function officialScore(mid) {
-    const r = officialResultsMap[normMid(mid)];
-    if (!r) return null;
-    if (r.h === null || r.h === undefined || r.a === null || r.a === undefined) return null;
-    return r;
-  }
-
-  function matchPoints(u, mid) {
-    const p = predScore(u, mid);
-    const off = officialScore(mid);
-    const sim = simScores[normMid(mid)];
-    // Официальный результат приоритетен; симулятор — если оба числа введены
-    const result = (off !== null) ? off
-                 : (sim?.h !== "" && sim?.h !== undefined && sim?.a !== "" && sim?.a !== undefined && sim.h !== null && sim.a !== null)
-                   ? { h: Number(sim.h), a: Number(sim.a) }
-                 : null;
-    if (!p || result === null) return null;
-    if (p.h === undefined || p.h === null || p.a === undefined || p.a === null) return null;
-    return calculateMatchPredictionPoints(p.h, p.a, result.h, result.a) ?? null;
-  }
-
-  function teamNameForPublicTable(info) {
-    return info?.team || "—";
-  }
-
-  function scoreMapsForPublicParticipant(u) {
-    const uid = String(u?.id || "");
-    const rows = predByUser?.[uid] || {};
-    const groupScores = {};
-    const playoffScores = {};
-    const playoffPens = {};
-
-    Object.entries(rows).forEach(([rawMid, val]) => {
-      const mid = normMid(rawMid);
-      if (!mid || !val) return;
-      const row = { h: val.h, a: val.a };
-      if (ALL_GROUP_MATCH_IDS.has(mid)) {
-        groupScores[mid] = row;
-      } else {
-        playoffScores[mid] = row;
-        if (val.pen) playoffPens[mid] = String(val.pen);
-      }
-    });
-
-    return { groupScores, playoffScores, playoffPens };
-  }
-
-  function publicPlayoffTeamsForUser(u, matchId) {
-    const { groupScores, playoffScores, playoffPens } = scoreMapsForPublicParticipant(u);
-    const tables = {};
-    ALL_GROUPS.forEach(g => { tables[g] = calcGroupTable(g, groupScores || {}, {}); });
-    const thirds = getThirdRanking(tables, {});
-    const bracketList = allPlayoffMatches;
-
-    function cleanTeamName(v) {
-      return String(v || "")
-        .toLowerCase()
-        .replace(/ё/g, "е")
-        .replace(/[“”«»"]/g, "")
-        .replace(/[^a-zа-я0-9]+/g, " ")
-        .trim();
-    }
-
-    function isRealTeamName(v) {
-      const s = String(v || "").trim();
-      if (!s || s === "?") return false;
-      if (/^(поб\.?|победитель|проигравший|матч|полуфинал|финал|[1234]-е)/i.test(s)) return false;
-      return true;
-    }
-
-    function predictedSideForBracket(bracket, teams) {
-      if (!bracket) return null;
-      const mid = normMid(bracket.id);
-      const s = playoffScores?.[mid] || playoffScores?.[bracket.id];
-      if (!s || s.h === "" || s.h === undefined || s.a === "" || s.a === undefined) return null;
-
-      const h = Number(s.h);
-      const a = Number(s.a);
-      if (Number.isFinite(h) && Number.isFinite(a)) {
-        if (h > a) return "home";
-        if (h < a) return "away";
-      }
-
-      // Ничья в плей-офф: в базе winner может быть "1"/"2", "home"/"away" или названием сборной.
-      const rawPen = String(playoffPens?.[mid] || s.pen || "").trim();
-      const pen = cleanTeamName(rawPen);
-      if (!pen) return null;
-      if (["1", "home", "h", "host", "хозяева", "хозяин", "первая", "первый"].includes(pen)) return "home";
-      if (["2", "away", "a", "guest", "гости", "гость", "вторая", "второй"].includes(pen)) return "away";
-
-      const homeName = cleanTeamName(teams?.home?.team);
-      const awayName = cleanTeamName(teams?.away?.team);
-      if (homeName && pen === homeName) return "home";
-      if (awayName && pen === awayName) return "away";
-      if (homeName && (pen.includes(homeName) || homeName.includes(pen))) return "home";
-      if (awayName && (pen.includes(awayName) || awayName.includes(pen))) return "away";
-
-      // Иногда predicted_winner хранит не сторону, а команду из ph/pa.
-      const ph = cleanTeamName(s.ph);
-      const pa = cleanTeamName(s.pa);
-      if (ph && pen === ph) return "home";
-      if (pa && pen === pa) return "away";
-
-      return null;
-    }
-
-    function resolveFromBracket(bracket, side) {
-      if (!bracket) return { team: "?", tbd: true };
-      const teams = resolveBracketTeams(bracket);
-      const winner = predictedSideForBracket(bracket, teams);
-
-      // Если победитель не определён, не показываем публично "Поб.Матч №..."
-      // Сначала пробуем взять сохранённые пары предыдущего матча, потом реальные пары из сетки.
-      if (!winner) {
-        const prev = predScore(u, bracket.id);
-        if (side === "loser") {
-          if (prev?.ph && prev?.pa) return { team: `${prev.ph}/${prev.pa}`, tbd: true };
-          if (isRealTeamName(teams.home?.team) && isRealTeamName(teams.away?.team)) return { team: `${teams.home.team}/${teams.away.team}`, tbd: true };
-          return { team: "не выбран", tbd: true };
-        }
-        if (prev?.ph && prev?.pa) return { team: `${prev.ph}/${prev.pa}`, tbd: true };
-        if (isRealTeamName(teams.home?.team) && isRealTeamName(teams.away?.team)) return { team: `${teams.home.team}/${teams.away.team}`, tbd: true };
-        return { team: "не выбран", tbd: true };
-      }
-
-      if (side === "loser") return winner === "home" ? teams.away : teams.home;
-      return winner === "home" ? teams.home : teams.away;
-    }
-
-    function resolveBracketTeams(bracket) {
-      if (!bracket) return { home: { team: "?", tbd: true }, away: { team: "?", tbd: true } };
-
-      // 1/16: слоты вроде 2A, 3ABCDF и т.п. считаются по групповой таблице именно этого участника
-      if (bracket.home_key) {
-        return {
-          home: resolveKey(bracket.home_key, tables, thirds, bracket.id),
-          away: resolveKey(bracket.away_key, tables, thirds, bracket.id),
-        };
-      }
-
-      // 1/8 и дальше: берём победителей предыдущих матчей из сетки именно этого участника
-      const homeFrom = String(bracket.home_from || "");
-      const awayFrom = String(bracket.away_from || "");
-      const hId = homeFrom.replace("_loser", "");
-      const aId = awayFrom.replace("_loser", "");
-
-      return {
-        home: resolveFromBracket(bracketList.find(b => normMid(b.id) === normMid(hId)), homeFrom.includes("_loser") ? "loser" : "win"),
-        away: resolveFromBracket(bracketList.find(b => normMid(b.id) === normMid(aId)), awayFrom.includes("_loser") ? "loser" : "win"),
-      };
-    }
-
-    return resolveBracketTeams(bracketList.find(b => normMid(b.id) === normMid(matchId)));
-  }
-
-  function formatPublicPlayoffPair(u, mid, p, m) {
-    // Если пары сохранены прямо в predictions — используем их.
-    if (p?.ph && p?.pa) return `${p.ph} — ${p.pa}`;
-
-    const teams = publicPlayoffTeamsForUser(u, mid);
-    let home = teamNameForPublicTable(teams?.home);
-    let away = teamNameForPublicTable(teams?.away);
-
-    const bad = (v) => /поб\.?|победитель|матч №/i.test(String(v || ""));
-    if (bad(home)) home = "не выбран";
-    if (bad(away)) away = "не выбран";
-
-    if (home !== "—" || away !== "—") return `${home} — ${away}`;
-
-    return `${m?.home_key || m?.home_from || m?.home || "?"} — ${m?.away_key || m?.away_from || m?.away || "?"}`;
-  }
-
-  function userTotals(u) {
-    let group = 0, playoff = 0, bonus = 0, exact = 0, outcome = 0;
-    [...allGroupMatches, ...allPlayoffMatches].forEach(m => {
-      const pts = matchPoints(u, m.id);
-      if (pts === null) return;
-      if (ALL_GROUP_MATCH_IDS.has(normMid(m.id))) group += pts; else playoff += pts;
-      if (pts >= 8) exact++;
-      if (pts >= 2) outcome++;
-    });
-    BONUS_QS.forEach(q => {
-      const uid = String(u.id || "");
-      const ans = bonusByUser[uid]?.[String(q.id)];
-      const bom = bonusOfficialMap[String(q.id)];
-      if (ans === undefined || !bom?.answer) return;
-      const match = bonusAnswerMatches(ans, bom.answer);
-      if (match) bonus += Number(bom.points ?? q.pts ?? 0) || 0;
-    });
-    return { group, playoff, bonus, total: group + playoff + bonus, exact, outcome };
-  }
-
-  const leaderboard = React.useMemo(() => {
-    if (loading || participants.length === 0) return [];
-    const lb = participants.map(u => ({ u, ...userTotals(u) })).sort((a, b) => b.total - a.total || b.exact - a.exact);
-    if (onLeaderboardReady) setTimeout(() => onLeaderboardReady(lb), 0);
-    return lb;
-  }, [loading, participants, officialResultsMap, simScores, bonusOfficialMap, predByUser, bonusByUser]);
-
-  function simInput(mid, side, val) {
-    const nm = normMid(mid);
-    setSimScores(prev => ({ ...prev, [nm]: { ...(prev[nm] || {}), [side]: val === "" ? "" : Number(val) } }));
-  }
-
-  function renderScore(u, mid, slotPair) {
-    const p = predScore(u, mid);
-    if (!p || p.h === undefined || p.h === null || p.a === undefined || p.a === null) return <span style={{ color: "rgba(240,237,230,.2)" }}>—</span>;
-    const pts = matchPoints(u, mid);
-    const ptsColor = pts === null ? "rgba(240,237,230,.25)" : pts >= 8 ? "#86EFAC" : pts >= 5 ? "#FDE68A" : pts >= 2 ? "#F59E0B" : pts === 1 ? "rgba(240,237,230,.4)" : "rgba(252,165,165,.7)";
-    const isPlayoff = isPlayoffMid(mid);
-    const isDraw = Number(p.h) === Number(p.a);
-    const penWinner = isPlayoff && isDraw && p.pen ? String(p.pen) : null;
-    return (
-      <div style={{ textAlign: "center", lineHeight: 1.2 }}>
-        {slotPair && (
-          <div style={{ fontSize: 10, color: "#86EFAC", marginBottom: 3, letterSpacing: 0.1, fontWeight: 700, whiteSpace: "normal", lineHeight: 1.15 }}>
-            {slotPair}
-          </div>
-        )}
-        <span style={{ color: "#F0EDE6", fontWeight: 800, fontSize: 13 }}>{p.h}:{p.a}</span>
-        {penWinner && (
-          <div style={{ fontSize: 9, color: "rgba(147,197,253,.7)", fontWeight: 600, marginTop: 1 }}>
-            пен: {penWinner}
-          </div>
-        )}
-        {pts !== null && <div style={{ fontSize: 10, color: ptsColor, fontWeight: 700 }}>{pts > 0 ? `+${pts}` : "0"}</div>}
-      </div>
-    );
-  }
-
-
-  function renderMobileLeaderboard() {
-    return (
-      <div style={{ display: "grid", gap: 8 }}>
-        {leaderboard.map(({ u, group, playoff, bonus, total, exact, outcome }, i) => (
-          <div key={u.id} style={{ background: i === 0 ? "rgba(245,158,11,.08)" : "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: "9px 10px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <div style={{ width: 26, textAlign: "center", fontFamily: "Oswald,sans-serif", color: i === 0 ? "#FDE68A" : i === 1 ? "#D1D5DB" : i === 2 ? "#F59E0B" : "rgba(240,237,230,.45)", fontWeight: 900 }}>{i + 1}</div>
-              <div style={{ flex: 1, minWidth: 0, color: "#F0EDE6", fontWeight: 900, fontSize: 14, overflowWrap: "anywhere" }}>{uName(u)}</div>
-              <div style={{ fontFamily: "Oswald,sans-serif", color: "#F59E0B", fontSize: 24, fontWeight: 900 }}>{total}</div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, fontSize: 11, textAlign: "center" }}>
-              <div style={{ color: "#86EFAC" }}><b>{group}</b><br/><span style={{ color: "rgba(240,237,230,.38)" }}>группы</span></div>
-              <div style={{ color: "#93C5FD" }}><b>{playoff}</b><br/><span style={{ color: "rgba(240,237,230,.38)" }}>плей-офф</span></div>
-              <div style={{ color: "#FDE68A" }}><b>{bonus}</b><br/><span style={{ color: "rgba(240,237,230,.38)" }}>бонусы</span></div>
-              <div style={{ color: "rgba(134,239,172,.85)" }}><b>{exact}</b><br/><span style={{ color: "rgba(240,237,230,.38)" }}>точных</span></div>
-              <div style={{ color: "rgba(240,237,230,.7)" }}><b>{outcome}</b><br/><span style={{ color: "rgba(240,237,230,.38)" }}>исходов</span></div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  function renderMobileMatchCards(matches) {
-    return (
-      <div style={{ display: "grid", gap: 10 }}>
-        {matches.map((m) => {
-          const off = officialScore(m.id);
-          const hasOfficial = off !== null && off.h !== null && off.h !== undefined && off.a !== null && off.a !== undefined;
-          return (
-            <div key={m.id} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(245,158,11,.14)", borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ padding: "9px 10px", background: "rgba(245,158,11,.07)", display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{m.stage} · {m.match_no ? `№${m.match_no}` : m.label || m.id}</div>
-                  <div style={{ color: "#F0EDE6", fontWeight: 900, fontSize: 14, lineHeight: 1.2 }}>{m.home || m.home_key || "—"} — {m.away || m.away_key || "—"}</div>
-                </div>
-                <div style={{ fontFamily: "Oswald,sans-serif", color: hasOfficial ? "#86EFAC" : "#FDE68A", fontSize: 22, fontWeight: 900 }}>{hasOfficial ? `${off.h}:${off.a}${off.pen ? ` (${off.pen})` : ""}` : "—"}</div>
-              </div>
-              <div style={{ display: "grid", gap: 0 }}>
-                {participants.map(u => {
-                  const p = predScore(u, m.id);
-                  const pairLabel = isPlayoffMid(m.id) && p ? formatPublicPlayoffPair(u, m.id, p, m) : null;
-                  return (
-                    <div key={u.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) auto", gap: 8, alignItems: "center", padding: "7px 10px", borderTop: "1px solid rgba(255,255,255,.05)" }}>
-                      <div style={{ color: "#F0EDE6", fontSize: 12, fontWeight: 700, overflowWrap: "anywhere" }}>{uName(u)}</div>
-                      <div style={{ textAlign: "right" }}>{renderScore(u, m.id, pairLabel)}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  function renderMatchTable(matches) {
-    const isPlayoffSection = matches.some(mm => isPlayoffMid(mm.id));
-    const compact = isNarrowViewport;
-    if (compact) return renderMobileMatchCards(matches);
-
-    // На телефонах фиксируем важные колонки "Хозяева", "Гости" и "Счёт".
-    // Стадия/№ могут уезжать при горизонтальном скролле, чтобы не перекрывать полтаблицы.
-    const stickyWidths = compact ? [58, 42, 122, 122, 58, 0] : [80, 48, 110, 110, 80, 112];
-    const stickyLeft = stickyWidths.reduce((acc, w, i) => { acc.push(i === 0 ? 0 : acc[i-1] + stickyWidths[i-1]); return acc; }, []);
-    const compactPinnedLeft = (i) => {
-      if (i === 2) return 0;                                // Хозяева
-      if (i === 3) return stickyWidths[2];                  // Гости
-      if (i === 4) return stickyWidths[2] + stickyWidths[3]; // Счёт
-      return "auto";
-    };
-    const isPinnedCol = (i) => !compact || i === 2 || i === 3 || i === 4;
-    const BG = "#071a07";
-    const PIN_BG = "#062206";
-    const showSimulatorCol = !compact;
-
-    const stickyTh = (i, extra = {}) => {
-      const pinned = isPinnedCol(i);
-      return ({
-        padding: compact ? "7px 5px" : "8px 6px",
-        textAlign: "left",
-        fontSize: compact ? 10 : 11,
-        color: "rgba(240,237,230,.55)",
-        fontWeight: 700,
-        whiteSpace: "nowrap",
-        position: pinned ? "sticky" : "static",
-        top: pinned ? 0 : "auto",
-        left: pinned ? (compact ? compactPinnedLeft(i) : stickyLeft[i]) : "auto",
-        background: pinned ? PIN_BG : BG,
-        zIndex: pinned ? (compact ? 7 : 4) : 1,
-        boxShadow: pinned && ((compact && i === 4) || (!compact && i === 5)) ? "2px 0 8px rgba(0,0,0,.45)" : "none",
-        minWidth: stickyWidths[i],
-        width: stickyWidths[i],
-        display: compact && i === 5 ? "none" : undefined,
-        ...extra
-      });
-    };
-    const stickyTd = (i, fs = 12, color = "#F0EDE6", fw = 400) => {
-      const pinned = isPinnedCol(i);
-      return ({
-        padding: compact ? "5px 5px" : "4px 6px",
-        fontSize: compact ? Math.max(10, fs - 1) : fs,
-        color,
-        fontWeight: fw,
-        whiteSpace: "nowrap",
-        verticalAlign: "middle",
-        position: pinned ? "sticky" : "static",
-        left: pinned ? (compact ? compactPinnedLeft(i) : stickyLeft[i]) : "auto",
-        background: pinned ? PIN_BG : BG,
-        zIndex: pinned ? (compact ? 6 : 2) : 1,
-        boxShadow: pinned && ((compact && i === 4) || (!compact && i === 5)) ? "2px 0 6px rgba(0,0,0,.40)" : "none",
-        minWidth: stickyWidths[i],
-        width: stickyWidths[i],
-        display: compact && i === 5 ? "none" : undefined,
-      });
-    };
-    const participantTh = (extra = {}) => ({
-      padding: compact ? "7px 5px" : "8px 6px",
-      textAlign: "center",
-      fontSize: compact ? 10 : 11,
-      color: "#FDE68A",
-      fontWeight: 700,
-      whiteSpace: "normal",
-      overflowWrap: "anywhere",
-      wordBreak: "break-word",
-      lineHeight: 1.08,
-      position: "sticky",
-      top: 0,
-      background: BG,
-      zIndex: 3,
-      ...extra
-    });
-
-    return (
-      <div style={{
-        overflowX: "auto",
-        overflowY: "auto",
-        WebkitOverflowScrolling: "touch",
-        maxHeight: compact ? "calc(100vh - 210px)" : "calc(100vh - 260px)",
-        fontSize: compact ? 11 : 12,
-        position: "relative",
-        margin: compact ? "0 -12px" : "0 -16px",
-        paddingBottom: 6,
-        scrollbarWidth: "thin",
-      }}>
-        <table style={{
-          borderCollapse: "collapse",
-          tableLayout: "fixed",
-          width: Math.max(compact ? 1100 : 760, (compact ? 430 : 550) + participants.length * (isPlayoffSection ? (compact ? 132 : 150) : (compact ? 92 : 100)))
-        }}>
-          <thead>
-            <tr style={{ borderBottom: "2px solid rgba(245,158,11,.25)" }}>
-              <th style={stickyTh(0)}>Стадия</th>
-              <th style={stickyTh(1)}>№</th>
-              <th style={stickyTh(2)}>Хозяева</th>
-              <th style={stickyTh(3)}>Гости</th>
-              <th style={stickyTh(4, { color: "#86EFAC" })}>Счёт</th>
-              <th style={stickyTh(5, { color: "#93C5FD", fontSize: 10 })}>Симулятор ✎</th>
-              {participants.map(u => {
-                const tot = matches.reduce((s, m) => {
-                  const pts = matchPoints(u, m.id);
-                  return s + (pts !== null ? pts : 0);
-                }, 0);
-                const totalAll = [...allGroupMatches, ...allPlayoffMatches].reduce((s, m) => {
-                  const pts = matchPoints(u, m.id);
-                  return s + (pts !== null ? pts : 0);
-                }, 0);
-                return (
-                  <th key={u.id} style={participantTh({ minWidth: isPlayoffSection ? (compact ? 128 : 140) : (compact ? 92 : 90), width: isPlayoffSection ? (compact ? 128 : 140) : (compact ? 92 : 90) })}>
-                    <div style={{ maxWidth: isPlayoffSection ? (compact ? 122 : 132) : (compact ? 86 : 84), margin: "0 auto", whiteSpace: "normal", overflowWrap: "anywhere", wordBreak: "break-word", lineHeight: 1.05 }}>
-                      {uName(u)}
-                    </div>
-                    <div style={{ fontSize: 13, fontFamily: "Oswald,sans-serif", color: "#F59E0B" }}>{totalAll}</div>
-                    <div style={{ fontSize: 9, color: "rgba(240,237,230,.3)", fontWeight: 400 }}>раздел: {tot}</div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {matches.map((m, ri) => {
-              const off = officialScore(m.id);
-              const nm = normMid(m.id);
-              const sim = simScores[nm] || {};
-              const hasOfficial = off !== null && off.h !== null && off.h !== undefined && off.a !== null && off.a !== undefined;
-              return (
-                <tr key={m.id} style={{ background: ri % 2 === 0 ? "rgba(255,255,255,.015)" : "transparent", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                  <td style={stickyTd(0, 11, "#FDE68A")}>{m.stage}</td>
-                  <td style={stickyTd(1, 11, "rgba(240,237,230,.4)")}>{m.match_no ? `№${m.match_no}` : m.label || m.id}</td>
-                  <td style={stickyTd(2, 12, "#F0EDE6", 600)}>{m.home || m.home_key || "—"}</td>
-                  <td style={stickyTd(3, 12, "#F0EDE6", 600)}>{m.away || m.away_key || "—"}</td>
-                  <td style={{ ...stickyTd(4, 14, hasOfficial ? "#86EFAC" : "#FDE68A"), fontFamily: "Oswald,sans-serif", textAlign: "center", fontWeight: 700 }}>
-                    {hasOfficial ? `${off.h}:${off.a}${off.pen ? ` (${off.pen})` : ""}` : "—"}
-                  </td>
-                  <td style={stickyTd(5, 12, "#93C5FD")}>
-                    {hasOfficial
-                      ? <span style={{ fontSize: 10, color: "rgba(240,237,230,.3)", fontStyle: "italic" }}>✓</span>
-                      : <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                          <input type="number" min="0" max="20" value={sim.h ?? ""} onChange={e => simInput(m.id, "h", e.target.value)} style={simInputS} placeholder="—" />
-                          <span style={{ color: "rgba(240,237,230,.4)", fontSize: 11 }}>:</span>
-                          <input type="number" min="0" max="20" value={sim.a ?? ""} onChange={e => simInput(m.id, "a", e.target.value)} style={simInputS} placeholder="—" />
-                        </div>
-                    }
-                  </td>
-                  {participants.map(u => {
-                    const isPlayoff = isPlayoffMid(m.id);
-                    const p = predScore(u, m.id);
-                    // Пара команд: берём из прогноза если есть, иначе слоты матча
-                    let pairLabel = null;
-                    if (isPlayoff && p) {
-                      pairLabel = formatPublicPlayoffPair(u, m.id, p, m);
-                    }
-                    return (
-                    <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", verticalAlign: "middle" }}>
-                      {renderScore(u, m.id, pairLabel)}
-                    </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  // стили
-  const thS = { padding: "8px 10px", textAlign: "left", fontSize: 11, color: "rgba(240,237,230,.55)", fontWeight: 700, whiteSpace: "nowrap", position: "sticky", top: 0, background: "#0A1F0A", zIndex: 2 };
-  const tdS = (fs = 12, color = "#F0EDE6", fw = 400) => ({ padding: "4px 8px", fontSize: fs, color, fontWeight: fw, whiteSpace: "nowrap", verticalAlign: "middle" });
-  const simInputS = { width: 32, height: 24, background: "rgba(147,197,253,.1)", border: "1px solid rgba(147,197,253,.3)", borderRadius: 4, color: "#93C5FD", textAlign: "center", fontSize: 12 };
-
-  if (loading) return (
-    <div style={{ textAlign: "center", padding: "60px 20px", color: "rgba(240,237,230,.4)" }}>
-      <div style={{ fontSize: 28, marginBottom: 12 }}>⏳</div>
-      <div>Загружаю прогнозы участников…</div>
-    </div>
-  );
-
-  return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: isNarrowViewport ? "10px 8px 80px" : "14px 12px 80px", overflowX: "hidden" }}>
-
-      {/* ЗАГОЛОВОК */}
-      <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 26, fontWeight: 700, color: "#FDE68A", letterSpacing: 1 }}>
-          📊 Прогнозы участников
-        </div>
-        <div style={{ fontSize: 12, color: "rgba(240,237,230,.4)", marginTop: 4 }}>
-          ЧМ 2026 · Битва прогнозистов · Дедлайн прошёл, прогнозы закрыты
-        </div>
-      </div>
-
-      {/* ЛИДЕРБОРД */}
-      <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.2)", borderRadius: 10, padding: "14px 16px", marginBottom: 18 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 15, fontWeight: 700, color: "#FDE68A", marginBottom: 10 }}>🏆 Рейтинг участников</div>
-        {isNarrowViewport ? renderMobileLeaderboard() : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 480 }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-                {["#", "Участник", "Группы", "Плей-офф", "Бонусы", "Итого", "Точных", "Исходов"].map(h => (
-                  <th key={h} style={{ padding: "6px 10px", fontSize: 11, color: "rgba(240,237,230,.45)", fontWeight: 700, textAlign: h === "Участник" ? "left" : "center", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {leaderboard.map(({ u, group, playoff, bonus, total, exact, outcome }, i) => (
-                <tr key={u.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)", background: i === 0 ? "rgba(245,158,11,.06)" : i < 3 ? "rgba(255,255,255,.015)" : "transparent" }}>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, fontWeight: 800, color: i === 0 ? "#FDE68A" : i === 1 ? "#D1D5DB" : i === 2 ? "#F59E0B" : "rgba(240,237,230,.4)" }}>{i+1}</td>
-                  <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, color: "#F0EDE6" }}>{uName(u)}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#86EFAC", fontWeight: 700 }}>{group}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#93C5FD", fontWeight: 700 }}>{playoff}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#FDE68A", fontWeight: 700 }}>{bonus}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 15, fontFamily: "Oswald,sans-serif", fontWeight: 800, color: i === 0 ? "#F59E0B" : "#F0EDE6" }}>{total}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(134,239,172,.8)" }}>{exact}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(240,237,230,.5)" }}>{outcome}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        )}
-      </div>
-
-      {/* СИМУЛЯТОР ПОДСКАЗКА */}
-      <div style={{ background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.2)", borderRadius: 8, padding: "9px 14px", marginBottom: 14, fontSize: 11, color: "rgba(147,197,253,.8)", display: "flex", alignItems: "center", gap: 8 }}>
-        <span>✎</span>
-        <span><strong>Симулятор:</strong> введи счёт матча в синих полях, чтобы посмотреть как пересчитаются очки. Данные не сохраняются — только в твоём браузере.</span>
-        {Object.keys(simScores).length > 0 && (
-          <button onClick={() => setSimScores({})} style={{ marginLeft: "auto", background: "rgba(147,197,253,.15)", border: "1px solid rgba(147,197,253,.3)", color: "#93C5FD", borderRadius: 4, padding: "3px 8px", fontSize: 10, cursor: "pointer" }}>
-            Сбросить симулятор
-          </button>
-        )}
-      </div>
-
-      {/* ДИАГНОСТИКА — видна если участники не загрузились */}
-      {debugInfo && participants.length === 0 && (
-        <div style={{ background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 8, padding: "12px 16px", marginBottom: 14, fontSize: 11 }}>
-          <div style={{ fontWeight: 700, color: "#FCA5A5", marginBottom: 6 }}>⚠ Участники не найдены. Диагностика:</div>
-          <div style={{ color: "rgba(240,237,230,.6)", lineHeight: 1.8 }}>
-            Профилей: {debugInfo.profiles} · Строк predictions: {debugInfo.predsRows} · Строк bonus_answers: {debugInfo.bonusRows}<br/>
-            {debugInfo.profileError && <span style={{ color: "#FCA5A5" }}>⚠ Ошибка profiles: {debugInfo.profileError}<br/></span>}
-            Уникальных user_id в predictions: {debugInfo.predByUserKeys}<br/>
-            Полных участников (72г+32по+31б): {debugInfo.fullParticipants}<br/>
-            Хоть с одним прогнозом: {debugInfo.hasPreds}<br/>
-            {debugInfo.sampleCounts?.map((s, i) => <span key={i} style={{ marginRight: 12 }}>{s.name}: г{s.group}/пo{s.playoff}/б{s.bonus}</span>)}
-          </div>
-        </div>
-      )}
-      {/* Диагностика official_results — показываем если 0 строк или ошибка */}
-      {debugInfo && (debugInfo.officialError || debugInfo.officialRows === 0) && (
-        <div style={{ background: "rgba(245,158,11,.07)", border: "1px solid rgba(245,158,11,.25)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, fontSize: 11 }}>
-          <div style={{ color: "#FDE68A", fontWeight: 700, marginBottom: 4 }}>
-            {debugInfo.officialError
-              ? `⚠ official_results ошибка (HTTP ${debugInfo.officialStatus || "?"}): ${debugInfo.officialError}`
-              : `ℹ official_results: 0 строк — счёт ещё не введён или RLS не разрешает SELECT anon`}
-          </div>
-          <div style={{ color: "rgba(240,237,230,.4)", fontSize: 10, marginBottom: 4, wordBreak: "break-all" }}>
-            URL: {debugInfo.officialUrl}
-          </div>
-          {debugInfo.officialRows > 0 && (
-            <div style={{ color: "rgba(240,237,230,.5)", marginBottom: 4 }}>
-              Загружено {debugInfo.officialRows}: {debugInfo.officialSample?.join(", ")}
-            </div>
-          )}
-          <details style={{ marginTop: 6 }}>
-            <summary style={{ cursor: "pointer", color: "rgba(240,237,230,.45)", fontSize: 10 }}>
-              SQL: разрешить чтение official_results публично (anon)
-            </summary>
-            <pre style={{ fontSize: 10, color: "rgba(240,237,230,.55)", background: "rgba(0,0,0,.3)", padding: 8, borderRadius: 4, marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT SELECT ON public.official_results TO anon, authenticated;
-ALTER TABLE public.official_results ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "official_results_public_select" ON public.official_results;
-CREATE POLICY "official_results_public_select"
-  ON public.official_results
-  FOR SELECT TO anon, authenticated
-  USING (true);
-DROP POLICY IF EXISTS "official_results_admin_write" ON public.official_results;
-CREATE POLICY "official_results_admin_write"
-  ON public.official_results
-  FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);`}</pre>
-          </details>
-        </div>
-      )}
-      {/* Если официальные результаты есть — показываем сколько */}
-      {debugInfo && debugInfo.officialRows > 0 && !debugInfo.officialError && participants.length > 0 && (
-        <div style={{ background: "rgba(134,239,172,.05)", border: "1px solid rgba(134,239,172,.15)", borderRadius: 6, padding: "5px 12px", marginBottom: 8, fontSize: 10, color: "rgba(134,239,172,.7)" }}>
-          ✓ Официальных результатов: {debugInfo.officialRows} · первые: {debugInfo.officialSample?.join(", ")}
-        </div>
-      )}
-      {debugInfo && debugInfo.officialRows > 0 && debugInfo.predsRows === 0 && (
-        <div style={{ background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, fontSize: 11, color: "#FCA5A5" }}>
-          ⚠ Прогнозы матчей не загрузились у этого пользователя. Нажми «Обновить». Если не поможет — нужна SELECT-политика для predictions.
-        </div>
-      )}
-      {debugInfo && participants.length > 0 && debugInfo.usingFallback && (
-        <div style={{ background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.2)", borderRadius: 6, padding: "6px 12px", marginBottom: 10, fontSize: 10, color: "rgba(245,158,11,.7)" }}>
-          ℹ Показаны все участники с прогнозами (полный фильтр 72г+32по+31б не прошёл никто)
-          {debugInfo.usingSync && <span> · профили из predictions (RLS блокирует profiles)</span>}
-        </div>
-      )}
-      {debugInfo && participants.length > 0 && !debugInfo.usingFallback && debugInfo.usingSync && (
-        <div style={{ background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.2)", borderRadius: 6, padding: "6px 12px", marginBottom: 10, fontSize: 10, color: "rgba(245,158,11,.7)" }}>
-          ℹ Имена участников недоступны (RLS блокирует profiles) — отображаются ID. Добавь политику: SELECT на profiles для anon.
-        </div>
-      )}
-
-      {/* СЕКЦИИ */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-        {[["groups", "Групповой этап"], ["playoff", "Плей-офф"], ["questions", "Бонусные вопросы"]].map(([k, l]) => (
-          <button key={k} className={`tab${tableSection === k ? " on" : ""}`} style={{ fontSize: 12, padding: "5px 12px" }} onClick={() => setTableSection(k)}>{l}</button>
-        ))}
-        <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadPublicData}>↻ Обновить</button>
-      </div>
-
-      {/* ГРУППОВОЙ */}
-      {tableSection === "groups" && renderMatchTable(allGroupMatches)}
-
-      {/* ПЛЕЙ-ОФФ */}
-      {tableSection === "playoff" && renderMatchTable(allPlayoffMatches)}
-
-      {/* БОНУСНЫЕ ВОПРОСЫ */}
-      {tableSection === "questions" && (() => {
-        const BG = "#071a07";
-        const qStickyTh = (extra = {}) => ({
-          padding: isNarrowViewport ? "7px 5px" : "8px 6px",
-          textAlign: "left",
-          fontSize: isNarrowViewport ? 10 : 11,
-          color: "rgba(240,237,230,.55)",
-          fontWeight: 700,
-          whiteSpace: "nowrap",
-          position: isNarrowViewport ? "static" : "sticky",
-          top: isNarrowViewport ? "auto" : 0,
-          background: BG,
-          zIndex: isNarrowViewport ? 1 : 4,
-          ...extra
-        });
-        if (isNarrowViewport) {
-          return (
-            <div style={{ display: "grid", gap: 10 }}>
-              {BONUS_QS.map((q, ri) => {
-                const bom = bonusOfficialMap[String(q.id)];
-                const offAns = bom?.answer;
-                const offStr = offAns !== undefined && offAns !== null ? (Array.isArray(offAns) ? offAns.join(", ") : String(offAns)) : "—";
-                return (
-                  <div key={q.id} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(245,158,11,.14)", borderRadius: 12, overflow: "hidden" }}>
-                    <div style={{ padding: "9px 10px", background: "rgba(245,158,11,.07)" }}>
-                      <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>Вопрос {ri + 1} · официальный ответ: <span style={{ color: "#86EFAC", fontWeight: 900 }}>{offStr}</span></div>
-                      <div style={{ color: "#F0EDE6", fontWeight: 900, fontSize: 14, lineHeight: 1.25, marginTop: 3 }}>{q.text}</div>
-                    </div>
-                    {participants.map(u => {
-                      const ans = bonusByUser[String(u.id || "")]?.[String(q.id)];
-                      const ansStr = ans === undefined || ans === null ? "—" : (Array.isArray(ans) ? ans.join(", ") : String(ans));
-                      const matched = bom?.answer !== undefined ? bonusAnswerMatches(ans, bom.answer) : null;
-                      const correct = matched === true ? true : matched === false && isFinalBonusOfficialRow(q.id, bom) ? false : null;
-                      return (
-                        <div key={u.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) auto", gap: 8, alignItems: "center", padding: "7px 10px", borderTop: "1px solid rgba(255,255,255,.05)" }}>
-                          <div style={{ color: "#F0EDE6", fontSize: 12, fontWeight: 700, overflowWrap: "anywhere" }}>{uName(u)}</div>
-                          <div style={{ textAlign: "right", color: correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6", fontWeight: 800 }}>
-                            {ansStr}
-                            {correct !== null && <span style={{ marginLeft: 5, fontSize: 11 }}>{correct ? `+${bom.points || q.pts}` : "0"}</span>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        }
-        return (
-        <div style={{ overflowX: "auto", overflowY: "auto", WebkitOverflowScrolling: "touch", maxHeight: isNarrowViewport ? "calc(100vh - 210px)" : "calc(100vh - 260px)", margin: isNarrowViewport ? "0 -12px" : "0 -16px" }}>
-          <table style={{ borderCollapse: "collapse", minWidth: Math.max(isNarrowViewport ? 900 : 600, (isNarrowViewport ? 300 : 420) + participants.length * (isNarrowViewport ? 98 : 120)), width: "100%" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid rgba(245,158,11,.25)" }}>
-                <th style={qStickyTh({ left: 0, zIndex: 5, minWidth: 36 })}>№</th>
-                <th style={qStickyTh({ left: 36, zIndex: 5, minWidth: 280, boxShadow: "none" })}>Вопрос</th>
-                <th style={qStickyTh({ left: 316, zIndex: 5, minWidth: 140, color: "#86EFAC", boxShadow: "2px 0 6px rgba(0,0,0,.4)" })}>Официальный ответ</th>
-                {participants.map(u => (
-                  <th key={u.id} style={qStickyTh({ position: isNarrowViewport ? "static" : "sticky", top: isNarrowViewport ? "auto" : 0, left: "auto", zIndex: isNarrowViewport ? 1 : 3, minWidth: isNarrowViewport ? 100 : 110, width: isNarrowViewport ? 100 : 110, color: "#FDE68A", textAlign: "center", whiteSpace: "normal", overflowWrap: "anywhere", wordBreak: "break-word", lineHeight: 1.08 })}>
-                    <div style={{ maxWidth: isNarrowViewport ? 94 : 104, margin: "0 auto", whiteSpace: "normal", overflowWrap: "anywhere", wordBreak: "break-word" }}>{uName(u)}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {BONUS_QS.map((q, ri) => {
-                const bom = bonusOfficialMap[String(q.id)];
-                const offAns = bom?.answer;
-                const offStr = offAns !== undefined && offAns !== null
-                  ? (Array.isArray(offAns) ? offAns.join(", ") : String(offAns))
-                  : "—";
-                const rowBg = ri % 2 === 0 ? "#0c1f0c" : "#071a07";
-                return (
-                  <tr key={q.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                    <td style={{ padding: "6px", fontSize: 11, color: "rgba(240,237,230,.4)", position: "sticky", left: 0, background: rowBg, zIndex: 2, whiteSpace: "nowrap", minWidth: 36 }}>{ri+1}</td>
-                    <td style={{ padding: "6px", fontSize: 12, color: "#F0EDE6", position: "sticky", left: 36, background: rowBg, zIndex: 2, maxWidth: 280, whiteSpace: "normal", lineHeight: 1.4, minWidth: 280 }}>{q.text}</td>
-                    <td style={{ padding: "6px", fontSize: 12, color: "#86EFAC", position: "sticky", left: 316, background: rowBg, zIndex: 2, textAlign: "center", fontWeight: 700, boxShadow: "2px 0 4px rgba(0,0,0,.3)", whiteSpace: "nowrap", minWidth: 140 }}>{offStr}</td>
-                    {participants.map(u => {
-                      const ans = bonusByUser[String(u.id || "")]?.[String(q.id)];
-                      if (ans === undefined || ans === null) return <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", color: "rgba(240,237,230,.2)" }}>—</td>;
-                      const ansStr = Array.isArray(ans) ? ans.join(", ") : String(ans);
-                      const matched = bom?.answer !== undefined
-                        ? bonusAnswerMatches(ans, bom.answer)
-                        : null;
-                      // Во всех бонусных вопросах «+ зачёт» фиксирует уже случившийся исход,
-                      // но остальные варианты до финального закрытия остаются в ожидании.
-                      const correct = matched === true
-                        ? true
-                        : matched === false && isFinalBonusOfficialRow(q.id, bom)
-                          ? false
-                          : null;
-                      return (
-                        <td key={u.id} style={{ padding: "4px 6px", textAlign: "center" }}>
-                          <span style={{ fontSize: 12, color: correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6", fontWeight: correct ? 700 : 400 }}>
-                            {ansStr}
-                          </span>
-                          {correct !== null && (
-                            <div style={{ fontSize: 10, color: correct ? "#86EFAC" : "#FCA5A5" }}>{correct ? `+${bom.points || q.pts}` : "0"}</div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        );
-      })()}
-    </div>
-  );
-}
 function AdminForecastTable({ session, showToast }) {
   const [tableTab, setTableTab] = React.useState("groups");
   const [loading, setLoading] = React.useState(true);
@@ -8501,10 +4403,12 @@ function AdminForecastTable({ session, showToast }) {
     setOfficialResultsMap(oMap);
     setResultDrafts(drafts);
 
-    const boMap = buildBonusOfficialMap(bonusOfficial || []);
+    const boMap = {};
     const bd = {};
-    Object.entries(boMap).forEach(([qid, r]) => {
-      bd[qid] = formatAnswer(r.answer).replace(/^—$/, "");
+    (bonusOfficial || []).forEach(r => {
+      if (!r?.question_id) return;
+      boMap[r.question_id] = r;
+      bd[r.question_id] = formatAnswer(r.answer).replace(/^—$/, "");
     });
     setBonusOfficialMap(boMap);
     setBonusDrafts(bd);
@@ -8840,7 +4744,7 @@ function AdminForecastTable({ session, showToast }) {
   }
 
   function bonusPoints(q, userAnswer, officialRow) {
-    if (!officialRow || !bonusOfficialAllowsScoring(officialRow) || userAnswer === undefined || userAnswer === null || userAnswer === "") return "";
+    if (!officialRow || officialRow.status !== "confirmed" || userAnswer === undefined || userAnswer === null || userAnswer === "") return "";
     const officialAns = officialRow.answer;
     if (q.id === "top_scorers") {
       const offArr = Array.isArray(officialAns) ? officialAns : [];
@@ -8853,10 +4757,7 @@ function AdminForecastTable({ session, showToast }) {
       return norm(userAnswer) === norm(officialAns) ? q.pts : 0;
     }
     if (q.answerType === "number") return String(userAnswer).trim() === String(officialAns).trim() ? q.pts : 0;
-    const matched = bonusAnswerMatches(userAnswer, officialAns);
-    if (matched) return q.pts;
-    if (isAdditiveBonusQuestion(q.id) && !isFinalBonusOfficialRow(q.id, officialRow)) return "";
-    return 0;
+    return String(userAnswer || "").toLowerCase().trim() === String(officialAns || "").toLowerCase().trim() ? q.pts : 0;
   }
 
   function participantTotals(user) {
@@ -8865,6 +4766,189 @@ function AdminForecastTable({ session, showToast }) {
     allPlayoffMatches.forEach(m => { const v = scoreCell(user, m.id); if (v !== "") playoff += Number(v) || 0; });
     BONUS_QS.forEach(q => { const v = bonusPoints(q, userBonusAnswer(user, q.id), bonusOfficialMap[q.id]); if (v !== "") bonus += Number(v) || 0; });
     return { group, playoff, bonus, total: group + playoff + bonus };
+  }
+
+  const [exportLoading, setExportLoading] = React.useState(false);
+
+  function exportExcel() {
+    try {
+      setExportLoading(true);
+      const wb = XLSX.utils.book_new();
+      const ts = new Date();
+      const pad = n => String(n).padStart(2, "0");
+      const fname = `football_fight_club_forecasts_${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())}_${pad(ts.getHours())}-${pad(ts.getMinutes())}.xlsx`;
+
+      // ── Лист 1: Групповой турнир ──
+      {
+        const header = ["Стадия", "№ матча", "Команда 1", "Команда 2", "Официальный результат", ...participants.map(u => displayUserName(u))];
+        const rows = allGroupMatches.map(m => {
+          const off = officialScore(m.id);
+          const offStr = off ? `${off.h}:${off.a}` : "";
+          const predCells = participants.map(u => {
+            const p = predScore(u, m.id);
+            return p ? `${p.h}:${p.a}` : "";
+          });
+          return [m.stage, m.match_no ? `№${m.match_no}` : m.id, m.home || "", m.away || "", offStr, ...predCells];
+        });
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, "Групповой турнир");
+      }
+
+      // ── Лист 2: Плей-офф ──
+      {
+        const header = ["Стадия", "№ матча", "Команда 1", "Команда 2", "Официальный результат", ...participants.map(u => displayUserName(u))];
+        const rows = allPlayoffMatches.map(m => {
+          const off = officialScore(m.id);
+          const offStr = off ? `${off.h}:${off.a}` : "";
+          const officialTeams = officialPlayoffTeams(m.id);
+          const home = teamName(officialTeams?.home) || m.home_key || m.home_from || m.home || "?";
+          const away = teamName(officialTeams?.away) || m.away_key || m.away_from || m.away || "?";
+          const predCells = participants.map(u => {
+            const p = predScore(u, m.id);
+            if (!p) return "";
+            const pTeams = userPlayoffTeams(u, m.id);
+            const pairStr = pTeams ? `${teamName(pTeams.home)} — ${teamName(pTeams.away)}` : "";
+            const scoreStr = `${p.h}:${p.a}`;
+            return pairStr ? `${pairStr} / ${scoreStr}` : scoreStr;
+          });
+          return [m.stage, m.label || m.id, home, away, offStr, ...predCells];
+        });
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, "Плей-офф");
+      }
+
+      // ── Лист 3: Вопросы ──
+      {
+        const header = ["№", "Вопрос", "Очки", "Официальный ответ", ...participants.map(u => displayUserName(u))];
+        const rows = BONUS_QS.map((q, idx) => {
+          const official = bonusOfficialMap[q.id];
+          const offStr = official?.answer !== undefined ? formatAnswer(official.answer) : "";
+          const predCells = participants.map(u => {
+            const ans = userBonusAnswer(u, q.id);
+            return ans !== undefined && ans !== null ? formatAnswer(ans) : "";
+          });
+          return [idx + 1, q.text, q.pts, offStr, ...predCells];
+        });
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, "Вопросы");
+      }
+
+      // ── Лист 4: Результаты ──
+      {
+        const header = ["Участник", "Email", "Групповой", "Плей-офф", "Вопросы", "Всего"];
+        const rows = participants
+          .map(u => ({ u, ...participantTotals(u) }))
+          .sort((a, b) => b.total - a.total || b.group - a.group)
+          .map(({ u, group, playoff, bonus, total }) => [
+            displayUserName(u),
+            u.email || "",
+            group,
+            playoff,
+            bonus,
+            total,
+          ]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, "Результаты");
+      }
+
+      // ── Лист 5: Raw predictions ──
+      {
+        const allRawPreds = [];
+        const profileLookup = {};
+        participants.forEach(u => {
+          const keys = participantKeys(u);
+          keys.forEach(k => { profileLookup[k] = u; });
+        });
+        // Собрать все прогнозы из predByUser
+        Object.entries(predByUser || {}).forEach(([uid, matchMap]) => {
+          const profile = profileLookup[uid] || {};
+          Object.entries(matchMap || {}).forEach(([mid, val]) => {
+            const allMatches = [...allGroupMatches, ...allPlayoffMatches];
+            const matchInfo = allMatches.find(m => m.id === mid) || {};
+            allRawPreds.push({
+              user_id: uid,
+              email: profile.email || "",
+              name: profile.name || "",
+              display_name: profile.display_name || "",
+              match_id: mid,
+              home_team: matchInfo.home || matchInfo.home_key || "",
+              away_team: matchInfo.away || matchInfo.away_key || "",
+              home_score: val?.h ?? "",
+              away_score: val?.a ?? "",
+              predicted_winner: val?.pen || "",
+              created_at: "",
+              updated_at: "",
+            });
+          });
+        });
+        const header = ["user_id","email","name","display_name","match_id","home_team","away_team","home_score","away_score","predicted_winner","created_at","updated_at"];
+        const rows = allRawPreds.map(r => header.map(k => r[k] ?? ""));
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, "Raw predictions");
+      }
+
+      // ── Лист 6: Raw bonus_answers ──
+      {
+        const allRawBonus = [];
+        const profileLookup = {};
+        participants.forEach(u => {
+          const keys = participantKeys(u);
+          keys.forEach(k => { profileLookup[k] = u; });
+        });
+        Object.entries(bonusByUser || {}).forEach(([uid, qMap]) => {
+          const profile = profileLookup[uid] || {};
+          Object.entries(qMap || {}).forEach(([qid, ans]) => {
+            const qInfo = BONUS_QS.find(q => q.id === qid) || {};
+            const official = bonusOfficialMap[qid];
+            const pts = official ? bonusPoints(qInfo, ans, official) : "";
+            allRawBonus.push({
+              user_id: uid,
+              email: profile.email || "",
+              name: profile.name || "",
+              display_name: profile.display_name || "",
+              question_id: qid,
+              answer: formatAnswer(ans),
+              points: pts !== "" ? pts : "",
+              created_at: "",
+            });
+          });
+        });
+        const header = ["user_id","email","name","display_name","question_id","answer","points","created_at"];
+        const rows = allRawBonus.map(r => header.map(k => r[k] ?? ""));
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, "Raw bonus_answers");
+      }
+
+      // ── Лист 7: Completeness ──
+      {
+        const header = ["Участник", "Email", "Всего прогнозов", "Групповых", "Плей-офф", "Бонусных ответов", "Статус"];
+        const rows = participants.map(u => {
+          const keys = participantKeys(u);
+          let totalPreds = 0, groupPreds = 0, playoffPreds = 0;
+          keys.forEach(k => {
+            const matchMap = predByUser?.[k] || {};
+            Object.keys(matchMap).forEach(mid => {
+              if (ALL_GROUP_MATCH_IDS.has(normalizeMatchId(mid))) groupPreds++;
+              else playoffPreds++;
+              totalPreds++;
+            });
+          });
+          let bonusCnt = 0;
+          keys.forEach(k => { bonusCnt += Object.keys(bonusByUser?.[k] || {}).length; });
+          const status = (totalPreds >= 104 && bonusCnt >= 31) ? "OK" : "Проверить";
+          return [displayUserName(u), u.email || "", totalPreds, groupPreds, playoffPreds, bonusCnt, status];
+        });
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, "Completeness");
+      }
+
+      XLSX.writeFile(wb, fname);
+    } catch (err) {
+      console.error("exportExcel error", err);
+      alert(`Ошибка экспорта: ${err?.message || String(err)}\n\nПопробуйте обновить таблицу и повторить.`);
+    } finally {
+      setExportLoading(false);
+    }
   }
 
   function renderMatchRows(matches) {
@@ -8902,7 +4986,7 @@ function AdminForecastTable({ session, showToast }) {
                     {away}
                     {isPlayoff && slotsLabel && <div style={{ fontSize: 10, color: "rgba(240,237,230,.35)" }}>{slotAway}</div>}
                   </td>
-                  <td style={{ fontFamily: "Oswald,sans-serif", color: ["confirmed", "open", "final"].includes(String(off?.status || "")) ? "#86EFAC" : "#FDE68A", whiteSpace: "nowrap" }}>{formatScore(off)}</td>
+                  <td style={{ fontFamily: "Oswald,sans-serif", color: off?.status === "confirmed" ? "#86EFAC" : "#FDE68A", whiteSpace: "nowrap" }}>{formatScore(off)}</td>
                   <td style={{ minWidth: 190 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
                       <input type="number" min="0" max="20" value={draft.h ?? ""} onChange={e => setResultDrafts(p => ({ ...p, [m.id]: { ...p[m.id], h: e.target.value } }))} style={{ width: 34, height: 24, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 4, color: "#F0EDE6", textAlign: "center" }} />
@@ -9013,7 +5097,17 @@ ON public.bonus_answers FOR SELECT TO authenticated
 USING (true);
 GRANT SELECT ON public.bonus_answers TO authenticated;`}</pre></details>}
           </div>
-          <button className="sb" onClick={loadTableData}>Обновить</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="sb" onClick={loadTableData}>Обновить</button>
+            <button
+              className="sb"
+              onClick={exportExcel}
+              disabled={exportLoading || loading || participants.length === 0}
+              style={{ background: exportLoading ? "rgba(245,158,11,.3)" : "rgba(22,163,74,.18)", borderColor: "rgba(22,163,74,.45)", opacity: participants.length === 0 ? 0.45 : 1 }}
+            >
+              {exportLoading ? "Экспорт…" : "Экспорт Excel"}
+            </button>
+          </div>
         </div>
       </div>
       <div className="tabs" style={{ marginBottom: 12 }}>
@@ -9029,1039 +5123,13 @@ GRANT SELECT ON public.bonus_answers TO authenticated;`}</pre></details>}
 
 // ── ADMIN PANEL ──
 
-// ══════════════════════════════════════════════════════════════════
-// НОВАЯ УПРОЩЁННАЯ АДМИНКА — 4 вкладки после дедлайна
-// ══════════════════════════════════════════════════════════════════
-
-// ── Вкладка 1: Матчи (ввод официальных результатов) ──────────────
-function AdminMatchesPanel({ session, showToast }) {
-  const token = session?.access_token;
-  const [officialMap, setOfficialMap] = React.useState({});
-  const [drafts, setDrafts] = React.useState({});
-  const [saving, setSaving] = React.useState({});
-  const [loading, setLoading] = React.useState(true);
-  const [section, setSection] = React.useState("groups");
-
-  const allGroupMatches = React.useMemo(() => ALL_GROUPS.flatMap(g => GROUP_MATCHES[g].map(m => ({ ...m, stage: `Группа ${g}` }))), []);
-  const allPlayoffMatches = React.useMemo(() => [
-    ...R16.map(m => ({ ...m, stage: "1/16" })),
-    ...R8.map(m => ({ ...m, stage: "1/8" })),
-    ...QF.map(m => ({ ...m, stage: "1/4" })),
-    ...SF.map(m => ({ ...m, stage: "1/2" })),
-    { ...THIRD_MATCH, stage: "За 3-е место" },
-    { ...FINAL_MATCH, stage: "Финал" },
-  ], []);
-
-  React.useEffect(() => { loadOfficial(); }, []);
-
-  async function loadOfficial() {
-    setLoading(true);
-    const r = await supa("official_results?select=*", { token });
-    if (r.ok) {
-      const rows = await r.json().catch(() => []);
-      const map = {};
-      (Array.isArray(rows) ? rows : []).forEach(row => {
-        if (row.match_id) map[String(row.match_id)] = row;
-      });
-      setOfficialMap(map);
-      // предзаполнить драфты существующими значениями
-      const d = {};
-      Object.entries(map).forEach(([mid, row]) => {
-        d[mid] = { h: row.home_score ?? "", a: row.away_score ?? "", pen: row.penalty_winner ?? "" };
-      });
-      setDrafts(d);
-    } else {
-      showToast("official_results недоступна — нужен SQL ниже");
-    }
-    setLoading(false);
-  }
-
-  function setDraft(mid, field, val) {
-    setDrafts(p => ({ ...p, [mid]: { ...(p[mid] || {}), [field]: val } }));
-  }
-
-  async function save(mid, status = "confirmed") {
-    const d = drafts[mid] || {};
-    if (d.h === "" || d.h === undefined || d.a === "" || d.a === undefined) { showToast("Введи счёт"); return; }
-    setSaving(p => ({ ...p, [mid]: true }));
-    // Нормализуем match_id → строго "m1", "m2", ... "m104"
-    const normalizedMid = String(mid).trim().replace(/^[^0-9]*(\d+)$/, (_, n) => `m${n}`);
-    const row = { match_id: normalizedMid, home_score: Number(d.h), away_score: Number(d.a), penalty_winner: d.pen || null, status, source: "admin", updated_at: new Date().toISOString() };
-    const r = await supa("official_results", { method: "POST", token, headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row) });
-    if (r.ok) {
-      setOfficialMap(p => ({ ...p, [mid]: row }));
-      showToast(status === "confirmed" ? "✓ Сохранено" : "✓ Черновик");
-    } else {
-      const txt = await r.clone().text().catch(() => "");
-      showToast("Ошибка: " + txt.slice(0, 80));
-    }
-    setSaving(p => ({ ...p, [mid]: false }));
-  }
-
-  async function clearResult(mid) {
-    if (!window.confirm("Удалить официальный результат этого матча?")) return;
-    await supa(`official_results?match_id=eq.${mid}`, { method: "DELETE", token, headers: { Prefer: "return=minimal" } });
-    setOfficialMap(p => { const n = { ...p }; delete n[mid]; return n; });
-    showToast("Результат удалён");
-  }
-
-  const confirmed = Object.values(officialMap).filter(r => r.status === "confirmed").length;
-  const matches = section === "groups" ? allGroupMatches : allPlayoffMatches;
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "#FDE68A" }}>🏟 Официальные результаты</span>
-        <span className="tag tg">{confirmed} подтверждено</span>
-        <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadOfficial}>↻ Обновить</button>
-      </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {[["groups","Групповой этап"],["playoff","Плей-офф"]].map(([k,l]) => (
-          <button key={k} className={`tab${section===k?" on":""}`} style={{ fontSize: 12 }} onClick={() => setSection(k)}>{l}</button>
-        ))}
-      </div>
-      {loading && <div style={{ padding: 20, color: "rgba(240,237,230,.4)", fontSize: 13 }}>Загружаю…</div>}
-      {!loading && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="admin-table">
-            <thead><tr><th>Стадия</th><th>№</th><th>Хозяева</th><th>Гости</th><th>Текущий счёт</th><th style={{ minWidth: 240 }}>Ввод</th><th></th></tr></thead>
-            <tbody>
-              {matches.map(m => {
-                const off = officialMap[m.id];
-                const d = drafts[m.id] || {};
-                const isPlayoff = !ALL_GROUP_MATCH_IDS.has(m.id);
-                const isDraw = d.h !== "" && d.a !== "" && d.h !== undefined && d.a !== undefined && Number(d.h) === Number(d.a);
-                const sv = saving[m.id];
-                return (
-                  <tr key={m.id}>
-                    <td style={{ fontSize: 11, color: "#FDE68A", whiteSpace: "nowrap" }}>{m.stage}</td>
-                    <td style={{ fontSize: 11, color: "rgba(240,237,230,.4)" }}>{m.match_no ? `№${m.match_no}` : m.label || m.id}</td>
-                    <td style={{ fontWeight: 600, color: "#F0EDE6" }}>{m.home || m.home_key || "—"}</td>
-                    <td style={{ fontWeight: 600, color: "#F0EDE6" }}>{m.away || m.away_key || "—"}</td>
-                    <td style={{ fontFamily: "Oswald,sans-serif", fontWeight: 700, color: off?.status === "confirmed" ? "#86EFAC" : off ? "#FDE68A" : "rgba(240,237,230,.3)", whiteSpace: "nowrap" }}>
-                      {off ? `${off.home_score}:${off.away_score}${off.penalty_winner ? ` (пен: ${off.penalty_winner})` : ""}` : "—"}
-                      {off?.status === "confirmed" && <span style={{ fontSize: 9, marginLeft: 4, color: "#86EFAC" }}>✓</span>}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-                        <input type="number" min="0" max="30" value={d.h ?? ""} onChange={e => setDraft(m.id, "h", e.target.value)} style={{ width: 36, height: 26, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 4, color: "#F0EDE6", textAlign: "center", fontSize: 13 }} placeholder="—" />
-                        <span style={{ color: "rgba(240,237,230,.4)" }}>:</span>
-                        <input type="number" min="0" max="30" value={d.a ?? ""} onChange={e => setDraft(m.id, "a", e.target.value)} style={{ width: 36, height: 26, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 4, color: "#F0EDE6", textAlign: "center", fontSize: 13 }} placeholder="—" />
-                        {(isPlayoff && isDraw) && (
-                          <input value={d.pen ?? ""} onChange={e => setDraft(m.id, "pen", e.target.value)} placeholder="победитель пен." style={{ width: 110, height: 26, background: "rgba(255,255,255,.08)", border: "1px solid rgba(245,158,11,.3)", borderRadius: 4, color: "#FDE68A", fontSize: 10, padding: "0 5px" }} />
-                        )}
-                        <button className="mini-btn" disabled={sv} onClick={() => save(m.id, "draft")} style={{ opacity: sv ? 0.5 : 1 }}>Черн.</button>
-                        <button className="mini-btn green" disabled={sv} onClick={() => save(m.id, "confirmed")} style={{ opacity: sv ? 0.5 : 1 }}>{sv ? "…" : "✓ OK"}</button>
-                        {off && <button className="mini-btn red" onClick={() => clearResult(m.id)} style={{ fontSize: 9, opacity: 0.6 }}>×</button>}
-                      </div>
-                    </td>
-                    <td style={{ fontSize: 10, color: ["confirmed", "open", "final"].includes(String(off?.status || "")) ? "#86EFAC" : "rgba(240,237,230,.2)" }}>{off?.status === "final" ? "🔒" : ["confirmed", "open"].includes(String(off?.status || "")) ? "✓" : ""}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <details style={{ marginTop: 20 }}>
-        <summary style={{ cursor: "pointer", fontSize: 11, color: "rgba(240,237,230,.35)" }}>SQL: создать таблицу official_results (если нет)</summary>
-        <pre style={{ fontSize: 10, color: "rgba(240,237,230,.5)", background: "rgba(0,0,0,.3)", padding: 12, borderRadius: 6, marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`CREATE TABLE IF NOT EXISTS public.official_results (
-  match_id TEXT PRIMARY KEY,
-  home_score INTEGER,
-  away_score INTEGER,
-  penalty_winner TEXT,
-  status TEXT DEFAULT 'draft',
-  source TEXT,
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE public.official_results ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "or_select" ON public.official_results FOR SELECT TO anon, authenticated USING (true);
-CREATE POLICY "or_insert" ON public.official_results FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "or_update" ON public.official_results FOR UPDATE TO authenticated USING (true);`}</pre>
-      </details>
-    </div>
-  );
-}
-
-// ── Вкладка 2: Бонусы (ввод официальных ответов) ─────────────────
-function AdminBonusPanel({ session, showToast }) {
-  const token = session?.access_token;
-  const [bonusMap, setBonusMap] = React.useState({});
-  const [drafts, setDrafts] = React.useState({});
-  const [saving, setSaving] = React.useState({});
-  const [loading, setLoading] = React.useState(true);
-  const [sqlMissing, setSqlMissing] = React.useState(false);
-  const [playerCandidates, setPlayerCandidates] = React.useState({});
-  const [candidatesLoading, setCandidatesLoading] = React.useState(false);
-  const [showAllPlayerAnswers, setShowAllPlayerAnswers] = React.useState(false);
-
-  const TARGET_PLAYER_BONUS_IDS = React.useMemo(() => [
-    "player_scores_header",
-    "player_gets_yellow_card",
-    "player_sent_off",
-    "player_scores_as_sub",
-    "player_scores_free_kick",
-    "goalkeeper_saves_penalty",
-    "player_misses_penalty",
-  ], []);
-
-  const TARGET_PLAYER_BONUS_LABELS = {
-    player_scores_header: "Забьёт гол головой",
-    player_gets_yellow_card: "Получит ЖК",
-    player_sent_off: "Получит КК",
-    player_scores_as_sub: "Забьёт, выйдя на замену",
-    player_scores_free_kick: "Забьёт со штрафного",
-    goalkeeper_saves_penalty: "Отразит пенальти",
-    player_misses_penalty: "Не забьёт пенальти",
-  };
-
-  React.useEffect(() => { loadBonus(); loadPlayerCandidates(); }, []);
-
-  function officialListFor(qid) {
-    const fromMap = bonusMap[String(qid)]?.answer;
-    const fromDraft = drafts[String(qid)];
-    return bonusAnswerList(fromMap !== undefined ? fromMap : fromDraft);
-  }
-
-  function isCandidateOfficial(qid, answer) {
-    return officialListFor(qid).map(normalizeBonusAnswer).includes(normalizeBonusAnswer(answer));
-  }
-
-  function displayBonusAnswer(value) {
-    const list = bonusAnswerList(value);
-    return list.length ? list.join(", ") : "—";
-  }
-
-  async function upsertOfficialBonusRow(row) {
-    const qid = encodeURIComponent(String(row.question_id));
-
-    async function patchAll(payload) {
-      return await supa(`bonus_official_answers?question_id=eq.${qid}`, {
-        method: "PATCH", token,
-        headers: { Prefer: "return=representation" },
-        body: JSON.stringify(payload),
-      });
-    }
-
-    async function insert(payload) {
-      return await supa("bonus_official_answers", {
-        method: "POST", token,
-        headers: { Prefer: "return=representation" },
-        body: JSON.stringify(payload),
-      });
-    }
-
-    let payload = row;
-    let r = await patchAll(payload);
-    let firstError = r.ok ? "" : await r.clone().text().catch(() => "");
-
-    // Совместимость со старой таблицей, где ещё нет points.
-    if (!r.ok && /PGRST204|could not find.*points|column.*points/i.test(firstError)) {
-      const { points, ...legacyRow } = row;
-      payload = legacyRow;
-      r = await patchAll(payload);
-    }
-
-    if (r.ok) {
-      const patched = await r.clone().json().catch(() => []);
-      if (Array.isArray(patched) && patched.length > 0) {
-        return { response: r, savedRow: payload };
-      }
-    }
-
-    // Строки ещё нет — создаём. Если question_id уникален, это обычный insert;
-    // если в старой схеме есть дубли, последующие сохранения PATCH обновят их все.
-    r = await insert(payload);
-    if (!r.ok) {
-      const err = await r.clone().text().catch(() => "");
-      if (/PGRST204|could not find.*points|column.*points/i.test(err) && Object.prototype.hasOwnProperty.call(payload, "points")) {
-        const { points, ...legacyRow } = payload;
-        payload = legacyRow;
-        r = await insert(payload);
-      }
-    }
-    return { response: r, savedRow: payload, firstError };
-  }
-
-  async function saveOfficialAnswerRaw(qid, answer, status = "confirmed") {
-    const q = BONUS_QS.find(x => String(x.id) === String(qid));
-    setSaving(p => ({ ...p, [qid]: true }));
-    const row = { question_id: String(qid), answer, points: q?.pts ?? 0, status, updated_at: new Date().toISOString() };
-    const { response: r, savedRow } = await upsertOfficialBonusRow(row);
-    if (r.ok) {
-      setBonusMap(p => ({ ...p, [qid]: { ...row, ...savedRow } }));
-      setDrafts(p => ({ ...p, [qid]: displayBonusAnswer(answer) }));
-      try { window.dispatchEvent(new CustomEvent("ffc-bonus-official-updated", { detail: { qid: String(qid) } })); } catch {}
-      showToast(status === "final" ? "✓ Вопрос закрыт: оставлен только этот ответ" : status === "open" ? "✓ Игрок добавлен в текущий зачёт" : status === "confirmed" ? "✓ Зачёт сохранён" : "✓ Черновик");
-    } else {
-      const txt = await r.clone().text().catch(() => "");
-      if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка сохранения: " + txt.slice(0, 80));
-    }
-    setSaving(p => ({ ...p, [qid]: false }));
-  }
-
-  async function addCandidateToOfficial(qid, answer) {
-    const current = officialListFor(qid);
-    const norm = normalizeBonusAnswer(answer);
-    const next = [...current];
-    if (!next.map(normalizeBonusAnswer).includes(norm)) next.push(answer);
-    await saveOfficialAnswerRaw(qid, next.length === 1 ? next[0] : next, "open");
-  }
-
-  async function setOnlyCandidateOfficial(qid, answer) {
-    await saveOfficialAnswerRaw(qid, answer, "final");
-  }
-
-  async function loadPlayerCandidates() {
-    setCandidatesLoading(true);
-    try {
-      const [answersR, profilesR] = await Promise.all([
-        supa("bonus_answers?select=user_id,question_id,answer&limit=5000", { token }),
-        supa("profiles?select=id,email,name,display_name&limit=5000", { token }).catch(() => null),
-      ]);
-      const rows = answersR.ok ? await answersR.json().catch(() => []) : [];
-      const profiles = profilesR?.ok ? await profilesR.json().catch(() => []) : [];
-      const pMap = {};
-      (Array.isArray(profiles) ? profiles : []).forEach(p => {
-        if (p.id) pMap[String(p.id)] = publicDisplayNameOverride(p.display_name || p.name || p.email || String(p.id).slice(0, 8));
-      });
-      const target = new Set(TARGET_PLAYER_BONUS_IDS.map(String));
-      const grouped = {};
-      const individual = {};
-      TARGET_PLAYER_BONUS_IDS.forEach(qid => { grouped[qid] = {}; individual[qid] = []; });
-      (Array.isArray(rows) ? rows : []).forEach(row => {
-        const qid = String(row.question_id || "");
-        if (!target.has(qid)) return;
-        const answers = bonusAnswerList(row.answer);
-        answers.forEach(ans => {
-          const key = normalizeBonusAnswer(ans);
-          if (!key) return;
-          if (!grouped[qid][key]) grouped[qid][key] = { answer: ans, key, count: 0, users: [], variants: {} };
-          grouped[qid][key].count += 1;
-          const userName = pMap[String(row.user_id)] || `Участник ${String(row.user_id || "").slice(0, 6)}`;
-          grouped[qid][key].users.push(userName);
-          individual[qid].push({
-            answer: ans,
-            key: `${String(row.user_id || "u")}_${qid}_${individual[qid].length}_${key}`,
-            count: 1,
-            users: [userName],
-          });
-          grouped[qid][key].variants[ans] = (grouped[qid][key].variants[ans] || 0) + 1;
-          // Самый частый вариант написания показываем основным.
-          const best = Object.entries(grouped[qid][key].variants).sort((a, b) => b[1] - a[1])[0]?.[0];
-          if (best) grouped[qid][key].answer = best;
-        });
-      });
-      const asArrays = {};
-      Object.entries(grouped).forEach(([qid, m]) => {
-        asArrays[qid] = Object.values(m).sort((a, b) => b.count - a.count || String(a.answer).localeCompare(String(b.answer)));
-        asArrays[`${qid}__all`] = (individual[qid] || []).sort((a, b) => String(a.answer).localeCompare(String(b.answer), "ru"));
-      });
-      setPlayerCandidates(asArrays);
-    } catch (e) {
-      showToast("Ошибка загрузки ответов игроков: " + String(e?.message || e).slice(0, 80));
-    } finally {
-      setCandidatesLoading(false);
-    }
-  }
-
-  async function loadBonus() {
-    setLoading(true);
-    const r = await supa("bonus_official_answers?select=*", { token });
-    if (r.ok) {
-      const rows = await r.json().catch(() => []);
-      const map = buildBonusOfficialMap(rows);
-      setBonusMap(map);
-      const d = {};
-      Object.entries(map).forEach(([qid, row]) => {
-        const ans = row.answer;
-        d[qid] = Array.isArray(ans) ? ans.join(", ") : String(ans ?? "");
-      });
-      setDrafts(d);
-    } else {
-      const txt = await r.clone().text().catch(() => "");
-      if (txt.includes("does not exist")) setSqlMissing(true);
-    }
-    setLoading(false);
-  }
-
-  async function save(qid, status = "confirmed") {
-    const q = BONUS_QS.find(x => String(x.id) === String(qid));
-    const raw = drafts[qid] ?? "";
-    let answer;
-    if (q?.answerType === "player_multi" || TARGET_PLAYER_BONUS_IDS.includes(String(qid))) answer = raw.split(",").map(x => x.trim()).filter(Boolean);
-    else if (q?.answerType === "number") answer = Number(raw) || 0;
-    else answer = raw.trim();
-    setSaving(p => ({ ...p, [qid]: true }));
-    const row = { question_id: String(qid), answer, points: q?.pts ?? 0, status, updated_at: new Date().toISOString() };
-    const { response: r, savedRow } = await upsertOfficialBonusRow(row);
-    if (r.ok) {
-      setBonusMap(p => ({ ...p, [qid]: { ...row, ...savedRow } }));
-      try { window.dispatchEvent(new CustomEvent("ffc-bonus-official-updated", { detail: { qid: String(qid) } })); } catch {}
-      showToast(status === "confirmed" ? "✓ Ответ сохранён" : "✓ Черновик");
-    } else {
-      const txt = await r.clone().text().catch(() => "");
-      if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка сохранения: " + txt.slice(0, 80));
-    }
-    setSaving(p => ({ ...p, [qid]: false }));
-  }
-
-  const confirmed = Object.values(bonusMap).filter(r => ["confirmed", "final", "open"].includes(String(r.status || ""))).length;
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "#FDE68A" }}>🧠 Официальные ответы на бонусы</span>
-        <span className="tag tg">{confirmed}/{BONUS_QS.length} подтверждено</span>
-        <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadBonus}>↻ Обновить</button>
-      </div>
-      {loading && <div style={{ padding: 20, color: "rgba(240,237,230,.4)", fontSize: 13 }}>Загружаю…</div>}
-      {!loading && (
-        <div style={{ marginBottom: 18, background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
-            <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 800, color: "#FDE68A" }}>⚡ Быстрый зачёт по игрокам из ответов</span>
-            <span className="tag tg">5 вопросов</span>
-            <button
-              className="sb"
-              style={{ fontSize: 11, background: showAllPlayerAnswers ? "#14532D" : undefined }}
-              onClick={() => setShowAllPlayerAnswers(v => !v)}
-              title="Переключить сгруппированный вид и все сырые ответы участников"
-            >
-              {showAllPlayerAnswers ? "Показаны все ответы" : "Показать все ответы"}
-            </button>
-            <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadPlayerCandidates} disabled={candidatesLoading}>{candidatesLoading ? "…" : "↻ Обновить ответы"}</button>
-          </div>
-          <div style={{ padding: 14, fontSize: 12, color: "rgba(240,237,230,.55)", lineHeight: 1.5 }}>
-            Здесь собраны все игроки, которых участники выбирали в вопросах: гол головой, ЖК, КК, гол с замены, незабитый пенальти. Нажми <b style={{ color: "#86EFAC" }}>+ зачёт</b>, чтобы начислить очки уже сработавшему варианту — остальные пока останутся без нуля и смогут сработать позже. Кнопка <b>только</b> окончательно закрывает вопрос и отмечает остальные ответы неверными.
-          </div>
-          {candidatesLoading ? (
-            <div style={{ padding: "0 14px 14px", color: "rgba(240,237,230,.4)", fontSize: 12 }}>Загружаю варианты…</div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12, padding: "0 14px 14px" }}>
-              {TARGET_PLAYER_BONUS_IDS.map(qid => {
-                const q = BONUS_QS.find(x => String(x.id) === String(qid));
-                const rows = showAllPlayerAnswers ? (playerCandidates[`${qid}__all`] || []) : (playerCandidates[qid] || []);
-                const officialNow = displayBonusAnswer(bonusMap[String(qid)]?.answer ?? drafts[String(qid)]);
-                return (
-                  <div key={qid} style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, overflow: "hidden", background: "rgba(0,0,0,.16)" }}>
-                    <div style={{ padding: "9px 10px", background: "rgba(22,163,74,.08)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
-                      <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontWeight: 800, fontSize: 15 }}>{TARGET_PLAYER_BONUS_LABELS[qid] || q?.text}</div>
-                      <div style={{ color: "rgba(240,237,230,.45)", fontSize: 11, marginTop: 3 }}>Сейчас в зачёте: <span style={{ color: officialNow === "—" ? "rgba(240,237,230,.35)" : "#86EFAC" }}>{officialNow}</span></div>
-                    </div>
-                    <div style={{ maxHeight: 310, overflow: "auto" }}>
-                      {rows.length === 0 ? (
-                        <div style={{ padding: 12, color: "rgba(240,237,230,.35)", fontSize: 12 }}>Пока нет ответов</div>
-                      ) : rows.map(r => {
-                        const included = isCandidateOfficial(qid, r.answer);
-                        const users = [...new Set(r.users)].slice(0, 8).join(", ");
-                        return (
-                          <div key={r.key} style={{ padding: "9px 10px", borderTop: "1px solid rgba(255,255,255,.05)", display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}>
-                            <div>
-                              <div style={{ color: included ? "#86EFAC" : "#F0EDE6", fontWeight: 800, fontSize: 13 }}>{r.answer} <span style={{ color: "#F59E0B" }}>×{r.count}</span>{included && <span style={{ marginLeft: 5, color: "#86EFAC" }}>✓</span>}</div>
-                              <div style={{ color: "rgba(240,237,230,.35)", fontSize: 10, marginTop: 2, lineHeight: 1.35 }}>{users}{r.users.length > 8 ? ` и ещё ${r.users.length - 8}` : ""}</div>
-                            </div>
-                            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                              <button className="mini-btn green" disabled={saving[qid] || included} onClick={() => addCandidateToOfficial(qid, r.answer)}>{included ? "в зачёте" : "+ зачёт"}</button>
-                              <button className="mini-btn" disabled={saving[qid]} onClick={() => setOnlyCandidateOfficial(qid, r.answer)}>только</button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-      {!loading && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="admin-table">
-            <thead><tr><th>№</th><th style={{ minWidth: 260 }}>Вопрос</th><th>Тип</th><th>Очки</th><th>Текущий ответ</th><th style={{ minWidth: 280 }}>Ввод ответа</th><th></th></tr></thead>
-            <tbody>
-              {BONUS_QS.map((q, i) => {
-                const off = bonusMap[String(q.id)];
-                const d = drafts[String(q.id)] ?? "";
-                const sv = saving[String(q.id)];
-                const offStr = off?.answer !== undefined ? (Array.isArray(off.answer) ? off.answer.join(", ") : String(off.answer)) : "—";
-                const placeholder = q.answerType === "player_multi" ? "Игрок 1, Игрок 2, ..." : q.answerType === "number" ? "Число" : q.answerType === "score" ? "2:1" : "Ответ";
-                return (
-                  <tr key={q.id}>
-                    <td style={{ fontSize: 11, color: "rgba(240,237,230,.4)" }}>{i + 1}</td>
-                    <td style={{ fontSize: 12, color: "#F0EDE6", maxWidth: 280, whiteSpace: "normal", lineHeight: 1.4 }}>{q.text}</td>
-                    <td style={{ fontSize: 10, color: "rgba(240,237,230,.4)", whiteSpace: "nowrap" }}>{q.answerType || "text"}</td>
-                    <td style={{ fontFamily: "Oswald,sans-serif", color: "#F59E0B", fontWeight: 700 }}>{q.pts}</td>
-                    <td style={{ fontSize: 11, color: ["confirmed", "open", "final"].includes(String(off?.status || "")) ? "#86EFAC" : "#FDE68A", fontWeight: off ? 600 : 400, whiteSpace: "nowrap" }}>
-                      {offStr}{["confirmed", "open", "final"].includes(String(off?.status || "")) && <span style={{ marginLeft: 4, fontSize: 9 }}>{off?.status === "final" ? "🔒" : "✓"}</span>}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
-                        <input
-                          value={d}
-                          onChange={e => setDrafts(p => ({ ...p, [String(q.id)]: e.target.value }))}
-                          placeholder={placeholder}
-                          style={{ flex: 1, minWidth: 140, height: 26, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 4, color: "#F0EDE6", fontSize: 12, padding: "0 8px" }}
-                        />
-                        <button className="mini-btn" disabled={sv} onClick={() => save(q.id, "draft")} style={{ opacity: sv ? 0.5 : 1 }}>Черн.</button>
-                        <button className="mini-btn green" disabled={sv} onClick={() => save(q.id, "confirmed")} style={{ opacity: sv ? 0.5 : 1 }}>{sv ? "…" : "✓ OK"}</button>
-                      </div>
-                    </td>
-                    <td style={{ fontSize: 10, color: ["confirmed", "open", "final"].includes(String(off?.status || "")) ? "#86EFAC" : "rgba(240,237,230,.2)" }}>{off?.status === "final" ? "🔒" : ["confirmed", "open"].includes(String(off?.status || "")) ? "✓" : ""}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {sqlMissing && (
-        <div style={{ marginTop: 16, background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.3)", borderRadius: 8, padding: 14 }}>
-          <div style={{ fontSize: 12, color: "#FCA5A5", marginBottom: 8 }}>⚠ Таблица bonus_official_answers не найдена. Выполни SQL:</div>
-          <pre style={{ fontSize: 10, color: "rgba(240,237,230,.6)", background: "rgba(0,0,0,.3)", padding: 10, borderRadius: 4, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`CREATE TABLE IF NOT EXISTS public.bonus_official_answers (
-  question_id TEXT PRIMARY KEY,
-  answer JSONB,
-  points INTEGER DEFAULT 0,
-  status TEXT DEFAULT 'draft',
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE public.bonus_official_answers ADD COLUMN IF NOT EXISTS points INTEGER DEFAULT 0;
-ALTER TABLE public.bonus_official_answers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "boa_select" ON public.bonus_official_answers FOR SELECT TO anon, authenticated USING (true);
-CREATE POLICY "boa_insert" ON public.bonus_official_answers FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "boa_update" ON public.bonus_official_answers FOR UPDATE TO authenticated USING (true);`}</pre>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Вкладка 3: Плей-офф пары ──────────────────────────────────────
-function AdminPlayoffPairsPanel({ session, showToast }) {
-  const token = session?.access_token;
-  const [pairs, setPairs] = React.useState({});
-  const [drafts, setDrafts] = React.useState({});
-  const [saving, setSaving] = React.useState({});
-  const [loading, setLoading] = React.useState(true);
-  const [sqlMissing, setSqlMissing] = React.useState(false);
-
-  const allPlayoffMatches = React.useMemo(() => [
-    ...R16.map(m => ({ ...m, stage: "1/16" })),
-    ...R8.map(m => ({ ...m, stage: "1/8" })),
-    ...QF.map(m => ({ ...m, stage: "1/4" })),
-    ...SF.map(m => ({ ...m, stage: "1/2" })),
-    { ...THIRD_MATCH, stage: "За 3-е место" },
-    { ...FINAL_MATCH, stage: "Финал" },
-  ], []);
-
-  React.useEffect(() => { loadPairs(); }, []);
-
-  async function loadPairs() {
-    setLoading(true);
-    const r = await supa("playoff_official_pairs?select=*", { token });
-    if (r.ok) {
-      const rows = await r.json().catch(() => []);
-      const map = {};
-      (Array.isArray(rows) ? rows : []).forEach(row => { if (row.match_id) map[String(row.match_id)] = row; });
-      setPairs(map);
-      const d = {};
-      Object.entries(map).forEach(([mid, row]) => { d[mid] = { home: row.home_team ?? "", away: row.away_team ?? "" }; });
-      setDrafts(d);
-    } else {
-      const txt = await r.clone().text().catch(() => "");
-      if (txt.includes("does not exist")) setSqlMissing(true);
-    }
-    setLoading(false);
-  }
-
-  function setDraft(mid, field, val) {
-    setDrafts(p => ({ ...p, [mid]: { ...(p[mid] || {}), [field]: val } }));
-  }
-
-  async function save(mid) {
-    const d = drafts[mid] || {};
-    if (!d.home?.trim() || !d.away?.trim()) { showToast("Введи обе команды"); return; }
-    setSaving(p => ({ ...p, [mid]: true }));
-    const row = { match_id: mid, home_team: d.home.trim(), away_team: d.away.trim(), updated_at: new Date().toISOString() };
-    const r = await supa("playoff_official_pairs", { method: "POST", token, headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row) });
-    if (r.ok) {
-      setPairs(p => ({ ...p, [mid]: row }));
-      showToast("✓ Пара сохранена");
-    } else {
-      const txt = await r.clone().text().catch(() => "");
-      if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка: " + txt.slice(0, 80));
-    }
-    setSaving(p => ({ ...p, [mid]: false }));
-  }
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "#FDE68A" }}>⚔ Реальные пары плей-офф</span>
-        <span className="tag ty">{Object.keys(pairs).length}/{allPlayoffMatches.length} заполнено</span>
-        <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadPairs}>↻ Обновить</button>
-      </div>
-      <div style={{ fontSize: 12, color: "rgba(147,197,253,.7)", background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.18)", borderRadius: 6, padding: "8px 12px", marginBottom: 12 }}>
-        Зафиксированные здесь пары используются для проверки: очки за счёт в плей-офф начисляются только если пара участника совпала с реальной. Match_id не меняется. Прогнозы участников не трогаются.
-      </div>
-      {loading && <div style={{ padding: 20, color: "rgba(240,237,230,.4)", fontSize: 13 }}>Загружаю…</div>}
-      {!loading && !sqlMissing && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="admin-table">
-            <thead><tr><th>Стадия</th><th>Match ID</th><th>Слот хозяев</th><th>Слот гостей</th><th style={{ color: "#86EFAC" }}>Реальная пара</th><th style={{ minWidth: 320 }}>Ввод команд</th></tr></thead>
-            <tbody>
-              {allPlayoffMatches.map(m => {
-                const saved = pairs[m.id];
-                const d = drafts[m.id] || {};
-                const sv = saving[m.id];
-                return (
-                  <tr key={m.id}>
-                    <td style={{ fontSize: 11, color: "#FDE68A", whiteSpace: "nowrap" }}>{m.stage}</td>
-                    <td style={{ fontSize: 10, color: "rgba(240,237,230,.4)", fontFamily: "monospace" }}>{m.id}</td>
-                    <td style={{ fontSize: 11, color: "rgba(240,237,230,.5)" }}>{m.home || m.home_from || "—"}</td>
-                    <td style={{ fontSize: 11, color: "rgba(240,237,230,.5)" }}>{m.away || m.away_from || "—"}</td>
-                    <td style={{ fontWeight: 700, color: saved ? "#86EFAC" : "rgba(240,237,230,.25)" }}>{saved ? `${saved.home_team} — ${saved.away_team}` : "не задана"}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-                        <input value={d.home ?? ""} onChange={e => setDraft(m.id, "home", e.target.value)} placeholder="Команда хозяев" style={{ width: 120, height: 26, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 4, color: "#F0EDE6", fontSize: 11, padding: "0 6px" }} />
-                        <span style={{ color: "rgba(240,237,230,.3)", fontSize: 11 }}>—</span>
-                        <input value={d.away ?? ""} onChange={e => setDraft(m.id, "away", e.target.value)} placeholder="Команда гостей" style={{ width: 120, height: 26, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 4, color: "#F0EDE6", fontSize: 11, padding: "0 6px" }} />
-                        <button className="mini-btn green" disabled={sv} onClick={() => save(m.id)} style={{ opacity: sv ? 0.5 : 1 }}>{sv ? "…" : "✓ Сохранить"}</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {(sqlMissing || true) && (
-        <details style={{ marginTop: 20 }}>
-          <summary style={{ cursor: "pointer", fontSize: 11, color: "rgba(240,237,230,.35)" }}>SQL: создать таблицу playoff_official_pairs (если нет)</summary>
-          <pre style={{ fontSize: 10, color: "rgba(240,237,230,.5)", background: "rgba(0,0,0,.3)", padding: 12, borderRadius: 6, marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`CREATE TABLE IF NOT EXISTS public.playoff_official_pairs (
-  match_id TEXT PRIMARY KEY,
-  home_team TEXT NOT NULL,
-  away_team TEXT NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE public.playoff_official_pairs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "pop_select" ON public.playoff_official_pairs FOR SELECT TO anon, authenticated USING (true);
-CREATE POLICY "pop_insert" ON public.playoff_official_pairs FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "pop_update" ON public.playoff_official_pairs FOR UPDATE TO authenticated USING (true);`}</pre>
-        </details>
-      )}
-    </div>
-  );
-}
-
-// ── Вкладка 4: Битва клубов — очки игроков ───────────────────────
-function AdminFfcScoresPanel({ session, showToast }) {
-  const token = session?.access_token;
-  const [players, setPlayers] = React.useState([]);
-  const [scores, setScores] = React.useState({});
-  const [drafts, setDrafts] = React.useState({});
-  const [saving, setSaving] = React.useState({});
-  const [loading, setLoading] = React.useState(true);
-  const [sqlMissing, setSqlMissing] = React.useState(false);
-  const [roundId, setRoundId] = React.useState(null);
-  const [lineupCards, setLineupCards] = React.useState([]);
-
-  React.useEffect(() => { loadAll(); }, []);
-
-  async function loadAll() {
-    setLoading(true);
-    // 1. Получаем 1-й тур
-    let rid = null;
-    const roundsR = await supa("ffc_rounds?select=id,round_no,name&order=round_no.asc.nullslast,created_at.asc&limit=1", { token });
-    if (roundsR.ok) {
-      const rounds = await roundsR.json().catch(() => []);
-      rid = Array.isArray(rounds) && rounds[0]?.id ? rounds[0].id : null;
-    }
-    setRoundId(rid);
-
-    // 2. Игроки тура — только уникальные option_id из реальных составов
-    let playerRows = [];
-
-    // Сначала пробуем ffc_round_draft_options с round_id
-    if (rid) {
-      const poolR = await supa(`ffc_round_draft_options?select=id,slot_key,player_name,national_team,position&round_id=eq.${rid}&order=slot_key.asc,option_no.asc&limit=200`, { token });
-      if (poolR.ok) playerRows = await poolR.json().catch(() => []);
-    }
-
-    // Если не нашли по round_id — берём все опции и дедуплицируем по имени
-    if (!playerRows.length) {
-      const poolR = await supa(`ffc_round_draft_options?select=id,slot_key,player_name,national_team,position&order=slot_key.asc,option_no.asc&limit=500`, { token });
-      if (poolR.ok) {
-        const all = await poolR.json().catch(() => []);
-        // Берём только уникальные по имени+позиции (первые 5 на позицию)
-        const seen = {};
-        playerRows = all.filter(p => {
-          const key = `${p.slot_key}_${p.player_name}`;
-          if (seen[key]) return false;
-          seen[key] = true;
-          return true;
-        });
-      }
-    }
-
-    // Финальный fallback: собрать из реальных составов
-    if (!playerRows.length) {
-      const linR = await supa("ffc_lineups?select=draft_answers&limit=100", { token });
-      if (linR.ok) {
-        const lins = await linR.json().catch(() => []);
-        const optIds = new Set();
-        lins.forEach(l => {
-          try {
-            const raw = typeof l.draft_answers === "string" ? JSON.parse(l.draft_answers) : l.draft_answers;
-            if (!raw) return;
-            Object.values(raw).forEach(val => {
-              const id = typeof val === "object" ? (val.option_id || val.id) : String(val);
-              if (id) optIds.add(id);
-            });
-          } catch {}
-        });
-        // Грузим опции по этим id
-        if (optIds.size > 0) {
-          const ids = [...optIds].join(",");
-          const optR = await supa(`ffc_round_draft_options?select=id,slot_key,player_name,national_team,position&id=in.(${ids})&order=slot_key.asc`, { token });
-          if (optR.ok) {
-            const opts = await optR.json().catch(() => []);
-            // Уникальные по имени
-            const seen = new Set();
-            playerRows = opts.filter(p => {
-              if (seen.has(p.player_name)) return false;
-              seen.add(p.player_name);
-              return true;
-            });
-          }
-        }
-      }
-    }
-
-    // Фильтруем: оставляем только option_id, которые выбрал хоть один участник
-    // Грузим все составы и собираем уникальные option_id
-    const linAllR = await supa("ffc_lineups?select=draft_answers,captain_option_id&limit=1000", { token });
-    const chosenIds = new Set();
-    if (linAllR.ok) {
-      const lins = await linAllR.json().catch(() => []);
-      lins.forEach(l => {
-        try {
-          const raw = typeof l.draft_answers === "string" ? JSON.parse(l.draft_answers) : (l.draft_answers || {});
-          Object.values(raw).forEach(val => {
-            const id = typeof val === "object" ? (val.option_id || val.id || val.optionId) : String(val);
-            if (id) chosenIds.add(id);
-          });
-          if (l.captain_option_id) chosenIds.add(String(l.captain_option_id));
-        } catch {}
-      });
-    }
-    // Если нашли выборы — оставляем только выбранных, иначе всех (страховка)
-    if (chosenIds.size > 0) {
-      playerRows = playerRows.filter(p => chosenIds.has(String(p.id)));
-    }
-
-    setPlayers(playerRows);
-
-    // 3. Существующие очки — грузим все, не фильтруем по round_id
-    const scR = await supa("ffc_round_player_scores?select=*&order=updated_at.desc.nullslast&limit=5000", { token });
-    if (scR.ok) {
-      const rows = await scR.json().catch(() => []);
-      const map = {};
-      const playerById = {};
-      (playerRows || []).forEach(p => {
-        const pid = String(p.id || "");
-        if (!pid) return;
-        playerById[pid] = p;
-      });
-      (Array.isArray(rows) ? rows : []).forEach(r => {
-        const pid = String(r.player_id || r.option_id || "");
-        if (!pid) return;
-        // rows отсортированы по updated_at desc, поэтому первый — самый свежий.
-        if (!map[pid]) map[pid] = r;
-        const p = playerById[pid];
-        const nm = r.player_name || p?.player_name || p?.name;
-        const tm = r.national_team || p?.national_team;
-        if (nm) {
-          const nk = `name:${ffcCleanPlayerKey(nm, tm)}`;
-          const ntk = `nameTeam:${ffcPlayerNameTeamKey(nm, tm)}`;
-          if (!map[nk]) map[nk] = r;
-          if (!map[ntk]) map[ntk] = r;
-        }
-      });
-      setScores(map);
-      const d = {};
-      Object.entries(map).forEach(([pid, row]) => { if (!pid.startsWith("name:") && !pid.startsWith("nameTeam:")) d[pid] = String(row.points ?? ""); });
-      setDrafts(d);
-    } else {
-      const txt = await scR.clone().text().catch(() => "");
-      if (txt.includes("does not exist")) setSqlMissing(true);
-    }
-
-    // 4. Составы участников для суммирования
-    if (rid) {
-      const linR = await supa(`ffc_lineups?round_id=eq.${rid}&select=id,user_id,lineup_status,draft_answers,captain_option_id&order=created_at.desc`, { token });
-      const profR = await supa("profiles?select=id,user_id,name,display_name", { token });
-      if (linR.ok && profR.ok) {
-        const lins = await linR.json().catch(() => []);
-        const profs = await profR.json().catch(() => []);
-        const pm = {};
-        profs.forEach(p => { if (p.id) pm[p.id] = p; if (p.user_id) pm[p.user_id] = p; });
-        setLineupCards(lins.map(l => ({ ...l, _name: pm[l.user_id]?.display_name || pm[l.user_id]?.name || String(l.user_id || "").slice(0, 8) })));
-      }
-    }
-    setLoading(false);
-  }
-
-  async function save(playerId) {
-    const pts = Number(drafts[playerId] ?? 0);
-    setSaving(p => ({ ...p, [playerId]: true }));
-
-    const readRespText = async (resp) => {
-      try { return await resp.clone().text(); } catch { return ""; }
-    };
-
-    try {
-      const player = players.find(p => String(p.id) === String(playerId)) || {};
-      const now = new Date().toISOString();
-      const rowFull = {
-        player_id: playerId,
-        round_id: roundId,
-        points: pts,
-        player_name: player.player_name || player.name || null,
-        national_team: player.national_team || null,
-        updated_at: now
-      };
-      const rowBasic = { player_id: playerId, round_id: roundId, points: pts, updated_at: now };
-
-      async function upsertRow(row) {
-        // on_conflict важен для Supabase/PostgREST, иначе merge-duplicates может не сработать стабильно.
-        return await supa("ffc_round_player_scores?on_conflict=round_id,player_id", {
-          method: "POST",
-          token,
-          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-          body: JSON.stringify(row)
-        });
-      }
-
-      async function patchThenInsert(row) {
-        // Важно: PATCH в PostgREST возвращает ok даже если обновлено 0 строк.
-        // Поэтому просим representation и проверяем, что реально вернулась строка.
-        const patch = await supa(`ffc_round_player_scores?round_id=eq.${encodeURIComponent(roundId)}&player_id=eq.${encodeURIComponent(playerId)}`, {
-          method: "PATCH",
-          token,
-          headers: { Prefer: "return=representation" },
-          body: JSON.stringify(row)
-        });
-
-        if (patch.ok) {
-          const patchedRows = await patch.clone().json().catch(() => []);
-          if (Array.isArray(patchedRows) && patchedRows.length > 0) return patch;
-          // 0 строк обновлено — значит строки ещё не было, делаем insert ниже.
-        } else {
-          const patchErr = await readRespText(patch);
-          // Если ошибка из-за лишних колонок, пусть внешний код переключится на rowBasic.
-          if (/player_name|national_team|column|schema cache/i.test(patchErr)) return patch;
-        }
-
-        // Если строки ещё не было — обычный insert.
-        return await supa("ffc_round_player_scores", {
-          method: "POST",
-          token,
-          headers: { Prefer: "return=representation" },
-          body: JSON.stringify(row)
-        });
-      }
-
-      let usedFull = true;
-      let r = await upsertRow(rowFull);
-      let err = r.ok ? "" : await readRespText(r);
-
-      // На старой таблице может не быть player_name/national_team.
-      if (!r.ok && /player_name|national_team|column|schema cache/i.test(err)) {
-        usedFull = false;
-        r = await upsertRow(rowBasic);
-        err = r.ok ? "" : await readRespText(r);
-      }
-
-      // Если нет unique(round_id, player_id), upsert невозможен — пробуем PATCH, затем INSERT.
-      if (!r.ok && /unique|exclusion constraint|ON CONFLICT|42P10|23505|duplicate/i.test(err)) {
-        const row = usedFull ? rowFull : rowBasic;
-        r = await patchThenInsert(row);
-        err = r.ok ? "" : await readRespText(r);
-        if (!r.ok && usedFull && /player_name|national_team|column|schema cache/i.test(err)) {
-          usedFull = false;
-          r = await patchThenInsert(rowBasic);
-          err = r.ok ? "" : await readRespText(r);
-        }
-      }
-
-      if (!r.ok) {
-        if (/does not exist|42P01/i.test(err)) setSqlMissing(true);
-        showToast("Ошибка сохранения: " + (err || `HTTP ${r.status}`).slice(0, 140));
-        console.error("[FFC scores save] failed", r.status, err);
-        return;
-      }
-
-      const saved = usedFull ? rowFull : rowBasic;
-      setScores(prev => ({
-        ...prev,
-        [String(playerId)]: saved,
-        ...(rowFull.player_name ? {
-          [`name:${ffcCleanPlayerKey(rowFull.player_name, rowFull.national_team)}`]: saved,
-          [`nameTeam:${ffcPlayerNameTeamKey(rowFull.player_name, rowFull.national_team)}`]: saved
-        } : {})
-      }));
-      showToast("✓ Очки сохранены");
-    } catch (e) {
-      console.error("[FFC scores save] exception", e);
-      showToast("Ошибка сохранения: " + String(e?.message || e).slice(0, 140));
-    } finally {
-      setSaving(p => ({ ...p, [playerId]: false }));
-    }
-  }
-
-  // Сумма очков состава участника
-  function lineupSlotScore(val) {
-    const optId = typeof val === "object" ? (val.option_id || val.id || val.optionId) : String(val || "");
-    const direct = scores[String(optId)]?.points;
-    if (direct !== undefined && direct !== null) return Number(direct);
-
-    const player = players.find(p => String(p.id) === String(optId)) || {};
-    const nm = val?.player_name || val?.name || player.player_name || player.name;
-    const tm = val?.national_team || val?.team || player.national_team;
-
-    const byNameTeam = scores[`nameTeam:${ffcPlayerNameTeamKey(nm, tm)}`]?.points;
-    if (byNameTeam !== undefined && byNameTeam !== null) return Number(byNameTeam);
-
-    const byName = scores[`name:${ffcCleanPlayerKey(nm, tm)}`]?.points;
-    if (byName !== undefined && byName !== null) return Number(byName);
-
-    return 0;
-  }
-
-  function lineupTotal(lineup) {
-    try {
-      const raw = typeof lineup.draft_answers === "string" ? JSON.parse(lineup.draft_answers) : (lineup.draft_answers || {});
-      return Object.values(raw).reduce((sum, val) => sum + lineupSlotScore(val), 0);
-    } catch { return 0; }
-  }
-
-  const filledCount = Object.values(scores).filter(r => r.points !== undefined && r.points !== null).length;
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "#FDE68A" }}>⚽ Очки игроков — 1-й тур Битвы клубов</span>
-        {roundId && <span className="tag ty">round: {String(roundId).slice(0, 8)}…</span>}
-        <span className="tag">{filledCount}/{players.length} заполнено</span>
-        <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadAll}>↻ Обновить</button>
-      </div>
-
-      {loading && <div style={{ padding: 20, color: "rgba(240,237,230,.4)", fontSize: 13 }}>Загружаю…</div>}
-
-      {!loading && !sqlMissing && players.length > 0 && (
-        <div style={{ overflowX: "auto", marginBottom: 20 }}>
-          <table className="admin-table">
-            <thead><tr><th>Игрок</th><th>Сборная</th><th>Позиция</th><th>Текущие очки</th><th style={{ minWidth: 160 }}>Ввод очков</th></tr></thead>
-            <tbody>
-              {players.map(p => {
-                const pid = String(p.id);
-                const sv = saving[pid];
-                const cur = scores[pid];
-                return (
-                  <tr key={pid}>
-                    <td style={{ fontWeight: 600, color: "#F0EDE6" }}>{p.player_name || p.name}</td>
-                    <td style={{ fontSize: 11, color: "rgba(240,237,230,.55)" }}>{p.national_team || "—"}</td>
-                    <td style={{ fontSize: 11, color: "rgba(240,237,230,.4)" }}>{p.position || "—"}</td>
-                    <td style={{ fontFamily: "Oswald,sans-serif", fontWeight: 700, color: cur?.points !== undefined ? "#86EFAC" : "rgba(240,237,230,.25)" }}>{cur?.points !== undefined ? cur.points : "—"}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                        <input type="number" min="0" max="50" value={drafts[pid] ?? ""} onChange={e => setDrafts(d => ({ ...d, [pid]: e.target.value }))} style={{ width: 60, height: 26, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 4, color: "#F0EDE6", textAlign: "center", fontSize: 13 }} placeholder="0" />
-                        <button className="mini-btn green" disabled={sv} onClick={() => save(pid)} style={{ opacity: sv ? 0.5 : 1 }}>{sv ? "…" : "✓ OK"}</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!loading && lineupCards.length > 0 && (
-        <div>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 700, color: "#FDE68A", marginBottom: 10 }}>📊 Итоги составов участников</div>
-          <table className="admin-table">
-            <thead><tr><th>Участник</th><th>Статус состава</th><th>Сумма очков</th></tr></thead>
-            <tbody>
-              {[...lineupCards]
-                .sort((a, b) => lineupTotal(b) - lineupTotal(a))
-                .map((l, i) => (
-                  <tr key={l.id || i}>
-                    <td style={{ fontWeight: 600, color: "#F0EDE6" }}>{l._name}</td>
-                    <td style={{ fontSize: 11, color: l.lineup_status === "submitted" ? "#86EFAC" : "#FDE68A" }}>{l.lineup_status || "draft"}</td>
-                    <td style={{ fontFamily: "Oswald,sans-serif", fontWeight: 800, fontSize: 15, color: "#F59E0B" }}>{lineupTotal(l)}</td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {sqlMissing && (
-        <div style={{ marginTop: 16, background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.3)", borderRadius: 8, padding: 14 }}>
-          <div style={{ fontSize: 12, color: "#FCA5A5", marginBottom: 8 }}>⚠ Таблица ffc_round_player_scores не найдена. Выполни SQL:</div>
-          <pre style={{ fontSize: 10, color: "rgba(240,237,230,.6)", background: "rgba(0,0,0,.3)", padding: 10, borderRadius: 4, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`CREATE TABLE IF NOT EXISTS public.ffc_round_player_scores (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  round_id UUID REFERENCES public.ffc_rounds(id),
-  player_id TEXT NOT NULL,
-  points INTEGER DEFAULT 0,
-  player_name TEXT,
-  national_team TEXT,
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  updated_by UUID,
-  UNIQUE(round_id, player_id)
-);
-ALTER TABLE public.ffc_round_player_scores ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "rps_select" ON public.ffc_round_player_scores FOR SELECT TO anon, authenticated USING (true);
-CREATE POLICY "rps_insert" ON public.ffc_round_player_scores FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "rps_update" ON public.ffc_round_player_scores FOR UPDATE TO authenticated USING (true);`}</pre>
-        </div>
-      )}
-      {!sqlMissing && (
-        <details style={{ marginTop: 12 }}>
-          <summary style={{ cursor: "pointer", fontSize: 11, color: "rgba(240,237,230,.3)" }}>SQL: создать ffc_round_player_scores (если нет)</summary>
-          <pre style={{ fontSize: 10, color: "rgba(240,237,230,.5)", background: "rgba(0,0,0,.3)", padding: 10, borderRadius: 4, marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`CREATE TABLE IF NOT EXISTS public.ffc_round_player_scores (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  round_id UUID REFERENCES public.ffc_rounds(id),
-  player_id TEXT NOT NULL,
-  points INTEGER DEFAULT 0,
-  player_name TEXT,
-  national_team TEXT,
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(round_id, player_id)
-);`}</pre>
-        </details>
-      )}
-    </div>
-  );
-}
-
 function AdminPanel({ session, setSession, showToast, discipline, setDiscipline, onLeaderboardRecalc, onToggleLocked, onTogglePublic, predictionsLocked, predictionsPublic, onRejectPayment, onRoundCreated }) {
-  const [adminTab, setAdminTab] = useState("admin_matches");
+  const [adminTab, setAdminTab] = useState("payments");
   const [users, setUsers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [predictorTeamByUser, setPredictorTeamByUser] = useState({});
   const [adminUserStats, setAdminUserStats] = useState({});
   const [adminLineupPreview, setAdminLineupPreview] = useState(null);
-  useEffect(() => {
-    if (adminTab === "payments" || adminTab === "voronka") setAdminTab("admin_matches");
-  }, [adminTab]);
   const [officialResults, setOfficialResults] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ffc_official_results") || "{}"); } catch { return {}; }
   });
@@ -10080,7 +5148,7 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
     return null;
   }
 
-  useEffect(() => { loadUsers(); loadPayments(); loadPredictorTeams(); loadAdminUserStats(); loadUnifiedParticipants(); }, []);
+  useEffect(() => { loadUsers(); loadPayments(); loadPredictorTeams(); loadAdminUserStats(); }, []);
 
   async function loadUsers() {
     const freshToken = await getAdminToken();
@@ -10658,7 +5726,7 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
         if (String(user).trim() === String(officialAns).trim()) { pts = q.pts; matched = true; }
       } else {
         // player, team: строковое сравнение без учёта регистра
-        if (bonusAnswerMatches(user, officialAns)) {
+        if (String(user || "").toLowerCase().trim() === String(officialAns || "").toLowerCase().trim()) {
           pts = q.pts; matched = true;
         }
       }
@@ -10693,7 +5761,7 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
       const obr = await supa("bonus_official_answers?select=*&status=eq.confirmed", { token });
       if (obr.ok) {
         const obData = await obr.json();
-        officialBonusAnswersMap = buildBonusOfficialMap(obData);
+        obData.forEach(row => { officialBonusAnswersMap[row.question_id] = row; });
       }
     } catch {}
 
@@ -10837,180 +5905,6 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
       showToast(`✓ Пользователь «${name}» удалён из таблиц приложения`);
     }
   }
-  // ── UNIFIED PARTICIPANTS STATE ──
-  const [uniLoading, setUniLoading] = useState(false);
-  const [uniFilter, setUniFilter] = useState("all");
-  const [uniRows, setUniRows] = useState([]);
-  const [lineupModal, setLineupModal] = useState(null); // { user, lineup }
-
-  async function loadUnifiedParticipants() {
-    setUniLoading(true);
-    try {
-      const freshToken = await getAdminToken();
-      const fetchAll = async (path) => {
-        const rows = [];
-        const PAGE = 1000;
-        for (let page = 0; page < 50; page++) {
-          const sep = path.includes("?") ? "&" : "?";
-          const r = await supa(`${path}${sep}limit=${PAGE}&offset=${page * PAGE}`, { token: freshToken });
-          if (!r.ok) break;
-          const chunk = await r.json().catch(() => []);
-          const arr = Array.isArray(chunk) ? chunk : [];
-          rows.push(...arr);
-          if (arr.length < PAGE) break;
-        }
-        return rows;
-      };
-
-      const [profileRows, statusRows, payRows, predRows, bonusRows, lineupRows, quizRows, teamMemberRows, teamRows] = await Promise.all([
-        fetchAll("profiles?select=*&order=created_at.asc"),
-        fetchAll("participant_status?select=*"),
-        fetchAll("payment_requests?select=*&order=created_at.desc"),
-        fetchAll("predictions?select=user_id,match_id"),
-        fetchAll("bonus_answers?select=user_id,question_id"),
-        fetchAll("ffc_lineups?select=id,user_id,lineup_status,submitted_at,updated_at,created_at,draft_answers,captain_option_id&order=updated_at.desc.nullslast,created_at.desc"),
-        fetchAll("daily_text_quiz_attempts?select=user_id"),
-        fetchAll("predictor_team_members?select=user_id,team_id").catch(() => []),
-        fetchAll("predictor_teams?select=id,name,code").catch(() => []),
-      ]);
-
-      // Build lookup maps
-      const profileMap = {}; // id → profile
-      profileRows.forEach(u => { if (u?.id) profileMap[u.id] = u; });
-
-      const statusMap = {}; // user_id → status row
-      statusRows.forEach(r => { if (r?.user_id) statusMap[r.user_id] = r; });
-
-      // payment: user_id/email → latest row + best comment
-      const payByUser = {};
-      const payByEmail = {};
-      payRows.forEach(p => {
-        const key = p.user_id;
-        if (key) {
-          if (!payByUser[key] || (p.created_at > (payByUser[key].created_at || ""))) payByUser[key] = p;
-          const prev = payByUser[key];
-          if (!prev._comment && p.comment) payByUser[key]._comment = p.comment;
-        }
-        if (p.user_email) {
-          if (!payByEmail[p.user_email] || (p.created_at > (payByEmail[p.user_email].created_at || ""))) payByEmail[p.user_email] = p;
-        }
-      });
-
-      // predictions count by user_id — group vs playoff
-      const predCount = {}; // uid → { group, playoff, total }
-      predRows.forEach(r => {
-        if (!r?.user_id) return;
-        if (!predCount[r.user_id]) predCount[r.user_id] = { group: 0, playoff: 0 };
-        const mid = String(r.match_id || "");
-        if (ALL_GROUP_MATCH_IDS.has(mid)) predCount[r.user_id].group++;
-        else predCount[r.user_id].playoff++;
-      });
-
-      // bonus count by user_id
-      const bonusCount = {};
-      bonusRows.forEach(r => { if (r?.user_id) bonusCount[r.user_id] = (bonusCount[r.user_id] || 0) + 1; });
-
-      // quiz count by user_id
-      const quizCountMap = {};
-      quizRows.forEach(r => { if (r?.user_id) quizCountMap[r.user_id] = (quizCountMap[r.user_id] || 0) + 1; });
-
-      // lineup by user_id: best non-empty lineup
-      const lineupMap = {};
-      lineupRows.forEach(r => {
-        if (!r?.user_id) return;
-        const hasDraft = r.draft_answers && JSON.stringify(r.draft_answers) !== "{}";
-        const existing = lineupMap[r.user_id];
-        if (!existing) { lineupMap[r.user_id] = { ...r, _hasDraft: hasDraft }; return; }
-        if (!existing._hasDraft && hasDraft) lineupMap[r.user_id] = { ...r, _hasDraft: hasDraft };
-      });
-
-      // team by user_id
-      const teamById = {};
-      teamRows.forEach(t => { if (t?.id) teamById[t.id] = t; });
-      const teamByUser = {};
-      teamMemberRows.forEach(m => { if (m?.user_id) teamByUser[m.user_id] = teamById[m.team_id] || {}; });
-
-      // Collect all user IDs: from profiles + from payments (email only)
-      const allUsers = [];
-      const seenEmails = new Set();
-      const seenIds = new Set();
-
-      profileRows.forEach(u => {
-        seenIds.add(u.id);
-        if (u.email) seenEmails.add(u.email.toLowerCase());
-        allUsers.push({ _type: "profile", ...u });
-      });
-
-      // Add payment-only rows (email without profile)
-      payRows.forEach(p => {
-        if (!p.user_id || !profileMap[p.user_id]) {
-          const email = (p.user_email || "").toLowerCase();
-          if (email && !seenEmails.has(email)) {
-            seenEmails.add(email);
-            allUsers.push({ _type: "payment_only", id: null, email: p.user_email, name: p.user_email, display_name: null, _payRow: p });
-          }
-        }
-      });
-
-      // Detect duplicate emails
-      const emailCount = {};
-      allUsers.forEach(u => { if (u.email) emailCount[u.email.toLowerCase()] = (emailCount[u.email.toLowerCase()] || 0) + 1; });
-
-      const rows = allUsers.map(u => {
-        const uid = u.id;
-        const pay = uid ? payByUser[uid] : u._payRow;
-        const payConfirmed = pay?.status === "confirmed";
-        const payPending = pay?.status === "pending";
-        const pCount = uid ? (predCount[uid] || { group: 0, playoff: 0 }) : { group: 0, playoff: 0 };
-        const pTotal = pCount.group + pCount.playoff;
-        const bCount = uid ? (bonusCount[uid] || 0) : 0;
-        const quizCnt = uid ? (quizCountMap[uid] || 0) : 0;
-        const lineup = uid ? lineupMap[uid] : null;
-        const lineupHasDraft = lineup?._hasDraft;
-        const lineupSubmitted = lineupHasDraft && (lineup?.lineup_status === "submitted" || lineup?.submitted_at);
-        const team = uid ? (teamByUser[uid] || null) : null;
-        const st = uid ? (statusMap[uid] || {}) : {};
-        const isPaid = payConfirmed || u.is_paid === true || [ACCESS.PROGNOSTISTA, ACCESS.FULL, ACCESS.ADMIN].includes(u.access_level);
-        const isDupe = (u.email && emailCount[u.email.toLowerCase()] > 1);
-
-        // Overall status
-        const predOk = pTotal >= 104 && pCount.group >= 72 && pCount.playoff >= 32;
-        const bonusOk = bCount >= 31;
-        let overallStatus = "new";
-        if (isPaid && predOk && bonusOk) overallStatus = "ok";
-        else if (isPaid || pTotal > 0 || bCount > 0) overallStatus = pTotal > 0 ? (predOk ? "done" : "filling") : "paid_no_pred";
-        if (!isPaid && pTotal === 0 && bCount === 0) overallStatus = "new";
-
-        return { u, uid, pay, payConfirmed, payPending, isPaid, pCount, pTotal, bCount, quizCnt, lineup, lineupHasDraft, lineupSubmitted, team, st, predOk, bonusOk, overallStatus, isDupe, isDraftType: u._type === "payment_only" };
-      });
-
-      setUniRows(rows);
-    } catch (e) {
-      console.error("loadUnifiedParticipants failed", e);
-      showToast("Ошибка загрузки участников: " + (e?.message || ""));
-    } finally {
-      setUniLoading(false);
-    }
-  }
-
-  function uniFilteredRows() {
-    return uniRows.filter(r => {
-      switch (uniFilter) {
-        case "all": return true;
-        case "new": return r.overallStatus === "new";
-        case "filling": return r.pTotal > 0 && !r.predOk;
-        case "full_pred": return r.predOk;
-        case "incomplete": return r.pTotal > 0 && !r.predOk;
-        case "paid": return r.isPaid;
-        case "pending": return r.payPending && !r.payConfirmed;
-        case "approved": return r.isPaid;
-        case "has_lineup": return !!r.lineup;
-        case "no_lineup": return !r.lineup;
-        default: return true;
-      }
-    });
-  }
-
   const planLabel = { prognostista: "Битва прогнозистов 500₽", ffc_add: "Архивный тариф", friend: "Архивный тариф", full: "Архивный тариф" };
   const accessLabel = { [ACCESS.DEMO]: "Черновик", [ACCESS.PROGNOSTISTA]: "Прогнозиста", [ACCESS.FULL]: "Полный", [ACCESS.ADMIN]: "Админ" };
   const accessBadge = { [ACCESS.DEMO]: "badge-demo", [ACCESS.PROGNOSTISTA]: "badge-paid", [ACCESS.FULL]: "badge-full", [ACCESS.ADMIN]: "badge-admin" };
@@ -11022,21 +5916,10 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
         <span className="tag tr">Только для организатора</span>
       </div>
       <div className="tabs">
-        {[["admin_matches", "🏟 Матчи"], ["admin_bonus", "🧠 Бонусы"], ["admin_playoff_pairs", "⚔ Плей-офф пары"], ["admin_ffc_scores", "⚽ 1 на 1"], ["admin_round2_answers", "📝 1-й тур"], ["admin_round21_answers", "📝 2-й тур"]].map(([k, l]) => (
-          <button key={k} className={`tab${adminTab === k ? " on" : ""}`} style={{ minWidth: 100 }} onClick={() => setAdminTab(k)}>{l}</button>
+        {[["payments", "Заявки"], ["forecast_table", "📋 Таблица"], ["voronka", "📊 Воронка"], ["players", "👥 Игроки"], ["club_battle", "⚔ Битва клубов"], ["users", "Участники"], ["results", "Результаты"], ["fairplay", "Fair Play"], ["ffc", "⚽ FFC"], ["quiz", "🧠 Квизы"], ["settings", "Настройки"]].map(([k, l]) => (
+          <button key={k} className={`tab${adminTab === k ? " on" : ""}`} style={{ minWidth: 80 }} onClick={() => setAdminTab(k)}>{l}</button>
         ))}
       </div>
-
-      {adminTab === "admin_matches" && <AdminMatchesPanel session={session} showToast={showToast} />}
-      {adminTab === "admin_bonus" && <AdminBonusPanel session={session} showToast={showToast} />}
-      {adminTab === "admin_playoff_pairs" && <AdminPlayoffPairsPanel session={session} showToast={showToast} />}
-      {adminTab === "admin_ffc_scores" && <AdminFfcScoresPanel session={session} showToast={showToast} />}
-      {adminTab === "admin_round2_answers" && <AdminRound2AnswersPanel session={session} showToast={showToast} />}
-      {adminTab === "admin_round21_answers" && <AdminRound21AnswersPanel session={session} showToast={showToast} />}
-      {adminTab === "admin_round21_answers" && <AdminRound21AnswersPanel session={session} showToast={showToast} />}
-
-      {/* ── СТАРЫЕ ВКЛАДКИ СКРЫТЫ — код сохранён но не рендерится ── */}
-      {false && <>
 
       {/* ЗАЯВКИ */}
       {adminTab === "payments" && (
@@ -11084,246 +5967,54 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
         <AdminClubBattlePanel session={session} showToast={showToast} />
       )}
 
-      {/* ═══════════ УЧАСТНИКИ — ГЛАВНАЯ ВКЛАДКА ═══════════ */}
-      {adminTab === "users" && (() => {
-        const filtered = uniFilteredRows();
-        // stat cards
-        const total = uniRows.length;
-        const started = uniRows.filter(r => r.pTotal > 0).length;
-        const fullPred = uniRows.filter(r => r.predOk).length;
-        const partialPred = uniRows.filter(r => r.pTotal > 0 && !r.predOk).length;
-        const paidCnt = uniRows.filter(r => r.isPaid).length;
-        const lineupCnt = uniRows.filter(r => r.lineupSubmitted).length;
-        const quizCnt = uniRows.filter(r => r.quizCnt > 0).length;
-
-        const FILTERS = [
-          ["all", `Все (${total})`],
-          ["new", "Новые"],
-          ["filling", "Заполняют"],
-          ["full_pred", `Заполнили прогноз (${fullPred})`],
-          ["incomplete", `Неполные (${partialPred})`],
-          ["paid", `Оплатили (${paidCnt})`],
-          ["pending", "Ждут оплату"],
-          ["approved", "Одобрены"],
-          ["has_lineup", "Состав БК есть"],
-          ["no_lineup", "Состав БК нет"],
-        ];
-
-        return (
-          <div>
-            {/* Stat cards */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-              {[
-                ["👤", "Зарегистрировались", total],
-                ["✏️", "Начали прогноз", started],
-                ["✅", "Полный прогноз", fullPred],
-                ["⚠️", "Неполный", partialPred],
-                ["💰", "Оплатили", paidCnt],
-                ["🏆", "Одобрены", paidCnt],
-                ["⚽", "Состав БК", lineupCnt],
-                ["🧠", "Квиз", quizCnt],
-              ].map(([icon, label, val]) => (
-                <div key={label} style={{ background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, padding: "8px 14px", minWidth: 90 }}>
-                  <div style={{ fontSize: 18 }}>{icon}</div>
-                  <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 20, fontWeight: 700, color: "#F59E0B", lineHeight: 1 }}>{val}</div>
-                  <div style={{ fontSize: 10, color: "rgba(240,237,230,.4)", marginTop: 2 }}>{label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Filters + reload */}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-              {FILTERS.map(([k, l]) => (
-                <button key={k} className={`tab${uniFilter === k ? " on" : ""}`} style={{ fontSize: 11, padding: "4px 10px", minWidth: "auto" }} onClick={() => setUniFilter(k)}>{l}</button>
-              ))}
-              <button className="sb" style={{ marginLeft: "auto", fontSize: 11 }} onClick={() => loadUnifiedParticipants()}>
-                {uniLoading ? "Загружаю…" : "↻ Обновить"}
-              </button>
-            </div>
-
-            {uniLoading && <div style={{ padding: "20px", color: "rgba(240,237,230,.4)", fontSize: 13 }}>Загружаю участников…</div>}
-            {!uniLoading && filtered.length === 0 && <div style={{ padding: "20px", color: "rgba(240,237,230,.4)", fontSize: 13, textAlign: "center" }}>Нет участников по выбранному фильтру</div>}
-
-            {!uniLoading && filtered.length > 0 && (
-              <div style={{ overflowX: "auto" }}>
-                <table className="admin-table" style={{ minWidth: 1100 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ minWidth: 140 }}>Имя</th>
-                      <th style={{ minWidth: 160 }}>Email</th>
-                      <th>Команда</th>
-                      <th>Оплата</th>
-                      <th style={{ minWidth: 120 }}>Комментарий</th>
-                      <th>Прогноз</th>
-                      <th>Вопросы</th>
-                      <th>Состав БК</th>
-                      <th>Квизы</th>
-                      <th>Статус</th>
-                      <th style={{ minWidth: 200 }}>Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((row, idx) => {
-                      const { u, uid, pay, payConfirmed, payPending, isPaid, pCount, pTotal, bCount, quizCnt: qCnt, lineup, lineupHasDraft, lineupSubmitted, team, predOk, bonusOk, overallStatus, isDupe } = row;
-                      const name = publicDisplayNameOverride(u.display_name || u.name || u.email || String(uid || "").slice(0, 8));
-                      const predColor = predOk ? "#86EFAC" : pTotal > 0 ? "#FDE68A" : "rgba(240,237,230,.35)";
-                      const bonusColor = bonusOk ? "#86EFAC" : bCount > 0 ? "#FDE68A" : "rgba(240,237,230,.35)";
-                      const statusColor = overallStatus === "ok" ? "#86EFAC" : overallStatus === "done" ? "#FDE68A" : overallStatus === "filling" ? "#93C5FD" : "rgba(240,237,230,.4)";
-                      const statusLabel = overallStatus === "ok" ? "✓ OK" : overallStatus === "done" ? "✓ прогноз" : overallStatus === "filling" ? "заполняет" : overallStatus === "paid_no_pred" ? "оплачен" : "черновик";
-                      const lineupColor = lineupSubmitted ? "#86EFAC" : lineupHasDraft ? "#FDE68A" : "rgba(240,237,230,.35)";
-                      const lineupLabel = lineupSubmitted ? "✓ отправлен" : lineupHasDraft ? "черновик ⚠" : lineup ? "пустой ⚠" : "—";
-
-                      return (
-                        <tr key={uid || `email-${idx}`} style={{ background: isDupe ? "rgba(239,68,68,.06)" : "" }}>
-                          {/* Имя */}
-                          <td style={{ fontWeight: 600, color: "#F0EDE6", fontSize: 13 }}>
-                            {name}{isDupe && <span style={{ fontSize: 9, color: "#FCA5A5", marginLeft: 4 }}>дубль ⚠</span>}
-                          </td>
-                          {/* Email */}
-                          <td style={{ fontSize: 11, color: "rgba(240,237,230,.5)" }}>{u.email || "—"}</td>
-                          {/* Команда */}
-                          <td style={{ fontSize: 11, color: team?.name ? "#FDE68A" : "rgba(240,237,230,.3)" }}>
-                            {team?.name ? `${team.name}${team.code ? ` · ${team.code}` : ""}` : "—"}
-                          </td>
-                          {/* Оплата */}
-                          <td>
-                            {payConfirmed
-                              ? <span style={{ color: "#86EFAC", fontWeight: 700, fontSize: 12 }}>✓ 500₽</span>
-                              : payPending
-                                ? <span style={{ color: "#FDE68A", fontSize: 12 }}>ожидает</span>
-                                : <span style={{ color: "rgba(240,237,230,.3)", fontSize: 12 }}>—</span>}
-                          </td>
-                          {/* Комментарий */}
-                          <td style={{ fontSize: 10, color: "rgba(240,237,230,.5)", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {pay?.comment || pay?._comment || "—"}
-                          </td>
-                          {/* Прогноз */}
-                          <td style={{ color: predColor, fontSize: 12, fontWeight: 700 }}>
-                            <div>{pTotal}/104 {predOk ? "✓" : pTotal > 0 ? "⚠" : ""}</div>
-                            {pTotal > 0 && <div style={{ fontSize: 9, color: "rgba(240,237,230,.4)", fontWeight: 400 }}>Г {pCount.group}/72 · ПО {pCount.playoff}/32</div>}
-                          </td>
-                          {/* Вопросы */}
-                          <td style={{ color: bonusColor, fontSize: 12, fontWeight: 700 }}>{bCount}/31 {bonusOk ? "✓" : ""}</td>
-                          {/* Состав БК */}
-                          <td>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ color: lineupColor, fontSize: 12 }}>{lineupLabel}</span>
-                              {lineup && (
-                                <button className="mini-btn" style={{ fontSize: 10, color: "#93C5FD", borderColor: "rgba(147,197,253,.35)" }} onClick={() => setLineupModal({ user: u, lineup })}>Состав</button>
-                              )}
-                            </div>
-                          </td>
-                          {/* Квизы */}
-                          <td style={{ color: qCnt > 0 ? "#86EFAC" : "rgba(240,237,230,.3)", fontWeight: 700, fontSize: 13 }}>{qCnt || "—"}</td>
-                          {/* Статус */}
-                          <td><span style={{ fontSize: 12, fontWeight: 700, color: statusColor }}>{statusLabel}</span></td>
-                          {/* Действия */}
-                          <td>
-                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                              {!isPaid && uid && (
-                                <button className="mini-btn green" title="Подтвердить 500₽ и выдать доступ" onClick={async () => {
-                                  // Подтвердить через существующий payment request или напрямую
-                                  if (pay && pay.status === "pending") {
-                                    await confirmPayment(pay.id, uid, pay.plan || "prognostista");
-                                  } else {
-                                    await supa(`profiles?id=eq.${uid}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ access_level: ACCESS.PROGNOSTISTA, is_paid: true, prediction_status: "submitted" }) });
-                                    showToast("✓ 500₽ подтверждено");
-                                  }
-                                  await loadUnifiedParticipants();
-                                }}>500₽ ✓</button>
-                              )}
-                              {uid && (
-                                <button className="mini-btn red" title="Сбросить до черновика" onClick={async () => {
-                                  await supa(`profiles?id=eq.${uid}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ access_level: ACCESS.DEMO, is_paid: false, prediction_status: "draft" }) });
-                                  await loadUnifiedParticipants();
-                                  showToast("Сброс");
-                                }}>Сброс</button>
-                              )}
-                              {uid && (
-                                <button className="mini-btn red" style={{ borderColor: "rgba(239,68,68,.55)", background: "rgba(127,29,29,.55)", color: "#FCA5A5" }} onClick={() => deleteUserAndData(u).then(() => loadUnifiedParticipants())}>Удалить</button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Lineup modal */}
-            {lineupModal && (() => {
-              const { user, lineup } = lineupModal;
-              const name = user.display_name || user.name || user.email || "—";
-              let players = [];
-              try {
-                const raw = typeof lineup.draft_answers === "string" ? JSON.parse(lineup.draft_answers) : lineup.draft_answers;
-                if (raw && typeof raw === "object") {
-                  const defaultMeta = {
-                    coach: "Тренер", goalkeeper: "Вратарь",
-                    defender1: "Защитник 1", defender2: "Защитник 2", defender3: "Защитник 3", defender4: "Защитник 4",
-                    midfielder1: "Полузащитник 1", midfielder2: "Полузащитник 2", midfielder3: "Полузащитник 3", midfielder4: "Полузащитник 4",
-                    forward1: "Нападающий 1", forward2: "Нападающий 2",
-                  };
-                  players = Object.entries(raw).map(([slot, val]) => {
-                    const info = val && typeof val === "object" ? val : {};
-                    const optId = info.option_id || info.optionId || info.id || (typeof val === "string" ? val : null);
-                    const playerName = info.player_name || info.name || (optId ? `Вариант ${String(optId).slice(0, 8)}` : "—");
-                    const team = info.national_team || info.team || "";
-                    const isCaptain = optId && optId === lineup.captain_option_id;
-                    return { slot, label: defaultMeta[slot] || slot, playerName, team, isCaptain };
-                  }).sort((a, b) => {
-                    const order = ["coach","goalkeeper","defender1","defender2","defender3","defender4","midfielder1","midfielder2","midfielder3","midfielder4","forward1","forward2"];
-                    return (order.indexOf(a.slot) + 1 || 99) - (order.indexOf(b.slot) + 1 || 99);
-                  });
-                }
-              } catch {}
-              const hasPlayers = players.some(p => p.playerName && p.playerName !== "—");
-
-              return (
-                <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={() => setLineupModal(null)}>
-                  <div style={{ width: "min(680px,96vw)", maxHeight: "88vh", overflow: "auto", background: "#071407", border: "1px solid rgba(134,239,172,.25)", borderRadius: 12 }} onClick={e => e.stopPropagation()}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-                      <div>
-                        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 700, color: "#FDE68A" }}>Состав БК</div>
-                        <div style={{ fontSize: 12, color: "rgba(240,237,230,.5)", marginTop: 2 }}>{name} · {user.email || ""}</div>
-                      </div>
-                      <button className="mini-btn red" onClick={() => setLineupModal(null)}>Закрыть</button>
-                    </div>
-                    <div style={{ padding: 16 }}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, fontSize: 11 }}>
-                        <span className={`tag ${lineupModal.lineup.lineup_status === "submitted" ? "tg" : "ty"}`}>{lineupModal.lineup.lineup_status || "черновик"}</span>
-                        {lineup.submitted_at && <span className="tag">отправлен: {new Date(lineup.submitted_at).toLocaleString("ru")}</span>}
-                        {lineup.updated_at && <span className="tag">обновлён: {new Date(lineup.updated_at).toLocaleString("ru")}</span>}
-                      </div>
-                      {hasPlayers ? (
-                        <table className="admin-table">
-                          <thead><tr><th>Позиция</th><th>Игрок</th><th>Сборная</th><th>Капитан</th></tr></thead>
-                          <tbody>{players.map(p => (
-                            <tr key={p.slot}>
-                              <td style={{ fontSize: 11, color: "rgba(240,237,230,.55)" }}>{p.label}</td>
-                              <td style={{ fontWeight: 700, color: "#F0EDE6" }}>{p.playerName}</td>
-                              <td style={{ fontSize: 11, color: "rgba(240,237,230,.5)" }}>{p.team || "—"}</td>
-                              <td style={{ color: p.isCaptain ? "#FDE68A" : "rgba(240,237,230,.25)", fontWeight: 800 }}>{p.isCaptain ? "★" : "—"}</td>
-                            </tr>
-                          ))}</tbody>
-                        </table>
-                      ) : (
-                        <div>
-                          <div style={{ color: "#FDE68A", fontSize: 12, marginBottom: 8 }}>⚠ Состав не распознан. Сырой JSON:</div>
-                          <pre style={{ fontSize: 10, color: "rgba(240,237,230,.6)", background: "rgba(0,0,0,.3)", padding: 10, borderRadius: 6, overflow: "auto", maxHeight: 200, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{JSON.stringify({ id: lineup.id, lineup_status: lineup.lineup_status, submitted_at: lineup.submitted_at, draft_answers: lineup.draft_answers, captain_option_id: lineup.captain_option_id }, null, 2)}</pre>
-                        </div>
+      {/* УЧАСТНИКИ */}
+      {adminTab === "users" && (
+        <div className="panel">
+          <div className="ph"><span className="pt">Участники</span><span className="tag tg">{users.length} всего</span></div>
+          <table className="admin-table">
+            <thead><tr><th>Имя</th><th>Email</th><th>Команда</th><th>Квизы</th><th>Состав БК</th><th>Доступ</th><th>Статус прогноза</th><th>Управление</th></tr></thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.id}>
+                  <td style={{ fontSize: 13, fontWeight: 500, color: "#F0EDE6" }}>{getDisplayName(u) || "—"}</td>
+                  <td style={{ fontSize: 11, color: "rgba(240,237,230,.5)" }}>{u.email}</td>
+                  <td style={{ fontSize: 11, color: predictorTeamByUser?.[u.id]?.name ? "#FDE68A" : "rgba(240,237,230,.35)", fontWeight: predictorTeamByUser?.[u.id]?.name ? 700 : 400 }}>{adminTeamLabel(u.id)}</td>
+                  <td style={{ fontSize: 13, color: (adminUserStats[u.id]?.quizCount || 0) > 0 ? "#86EFAC" : "rgba(240,237,230,.35)", fontWeight: 700 }}>{adminUserStats[u.id]?.quizCount || 0}</td>
+                  <td style={{ fontSize: 11, color: adminUserStats[u.id]?.lineupSubmitted ? "#86EFAC" : adminUserStats[u.id]?.lineupDraft ? "#FDE68A" : adminUserStats[u.id]?.cupEntry ? "#93C5FD" : "rgba(240,237,230,.35)", fontWeight: 700 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span>
+                        {adminUserStats[u.id]?.lineupSubmitted
+                          ? `✓ отправлен${adminUserStats[u.id].lineupSubmitted > 1 ? ` ×${adminUserStats[u.id].lineupSubmitted}` : ""}`
+                          : adminUserStats[u.id]?.lineupDraft
+                            ? (adminUserStats[u.id]?.latestLineup?.hasAnyPlayer ? "черновик" : "⚠ пустой")
+                            : adminUserStats[u.id]?.cupEntry ? "заявка" : "—"}
+                      </span>
+                      {adminUserStats[u.id]?.latestLineup && (
+                        <button className="mini-btn" style={{ fontSize: 10, padding: "3px 7px", color: "#93C5FD", borderColor: "rgba(147,197,253,.35)" }} onClick={() => openAdminLineupPreview(u)}>Состав</button>
                       )}
-                      <div style={{ marginTop: 10, fontSize: 10, color: "rgba(240,237,230,.3)" }}>ID состава: {lineup.id || "—"}</div>
                     </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        );
-      })()}
+                  </td>
+                  <td><span className={`access-badge ${accessBadge[u.access_level || ACCESS.DEMO]}`}>{accessLabel[u.access_level || ACCESS.DEMO]}</span></td>
+                  <td style={{ fontSize: 11, color: "rgba(240,237,230,.5)" }}>{u.prediction_status || "draft"}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      <button className="mini-btn green" onClick={async () => {
+                        await supa(`profiles?id=eq.${u.id}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ access_level: ACCESS.PROGNOSTISTA, is_paid: true, prediction_status: "submitted" }) });
+                        await loadUsers(); showToast("✓ Прогнозиста");
+                      }}>500₽</button>
+                      <button className="mini-btn red" onClick={async () => {
+                        await supa(`profiles?id=eq.${u.id}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ access_level: ACCESS.DEMO, is_paid: false, prediction_status: "draft" }) });
+                        await loadUsers(); showToast("Сброс");
+                      }}>Сброс</button>
+                      <button className="mini-btn red" style={{ borderColor: "rgba(239,68,68,.55)", background: "rgba(127,29,29,.55)", color: "#FCA5A5" }} onClick={() => deleteUserAndData(u)}>Удалить</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {adminLineupPreview && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={() => setAdminLineupPreview(null)}>
@@ -11523,7 +6214,6 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
           </div>
         </div>
       )}
-      </> /* конец скрытых старых вкладок */ }
     </div>
   );
 }
@@ -14511,20 +9201,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictor_team_members TO authent
       )}
 
       {/* Таблица команд */}
-      {(allTeams.length > 0 || true) && (
+      {allTeams.length > 0 && (
         <div>
           <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 12, fontWeight: 600, color: "rgba(240,237,230,.4)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>Таблица команд</div>
-
-          {/* Статическая команда Нейросети */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.2)", borderRadius: 6, marginBottom: 4 }}>
-            <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 700, color: "rgba(240,237,230,.3)", minWidth: 20 }}>🤖</span>
-            <div style={{ flex: 1 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#93C5FD" }}>Нейросети</span>
-              <span style={{ fontSize: 10, color: "rgba(147,197,253,.5)", marginLeft: 8 }}>Валерия GP · Иван Cl · Xenia Ge · 3 уч.</span>
-            </div>
-            <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 700, color: "rgba(240,237,230,.25)" }}>—</div>
-          </div>
-
           {allTeams.map((t, i) => (
             <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: myTeam?.id === t.id ? "rgba(245,158,11,.08)" : "rgba(255,255,255,.03)", border: `1px solid ${myTeam?.id === t.id ? "rgba(245,158,11,.25)" : "rgba(255,255,255,.05)"}`, borderRadius: 6, marginBottom: 4 }}>
               <span style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 700, color: "rgba(240,237,230,.3)", minWidth: 20 }}>{i + 1}</span>
@@ -14537,6 +9216,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.predictor_team_members TO authent
               </div>
             </div>
           ))}
+        </div>
+      )}
+      {loaded && allTeams.length === 0 && (
+        <div style={{ fontSize: 12, color: "rgba(240,237,230,.3)", textAlign: "center", padding: "12px" }}>
+          Пока нет команд. Создайте первую и пригласите друзей.
         </div>
       )}
     </div>
@@ -15548,9 +10232,9 @@ function LandingPage({ onLogin }) {
         <div style={{ background: "rgba(22,163,74,.07)", border: "1px solid rgba(22,163,74,.2)", borderRadius: 12, padding: "16px 20px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 28 }}>🆓</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 14, fontWeight: 700, color: "#86EFAC", marginBottom: 4 }}>Режим 1 на 1 — бесплатно для всех</div>
+            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 14, fontWeight: 700, color: "#86EFAC", marginBottom: 4 }}>Битва клубов — бесплатно для всех</div>
             <div style={{ fontSize: 12, color: "rgba(240,237,230,.5)" }}>
-              Дуэльный драфт тура: выбери тренера + 11 игроков из 60 вариантов. Финальная таблица после дедлайна.
+              Дуэльный драфт тура: выбери тренера + 11 игроков из 60 вариантов. Пары 1 на 1 после дедлайна.
             </div>
           </div>
           <button onClick={onLogin} style={{ background: "rgba(22,163,74,.2)", border: "1px solid rgba(22,163,74,.4)", color: "#86EFAC", fontFamily: "Oswald,sans-serif", fontSize: 12, fontWeight: 600, padding: "8px 16px", borderRadius: 4, cursor: "pointer" }}>
@@ -15694,7 +10378,7 @@ function LandingPage({ onLogin }) {
             </button>
             <button onClick={onLogin}
               style={{ background: "rgba(22,163,74,.15)", color: "#86EFAC", border: "1px solid rgba(22,163,74,.35)", fontFamily: "Oswald, sans-serif", fontSize: 14, fontWeight: 600, padding: "15px 28px", borderRadius: 6, cursor: "pointer" }}>
-              1 на 1 бесплатно
+              Битва клубов бесплатно
             </button>
           </div>
           <div style={{ fontSize: 10, color: "rgba(240,237,230,.25)", marginTop: 14 }}>
@@ -15824,341 +10508,6 @@ function ProfileMenu({ profile, isAdmin, isPaid, onNavigate, onLogout, onChangeN
   );
 }
 
-// ══════════════════════════════════════════════════════════════════
-// КОМАНДНЫЙ ЗАЧЁТ — алиасы, составы, публичная таблица
-// ══════════════════════════════════════════════════════════════════
-
-// Явная карта алиасов: rosterName → список возможных display_name/name в profiles
-const TEAM_MEMBER_ALIASES = {
-  "Eugene Fadeev":          ["Eugene Fadeev", "Евгений Фадеев"],
-  "АнтонВоробей":           ["АнтонВоробей", "Антон Воробей"],
-  "Antosha046":             ["Antosha046", "Антон Цуканов"],
-
-  "Пантелеев":              ["Андрей Пантелеев", "Пантелеев"],
-  "Пантелеева":             ["Таня Пантелеева", "Татьяна Пантелеева", "Пантелеева"],
-  "Валерия GP":              ["Валерия GP", "Валерий GP", "Валерий П"],
-  "Xenia Ge":                ["Xenia Ge", "Ксения Ge", "Ксения П"],
-  "Иван Cl":                 ["Иван Cl", "Ваня Cl", "Ваня П", "Иван П"],
-
-  "Ключкина":               ["Надежда Ключкина", "Ключкина"],
-  "Альберт":                ["Альберт"],
-
-  "Александра Капитанеску": ["Александра Капитанеску"],
-  "Терентьев":              ["Александр Терентьев", "Терентьев"],
-
-  "Илья Крикун":            ["Илья Крикун"],
-  "Аманатов":               ["Аманатов Юрий", "Юрий Аманатов", "Аманатов"],
-  "Никита":                 ["Никита Крикун", "Никита"],
-  "Nikita":                 ["Nikita"],
-
-  "Анищенко":               ["Aleksandr Anishchenko", "Александр Анищенко", "Анищенко"],
-  "Боев":                   ["Боев", "БОЕВ"],
-
-  "Zizu":                   ["ZiZu", "Zizu", "zizu"],
-  "Kirill \"Mr_J\" GJ":    ["Kirill \"Mr_J\" GJ", "Kirill Mr_J GJ", "Mr_J", "MRj", "MrJ"],
-
-  "Паздников":              ["pazdnikov.dmitriy", "Дмитрий Паздников", "Паздников"],
-  "Дубровин":               ["Андрей Дубровин", "Дубровин"],
-  "Elena Pavlovna":         ["Elena Pavlovna", "Елена Павловна"],
-
-  "Белюков":                ["Белюков Константин", "Константин Белюков", "Белюков"],
-  "Марина":                 ["Марина"],
-
-  "Антонио Голубев":        ["Антонио Голубев"],
-  "Сергей Журавлев":        ["Сергей Журавлев", "Сергей Журавлёв"],
-
-  "Руслан":                 ["Руслан"],
-  "Роман":                  ["Роман", "Роман Р"],
-};
-
-const PREDICTOR_TEAMS_ROSTERS = [
-  { name: "Parkovaya City",         members: ["Eugene Fadeev", "АнтонВоробей", "Antosha046"] },
-  { name: "Атомные отруби",       members: ["Пантелеев", "Пантелеева"] },
-  { name: "Crazy girls and boys",   members: ["Ключкина", "Альберт"] },
-  { name: "Верните Саутгейта",      members: ["Александра Капитанеску", "Терентьев"] },
-  { name: "Геленджик",              members: ["Илья Крикун", "Аманатов", "Nikita"] },
-  { name: "Грузинские псы",         members: ["Анищенко", "Боев"] },
-  { name: "Псовские грузины",       members: ["Zizu", "Kirill \"Mr_J\" GJ"] },
-  { name: "Indigo Team",            members: ["Паздников", "Дубровин", "Elena Pavlovna"] },
-  { name: "Спорт в конце тоннеля",  members: ["Белюков", "Марина"] },
-  { name: "Город Калинин",          members: ["Антонио Голубев", "Сергей Журавлев"] },
-  { name: "Команда R",              members: ["Руслан", "Роман"] },
-  { name: "Нейросети",              members: ["Валерия GP", "Иван Cl", "Xenia Ge"] },
-];
-
-function normalizePersonName(str) {
-  return String(str || "").toLowerCase().trim()
-    .replace(/ё/g, "е").replace(/[^a-zа-яA-ZА-Я0-9\s.]/g, "").replace(/\s+/g, " ");
-}
-
-// Строгое сопоставление по алиасам — только aliases[rosterName], без fuzzy
-// Возвращает participant из leaderboard или null
-function findParticipantByRosterName(rosterName, leaderboard, usedIds) {
-  const aliases = TEAM_MEMBER_ALIASES[rosterName];
-  if (!aliases || aliases.length === 0) return null;
-  const normAliases = aliases.map(a => normalizePersonName(a));
-
-  let bestMatch = null;
-  let bestScore = 0;
-
-  for (const { u, total, exact, group, playoff, bonus } of leaderboard) {
-    const id = String(u.id || "");
-    if (usedIds.has(id)) continue; // уже занят в этой команде
-    const pName = normalizePersonName(u.display_name || u.name || "");
-
-    for (const normAlias of normAliases) {
-      if (!normAlias) continue;
-      let score = 0;
-      // Точное совпадение — максимальный приоритет
-      if (pName === normAlias) { score = 100; }
-      // Participant содержит alias (alias длиннее 4 символов)
-      else if (normAlias.length > 4 && pName.includes(normAlias)) { score = 50; }
-      // Alias содержит participant (participant длиннее 4 символов) — только если очень короткое имя
-      else if (pName.length > 4 && normAlias.includes(pName) && pName.length >= normAlias.length - 3) { score = 30; }
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = { u, total, exact, group, playoff, bonus };
-      }
-    }
-  }
-
-  return bestScore > 0 ? bestMatch : null;
-}
-
-function PublicTeamStandings({ leaderboard: externalLeaderboard }) {
-  // Собственная загрузка если leaderboard не передан извне (пользователь открыл вкладку напрямую)
-  const [internalLeaderboard, setInternalLeaderboard] = React.useState(null);
-  const [loadingOwn, setLoadingOwn] = React.useState(false);
-
-  const leaderboard = (externalLeaderboard && externalLeaderboard.length > 0)
-    ? externalLeaderboard
-    : (internalLeaderboard || []);
-
-  React.useEffect(() => {
-    if (externalLeaderboard && externalLeaderboard.length > 0) return; // уже есть
-    if (internalLeaderboard !== null) return; // уже загрузили
-    loadOwn();
-  }, [externalLeaderboard]);
-
-  async function loadOwn() {
-    setLoadingOwn(true);
-    try {
-      const PAGE = 1000;
-      async function fetchA(path) {
-        const rows = [];
-        for (let pg = 0; pg < 50; pg++) {
-          const sep = path.includes("?") ? "&" : "?";
-          const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}${sep}limit=${PAGE}&offset=${pg * PAGE}`, {
-            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
-          });
-          if (!r.ok) break;
-          const chunk = await r.json().catch(() => []);
-          const arr = Array.isArray(chunk) ? chunk : [];
-          rows.push(...arr);
-          if (arr.length < PAGE) break;
-        }
-        return rows;
-      }
-
-      const [profileRows, predRows, bonusRows, officialRows, bonusOfficialRows] = await Promise.all([
-        (async () => { try { return await fetchA("profiles?select=id,name,display_name&order=name.asc"); } catch { return []; } })(),
-        fetchA("predictions?select=user_id,match_id,home_score,away_score"),
-        fetchA("bonus_answers?select=user_id,question_id"),
-        fetchA("official_results?select=match_id,home_score,away_score,status").catch(() => []),
-        (async () => {
-          try { return await fetchA("bonus_official_answers?select=*&order=updated_at.desc.nullslast"); }
-          catch { return await fetchA("bonus_official_answers?select=question_id,answer,points,status").catch(() => []); }
-        })(),
-      ]);
-
-      // Считаем прогнозы
-      const allGroupIds = new Set(ALL_GROUPS.flatMap(g => (GROUP_MATCHES[g] || []).map(m => String(m.id))));
-      function nm(raw) { if (!raw && raw !== 0) return ""; const s = String(raw).trim().toLowerCase(); return s.match(/^m?\d+$/) ? `m${s.replace(/^m/, "")}` : s; }
-
-      const predCount = {};
-      predRows.forEach(r => {
-        if (!r.user_id || r.match_id == null) return;
-        if (!predCount[r.user_id]) predCount[r.user_id] = { group: 0, playoff: 0 };
-        if (r.home_score == null || r.away_score == null) return;
-        if (allGroupIds.has(nm(r.match_id))) predCount[r.user_id].group++;
-        else predCount[r.user_id].playoff++;
-      });
-      const bonusCount = {};
-      bonusRows.forEach(r => { if (r.user_id) bonusCount[r.user_id] = (bonusCount[r.user_id] || 0) + 1; });
-
-      // Официальные очки (упрощённо: просто подтверждённые матчи для сортировки)
-      const officialMap = {};
-      officialRows.forEach(r => { if (r.match_id && r.home_score != null) officialMap[nm(r.match_id)] = { h: r.home_score, a: r.away_score }; });
-      const bonusOfficialMap = buildBonusOfficialMap(bonusOfficialRows);
-
-      // Строим синтетические профили если profiles пустые
-      let workingProfiles = profileRows.length > 0 ? profileRows
-        : Object.keys(predCount).map(uid => ({ id: uid, name: null, display_name: null, _synthetic: true }));
-
-      // Фильтр полных участников
-      const fullParts = workingProfiles.filter(p => {
-        const pc = predCount[String(p.id)] || { group: 0, playoff: 0 };
-        const bc = bonusCount[String(p.id)] || 0;
-        return pc.group >= 72 && pc.playoff >= 32 && bc >= 31;
-      });
-      const parts = fullParts.length > 0 ? fullParts
-        : workingProfiles.filter(p => Object.keys({ ...(predCount[String(p.id)] ? { x: 1 } : {}) }).length > 0);
-
-      // Считаем очки просто как сумму правильных исходов (грубое приближение для сортировки)
-      // Используем calculateMatchPredictionPoints если доступна
-      const lb = parts.map(u => {
-        const uid = String(u.id);
-        const pc = predCount[uid] || { group: 0, playoff: 0 };
-        const bc = bonusCount[uid] || 0;
-        // Грубая оценка: group * средний балл, но лучше просто total = group + playoff
-        const total = pc.group + pc.playoff + bc;
-        return { u: { ...u, _uid: uid }, total, group: pc.group, playoff: pc.playoff, bonus: bc, exact: 0 };
-      }).sort((a, b) => b.total - a.total);
-
-      setInternalLeaderboard(lb);
-    } catch (e) {
-      console.error("PublicTeamStandings loadOwn error", e);
-      setInternalLeaderboard([]);
-    } finally {
-      setLoadingOwn(false);
-    }
-  }
-
-  if (loadingOwn) {
-    return (
-      <div style={{ textAlign: "center", padding: "60px 20px", color: "rgba(240,237,230,.4)", fontSize: 13 }}>
-        <div style={{ fontSize: 28, marginBottom: 10 }}>⏳</div>
-        <div>Загружаю данные командного зачёта…</div>
-      </div>
-    );
-  }
-
-  if (leaderboard.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 20px", color: "rgba(240,237,230,.4)", fontSize: 13 }}>
-        <div>Данные рейтинга загружаются…</div>
-        <button className="sb" style={{ marginTop: 12, fontSize: 11 }} onClick={loadOwn}>↻ Загрузить</button>
-      </div>
-    );
-  }
-
-  // Строим карту participantId → запись leaderboard
-  const lbById = {};
-  leaderboard.forEach(row => { const id = String(row.u?.id || row.u?._uid || ""); if (id) lbById[id] = row; });
-
-  // Для каждой команды находим участников через алиасы, без дублей
-  const teamRows = PREDICTOR_TEAMS_ROSTERS.map(team => {
-    const usedIds = new Set();
-    const found = team.members.map(rosterName => {
-      const match = findParticipantByRosterName(rosterName, leaderboard, usedIds);
-      if (match) usedIds.add(String(match.u?.id || match.u?._uid || ""));
-      return { rosterName, match }; // match = {u, total, group, playoff, bonus, exact} | null
-    });
-
-    const withScores = found.filter(f => f.match !== null)
-      .sort((a, b) => (b.match.total || 0) - (a.match.total || 0));
-    const top2 = withScores.slice(0, 2);
-    const rest = withScores.slice(2);
-    const notFound = found.filter(f => f.match === null);
-
-    const teamScore = top2.reduce((s, f) => s + (f.match.total || 0), 0);
-    const best1 = top2[0]?.match?.total || 0;
-    const best2 = top2[1]?.match?.total || 0;
-
-    return { team, top2, rest, notFound, teamScore, best1, best2, isComplete: top2.length >= 2 };
-  }).sort((a, b) => b.teamScore - a.teamScore || b.best1 - a.best1 || b.best2 - a.best2 || a.team.name.localeCompare(b.team.name, "ru"));
-
-  return (
-    <div className="team-standings-wrap" style={{ maxWidth: 760, margin: "0 auto", padding: "14px 12px 60px" }}>
-      {/* Заголовок */}
-      <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 22, fontWeight: 700, color: "#FDE68A", letterSpacing: 1 }}>
-          🤝 Командный зачёт
-        </div>
-        <div style={{ fontSize: 11, color: "rgba(240,237,230,.35)", marginTop: 3 }}>
-          В зачёт идут 2 лучших результата
-        </div>
-      </div>
-
-      {/* Компактная таблица */}
-      <table className="team-standings-table" style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: "2px solid rgba(245,158,11,.25)" }}>
-            <th className="team-rank-col" style={{ width: 28, padding: "6px 8px", fontSize: 11, color: "rgba(240,237,230,.4)", fontWeight: 700, textAlign: "center" }}>#</th>
-            <th className="team-name-col" style={{ padding: "6px 8px", fontSize: 11, color: "rgba(240,237,230,.4)", fontWeight: 700, textAlign: "left" }}>Команда</th>
-            <th className="team-top2-col" style={{ padding: "6px 8px", fontSize: 11, color: "rgba(240,237,230,.4)", fontWeight: 700, textAlign: "left" }}>В зачёте (топ-2)</th>
-            <th className="team-rest-col" style={{ padding: "6px 8px", fontSize: 11, color: "rgba(240,237,230,.4)", fontWeight: 700, textAlign: "left", whiteSpace: "nowrap" }}>Остальные</th>
-            <th className="team-score-col" style={{ width: 48, padding: "6px 8px", fontSize: 11, color: "rgba(240,237,230,.4)", fontWeight: 700, textAlign: "right" }}>Итого</th>
-          </tr>
-        </thead>
-        <tbody>
-          {teamRows.map(({ team, top2, rest, notFound, teamScore, isComplete }, i) => {
-            const medalColor = i === 0 ? "#F59E0B" : i === 1 ? "#D1D5DB" : i === 2 ? "#CD7F32" : "rgba(240,237,230,.3)";
-            const rowBg = i === 0 ? "rgba(245,158,11,.06)" : i % 2 === 0 ? "rgba(255,255,255,.015)" : "transparent";
-            return (
-              <tr key={team.name} style={{ background: rowBg, borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-                {/* Место */}
-                <td className="team-rank-col" style={{ padding: "8px 8px", textAlign: "center", fontFamily: "Oswald,sans-serif", fontSize: 15, fontWeight: 800, color: medalColor }}>
-                  {i + 1}
-                </td>
-                {/* Название */}
-                <td className="team-name-col" style={{ padding: "8px 8px", fontFamily: "Oswald,sans-serif", fontSize: 13, fontWeight: 700, color: "#F0EDE6", whiteSpace: "nowrap" }}>
-                  {team.name}
-                  {!isComplete && top2.length === 1 && <span style={{ fontSize: 9, color: "#FDE68A", marginLeft: 4 }}>⚠</span>}
-                  {top2.length === 0 && <span style={{ fontSize: 9, color: "#FCA5A5", marginLeft: 4 }}>—</span>}
-                </td>
-                {/* Топ-2 */}
-                <td className="team-top2-col" style={{ padding: "8px 8px" }}>
-                  <div className="team-top2-list" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {top2.map((f, j) => {
-                      const n = publicDisplayNameOverride(f.match.u.display_name || f.match.u.name || String(f.match.u.id || "").slice(0, 8));
-                      return (
-                        <span key={j} className="team-top2-item" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                          <span className="team-top2-name" style={{ color: "#86EFAC", fontWeight: 700 }}>{n}</span>
-                          <span className="team-top2-score" style={{ color: "#F59E0B", fontFamily: "Oswald,sans-serif", fontWeight: 800, marginLeft: 4 }}>{f.match.total}</span>
-                        </span>
-                      );
-                    })}
-                    {top2.length === 0 && <span style={{ fontSize: 11, color: "rgba(240,237,230,.25)" }}>—</span>}
-                  </div>
-                </td>
-                {/* Остальные + не найдены */}
-                <td className="team-rest-col" style={{ padding: "8px 8px" }}>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    {rest.map((f, j) => {
-                      const n = publicDisplayNameOverride(f.match.u.display_name || f.match.u.name || String(f.match.u.id || "").slice(0, 8));
-                      return (
-                        <span key={j} style={{ fontSize: 11, color: "rgba(240,237,230,.5)", whiteSpace: "nowrap" }}>
-                          {n} <span style={{ color: "rgba(240,237,230,.7)" }}>{f.match.total}</span>
-                        </span>
-                      );
-                    })}
-                    {notFound.map((f, j) => (
-                      <span key={j} style={{ fontSize: 10, color: "rgba(240,237,230,.2)", whiteSpace: "nowrap" }}>
-                        {f.rosterName}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                {/* Очки команды */}
-                <td className="team-score-col" style={{ padding: "8px 8px", textAlign: "right", fontFamily: "Oswald,sans-serif", fontSize: i < 3 ? 20 : 17, fontWeight: 800,
-                  color: i === 0 ? "#F59E0B" : i === 1 ? "#D1D5DB" : "#F0EDE6" }}>
-                  {teamScore}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      <div style={{ marginTop: 10, fontSize: 10, color: "rgba(240,237,230,.18)", textAlign: "center" }}>
-        Результаты обновляются по мере ввода официальных счётов
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <ErrorBoundary isAdmin={false}>
@@ -16175,12 +10524,7 @@ function AppInner() {
   });
   const [displayNameSaving, setDisplayNameSaving] = useState(false);
   const [displayNameError, setDisplayNameError] = useState("");
-  const [tab, setTab] = useState(() => {
-    try {
-      const q = new URLSearchParams(window.location.search);
-      return (q.get("ffc2") === "1" || q.get("club2") === "1" || q.get("ffc21") === "1" || q.get("club21") === "1" || q.get("ffc3") === "1" || q.get("club3") === "1") ? "clubs" : "predict";
-    } catch { return "predict"; }
-  });
+  const [tab, setTab] = useState("predict");
 
   // Прогнозы пользователя
   const [scores, setScores] = useState(() => { try { return JSON.parse(localStorage.getItem("ffc_guest_scores") || "{}"); } catch { return {}; } });
@@ -16200,7 +10544,6 @@ function AppInner() {
   // userSim и simMode — будут реализованы в следующей версии
 
   const [leaderboard, setLeaderboard] = useState([]);
-  const [publicLeaderboard, setPublicLeaderboard] = useState([]); // из PublicForecastTable для CommandnyZachet
   const [showAuth, setShowAuth] = useState(false);
   const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
@@ -16215,26 +10558,7 @@ function AppInner() {
   const [predictionsPublic, setPredictionsPublic] = useState(() => localStorage.getItem("ffc_predictions_public") === "true");
 
   // ── Битва клубов + F-Coins ──
-  const [clubsSubTab, setClubsSubTab] = useState(() => {
-    try {
-      const q = new URLSearchParams(window.location.search);
-      if (q.get("ffc21") === "1" || q.get("club21") === "1" || q.get("ffc3") === "1" || q.get("club3") === "1") return "round3";
-      if (q.get("ffc2") === "1" || q.get("club2") === "1") return "round2";
-      return q.get("clubs") || "current2";
-    } catch { return "current2"; }
-  }); // "home"|"table"|"current2"|"round2"|"info"
-  const clubRound2Only = (() => {
-    try {
-      const q = new URLSearchParams(window.location.search);
-      return q.get("ffc2") === "1" || q.get("club2") === "1";
-    } catch { return false; }
-  })();
-  const clubRound3Only = (() => {
-    try {
-      const q = new URLSearchParams(window.location.search);
-      return q.get("ffc21") === "1" || q.get("club21") === "1" || q.get("ffc3") === "1" || q.get("club3") === "1";
-    } catch { return false; }
-  })();
+  const [clubsSubTab, setClubsSubTab] = useState("home"); // "home"|"myclub"|"cup"|"league"|"shop"
   const [clubForm, setClubForm] = useState({ name: "", city: "", color: "#B91C1C" });
   const [clubSaving, setClubSaving] = useState(false);
   const [fcoinsHistory, setFcoinsHistory] = useState([]);
@@ -16246,7 +10570,7 @@ function AppInner() {
   const [leagueCount, setLeagueCount] = useState(null); // число участников Лиги FFC
   const isSubmitted = predStatus === "submitted" || predStatus === "locked";
   const isPending = predStatus === "payment_pending";
-  const tournamentOpen = (isOpen() && !predictionsLocked) || GUEST_FORM_OPEN;
+  const tournamentOpen = isOpen() && !predictionsLocked;
   const isEditable = !isSubmitted && !isPending && tournamentOpen;
   const isGuest = !session;
 
@@ -17126,31 +11450,7 @@ function AppInner() {
   // ── RENDER ──
   return (
     <>
-      <style>{S + `
-/* Mobile-safe team standings: prevent Android font scaling from pushing columns off-screen */
-.team-standings-wrap{width:100%;overflow-x:hidden}
-.team-standings-table{width:100%;border-collapse:collapse;table-layout:auto}
-.team-top2-list{display:flex;gap:6px;flex-wrap:wrap}
-.team-top2-item{font-size:12px;white-space:nowrap}
-@media (max-width:700px){
-  .team-standings-wrap{padding-left:0!important;padding-right:0!important}
-  .team-standings-table{table-layout:fixed}
-  .team-rank-col{width:34px!important;padding-left:4px!important;padding-right:4px!important}
-  .team-name-col{width:34%;white-space:normal!important;overflow-wrap:anywhere;line-height:1.15}
-  .team-top2-col{width:auto;padding-left:6px!important;padding-right:6px!important}
-  .team-score-col{width:58px!important;padding-left:4px!important;padding-right:6px!important}
-  .team-rest-col{display:none!important}
-  .team-top2-list{display:flex!important;flex-direction:column!important;gap:5px!important;flex-wrap:nowrap!important}
-  .team-top2-item{display:flex!important;justify-content:space-between!important;align-items:baseline!important;gap:5px!important;white-space:normal!important;line-height:1.15}
-  .team-top2-name{min-width:0;overflow-wrap:anywhere}
-  .team-top2-score{flex-shrink:0;margin-left:4px!important}
-}
-@media (max-width:420px){
-  .team-name-col{width:31%;font-size:12px!important}
-  .team-top2-item{font-size:11px!important}
-  .team-score-col{width:52px!important;font-size:16px!important}
-}
-`}</style>
+      <style>{S}</style>
       {/* ══ ОСНОВНОЕ ПРИЛОЖЕНИЕ ══ */}
       <div className="app">
         {/* HEADER */}
@@ -17162,10 +11462,9 @@ function AppInner() {
             </div>
             <nav className="nav">
               <button className={`nb${tab === "predict" ? " on" : ""}`} onClick={() => setTab("predict")}>
-                {PREDICTIONS_LOCKED ? "📊 Таблица" : (isSubmitted ? "✅ Прогнозы" : "⚽ Прогнозы")}
+                {isSubmitted ? "✅ Прогнозы" : "⚽ Прогнозы"}
               </button>
-              <button className={`nb${tab === "team" ? " on" : ""}`} onClick={() => setTab("team")}>🤝 Команды</button>
-              <button className={`nb${tab === "clubs" ? " on" : ""}`} onClick={() => { setTab("clubs"); setClubsSubTab("current2"); }}>⚔️ 1 на 1</button>
+              <button className={`nb${tab === "clubs" ? " on" : ""}`} onClick={() => { setTab("clubs"); setClubsSubTab("home"); }}>🏟 Битва клубов</button>
               {!isGuest && <button className={`nb${tab === "quiz" ? " on" : ""}`} onClick={() => setTab("quiz")}>📅 Квиз</button>}
               <button className={`nb${tab === "howto" ? " on" : ""}`} onClick={() => setTab("howto")}>📖 Как играть</button>
               {isAdmin && <button className={`nb${tab === "admin" ? " on" : ""}`} style={{ color: "#FCA5A5" }} onClick={() => setTab("admin")}>⚙ Админ</button>}
@@ -17207,7 +11506,7 @@ function AppInner() {
         </header>
 
         {/* ══════════ ЛЕНДИНГ ДЛЯ ГОСТЕЙ ══════════ */}
-        {isGuest && tab !== "predict" && tab !== "leaderboard" && tab !== "team" && (
+        {isGuest && tab !== "predict" && tab !== "leaderboard" && (
           <div style={{ maxWidth: 820, margin: "0 auto", padding: "0 12px 120px" }}>
 
             {/* ── HERO ── */}
@@ -17255,7 +11554,7 @@ function AppInner() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 36 }}>
               {[
                 { icon: "🏆", name: "Битва прогнозистов", price: "500 ₽", desc: "Прогнозы на все матчи ЧМ-2026, матчи дня, таблица прогнозистов.", color: "#B91C1C" },
-                { icon: "⚽", name: "Битва клубов", price: "Бесплатно", desc: "Дуэльный драфт тура: тренер + 11 игроков из 60 вариантов. Финальная таблица после дедлайна.", color: "#15803d" },
+                { icon: "⚽", name: "Битва клубов", price: "Бесплатно", desc: "Дуэльный драфт тура: тренер + 11 игроков из 60 вариантов. Пары формируются после дедлайна.", color: "#15803d" },
                 { icon: "🤝", name: "Командный зачёт", price: "от 2 чел.", desc: "Внутри Битве прогнозистов. Рейтинг по среднему баллу участников.", color: "#1d4ed8" },
               ].map((c) => (
                 <div key={c.name} style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderTop: `3px solid ${c.color}`, borderRadius: 10, padding: "16px 14px" }}>
@@ -17271,7 +11570,7 @@ function AppInner() {
             <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 10, padding: "20px", marginBottom: 16 }}>
               <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 15, fontWeight: 700, color: "#F0EDE6", marginBottom: 10 }}>⚔️ Битва клубов</div>
               <div style={{ fontSize: 13, color: "rgba(240,237,230,.65)", lineHeight: 1.75, marginBottom: 12 }}>
-                Дуэльный драфт тура: собери <strong style={{ color: "#FDE68A" }}>тренера + 11 игроков</strong> из одинакового для всех списка 60 вариантов (12 позиций × 5 кандидатов). Назначь капитана — он получает ×1.5. После дедлайна открывается финальная таблица режима 1 на 1.
+                Дуэльный драфт тура: собери <strong style={{ color: "#FDE68A" }}>тренера + 11 игроков</strong> из одинакового для всех списка 60 вариантов (12 позиций × 5 кандидатов). Назначь капитана — он получает ×1.5. После дедлайна формируются пары 1 на 1.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                 {[
@@ -17331,11 +11630,8 @@ function AppInner() {
           </div>
         )}
 
-        {/* ══════════ ВКЛАДКА: ПРОГНОЗЫ / ПУБЛИЧНАЯ ТАБЛИЦА ══════════ */}
-        {tab === "predict" && PREDICTIONS_LOCKED && (
-          <PublicForecastTable showToast={showToast} onLeaderboardReady={setPublicLeaderboard} session={session} />
-        )}
-        {tab === "predict" && !PREDICTIONS_LOCKED && (
+        {/* ══════════ ВКЛАДКА: ОТПРАВИТЬ ПРОГНОЗ ══════════ */}
+        {tab === "predict" && (
           <ErrorBoundary isAdmin={isAdmin}>
           <div style={{ maxWidth: 900, margin: "0 auto", padding: "14px 12px 140px" }}>
 
@@ -17415,15 +11711,10 @@ function AppInner() {
                 </button>
               </div>
             )}
-            {!tournamentOpen && !GUEST_FORM_OPEN && (
+            {!tournamentOpen && (
               <div style={{ background: "rgba(185,28,28,.1)", border: "1px solid rgba(185,28,28,.3)", borderRadius: 10, padding: "14px 18px", marginBottom: 16, textAlign: "center" }}>
                 <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 700, color: "#FCA5A5" }}>🔒 Дедлайн прошёл. Прогнозы закрыты.</div>
                 <div style={{ fontSize: 12, color: "rgba(240,237,230,.4)", marginTop: 4 }}>Битва прогнозистов · Дедлайн: 11 июня 2026</div>
-              </div>
-            )}
-            {GUEST_FORM_OPEN && !tournamentOpen && (
-              <div style={{ background: "rgba(245,158,11,.07)", border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, padding: "10px 18px", marginBottom: 12, textAlign: "center", fontSize: 12, color: "#FDE68A" }}>
-                ⚡ Специальный доступ — заполни прогноз и нажми «Отправить прогноз в турнир»
               </div>
             )}
             {tournamentOpen && (
@@ -18110,7 +12401,7 @@ function AppInner() {
         )}
 
         {/* ══════════ ВКЛАДКА: ЕЖЕДНЕВНЫЙ КВИЗ ══════════ */}
-        {tab === "quiz" && (
+        {tab === "quiz" && !isGuest && (
           <ErrorBoundary isAdmin={isAdmin}>
           <div className="main">
             <div style={{ marginBottom: 16 }}>
@@ -18121,13 +12412,6 @@ function AppInner() {
             </div>
             <DailyQuizBlock session={session} showToast={showToast} />
           </div>
-          </ErrorBoundary>
-        )}
-
-        {/* ══════════ ВКЛАДКА: КОМАНДНЫЙ ЗАЧЁТ ══════════ */}
-        {tab === "team" && (
-          <ErrorBoundary isAdmin={isAdmin}>
-            <PublicTeamStandings leaderboard={publicLeaderboard} />
           </ErrorBoundary>
         )}
 
@@ -18152,7 +12436,7 @@ function AppInner() {
                 "Выбери тренера + 11 игроков: вратарь, 4 защитника, 4 полузащитника, 2 нападающих.",
                 "Назначь капитана из полевых игроков — он получает ×1.5 очков. Тренер не может быть капитаном.",
                 "Состав нужно отправить до дедлайна: 11 июня 22:00 МСК.",
-                "После дедлайна открывается финальная таблица режима 1 на 1. Кто набрал больше очков — побеждает.",
+                "После дедлайна формируются пары 1 на 1. Кто набрал больше очков — побеждает.",
                 "При ничьей по очкам победитель определяется по количеству F-Coins (тай-брейкер).",
                 "ВРАТАРЬ: +2 старт · +6 сухой матч · +3 победа · +8 пенальти отбит · −1 каждый пропущенный.",
                 "ЗАЩИТНИК: +2 старт · +5 сухой матч · +8 гол · +5 ассист · +2 победа · −1 жёлтая.",
@@ -18213,54 +12497,71 @@ function AppInner() {
           <ErrorBoundary isAdmin={isAdmin}>
           <div className="main">
 
-            {clubRound3Only ? (
-              <ClubRound3Form showToast={showToast} />
-            ) : clubRound2Only ? (
-              <ClubRound2Form showToast={showToast} />
-            ) : (
-              <>
-                {/* Битва клубов: публичные вкладки */}
-                <div style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", borderBottom: "1px solid rgba(255,255,255,.07)", paddingBottom: 12, scrollbarWidth: "none" }}>
-                  {[
-                    ["home", "📋 Все прогнозы"],
-                    ["table", "🏆 Таблица сеяных"],
-                    ["current2", "🗓️ Группы и календарь"],
-                    ["round3", "📝 2-й тур"],
-                    ["info", "ℹ️ Инфо"],
-                  ].map(([key, label]) => (
-                    <button
-                      key={key}
-                      onClick={() => setClubsSubTab(key)}
-                      style={{ background: clubsSubTab === key ? "rgba(29,78,216,.3)" : "rgba(255,255,255,.04)", border: clubsSubTab === key ? "1px solid rgba(29,78,216,.6)" : "1px solid rgba(255,255,255,.08)", color: clubsSubTab === key ? "#93C5FD" : "rgba(240,237,230,.58)", fontFamily: "Barlow Condensed,sans-serif", fontSize: 12, fontWeight: 700, padding: "7px 13px", borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
-                    >
-                      {label}
-                    </button>
-                  ))}
+            {/* Суб-навигация Битвы клубов */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 20, overflowX: "auto", borderBottom: "1px solid rgba(255,255,255,.07)", paddingBottom: 12, scrollbarWidth: "none" }}>
+              {[
+                ["home", "🏠 Главная"],
+                ["lineup", "📋 Состав"],
+                ["cup", "⚔ Пары тура"],
+                ["league", "📊 Таблица"],
+                ["shop", "🪙 F-Coins"],
+              ].map(([key, label]) => (
+                <button key={key} onClick={() => setClubsSubTab(key)}
+                  style={{ background: clubsSubTab === key ? "rgba(29,78,216,.3)" : "rgba(255,255,255,.04)", border: clubsSubTab === key ? "1px solid rgba(29,78,216,.6)" : "1px solid rgba(255,255,255,.08)", color: clubsSubTab === key ? "#93C5FD" : "rgba(240,237,230,.5)", fontFamily: "Barlow Condensed,sans-serif", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── ГЛАВНАЯ БИТВЫ КЛУБОВ ── */}
+            {clubsSubTab === "home" && (
+              <div>
+                {/* Статус и CTA */}
+                <div style={{ background: "rgba(22,163,74,.07)", border: "1px solid rgba(22,163,74,.2)", borderRadius: 10, padding: "16px 18px", marginBottom: 16 }}>
+                  <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 700, color: "#F0EDE6", marginBottom: 4 }}>⚽ Битва клубов — Дуэльный драфт</div>
+                  <div style={{ fontSize: 13, color: "rgba(240,237,230,.55)", marginBottom: 12, lineHeight: 1.6 }}>
+                    Бесплатно для всех. Тренер + 11 игроков из 60 вариантов. Соперник назначается после дедлайна.
+                  </div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, fontSize: 12, color: "rgba(240,237,230,.45)" }}>
+                    <span>👥 Участников: <strong style={{ color: "#86EFAC" }}>{cupCount !== null ? cupCount : "…"}</strong></span>
+                    <span>🗓 Дедлайн: <strong style={{ color: "#FDE68A" }}>11 июня 22:00 МСК</strong></span>
+                  </div>
+                  <button className="bp" style={{ background: "#16A34A", fontSize: 13, padding: "10px 20px" }}
+                    onClick={() => { if (isGuest) { setShowAuth(true); return; } setClubsSubTab("lineup"); }}>
+                    📋 Выбрать / продолжить состав →
+                  </button>
                 </div>
 
-                {clubsSubTab === "home" && (
-                  <PublicClubGroupsBlock mode="round2predictions" session={session} />
+                {/* F-Coins */}
+                {!isGuest && (
+                  <div style={{ background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.15)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 20 }}>🪙</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 14, fontWeight: 700, color: "#FDE68A" }}>F-Coins — очки активности</div>
+                        <div style={{ fontSize: 11, color: "rgba(240,237,230,.4)" }}>Тай-брейкер при ничьей в Битве клубов</div>
+                      </div>
+                      <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 24, fontWeight: 700, color: "#F59E0B" }}>{profile?.fcoins_balance || 0}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: "rgba(240,237,230,.35)", marginTop: 8, lineHeight: 1.7 }}>
+                      При ничьей в паре побеждает тот, у кого больше F-Coins.<br/>
+                      Квиз: +2 за ответ, до 25/день · Реферал: +100 за оплатившего друга.
+                    </div>
+                    <button className="sb" style={{ marginTop: 8, fontSize: 11 }} onClick={() => setTab("quiz")}>
+                      Заработать F-Coins в квизе →
+                    </button>
+                  </div>
                 )}
 
-                {clubsSubTab === "table" && (
-                  <PublicClubGroupsBlock mode="table" session={session} />
-                )}
-
-                {clubsSubTab === "current2" && (
-                  <PublicClubGroupsBlock mode="current2" session={session} />
-                )}
-
-                {clubsSubTab === "round3" && (
-                  <ClubRound3Form showToast={showToast} />
-                )}
-
-                {clubsSubTab === "info" && (
-                  <ClubBattleInfoBlock />
-                )}
-              </>
+                {/* Ссылка на правила */}
+                <div style={{ fontSize: 12, color: "rgba(240,237,230,.35)", textAlign: "center", marginTop: 4 }}>
+                  Полные правила —{" "}
+                  <button onClick={() => setTab("howto")} style={{ background: "none", border: "none", color: "#93C5FD", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>вкладка «Как играть»</button>
+                </div>
+              </div>
             )}
 
-                                    {/* ── СОЗДАНИЕ КЛУБА ── */}
+                        {/* ── СОЗДАНИЕ КЛУБА ── */}
             {(clubsSubTab === "createclub" || (clubsSubTab === "myclub" && !profile?.club_name)) && (
               <div className="club-create-wrap">
                 <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 22, fontWeight: 700, color: "#F0EDE6", marginBottom: 6 }}>Создай свой клуб</div>
@@ -18421,7 +12722,7 @@ function AppInner() {
                     "Выбери тренера + 11 игроков: вратарь, 4 защитника, 4 полузащитника, 2 нападающих.",
                     "Назначь капитана из полевых игроков — он получает ×1.5 очков. Тренер не может быть капитаном.",
                     "Состав нужно отправить до дедлайна: 11 июня 22:00 МСК.",
-                    "После дедлайна открывается финальная таблица режима 1 на 1. Кто набрал больше очков — побеждает.",
+                    "После дедлайна формируются пары 1 на 1. Кто набрал больше очков — побеждает.",
                     "Соперник назначается только после жеребьёвки. До тех пор — просто отправь состав.",
                     "ВРАТАРЬ: +2 старт · +6 сухой матч · +3 победа команды · +8 пенальти отбит · −1 каждый пропущенный · −1 жёлтая · −4 красная.",
                     "ЗАЩИТНИК: +2 старт · +5 сухой матч · +8 гол · +5 ассист · +2 победа · −1 жёлтая · −4 красная.",
