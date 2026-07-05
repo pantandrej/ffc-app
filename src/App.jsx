@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-admin-panels-full-chuprova-name";
+const FFC_APP_BUILD = "2026-07-05-chuprova-name-public-round3-tables";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -6960,7 +6960,7 @@ NOTIFY pgrst, 'reload schema';`}</pre>
             {rows.slice(0, 12).map((row, i) => (
               <div key={row.id || `${row.name}_${i}`} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: 12 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                  <div style={{ color: "#F0EDE6", fontWeight: 900, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || "—"}</div>
+                  <div style={{ color: "#F0EDE6", fontWeight: 900, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{adminClubFullDisplayName(row.name) || row.name || "—"}</div>
                   <span style={{ marginLeft: "auto", color: "#FDE68A", fontWeight: 900 }}>{clubRound3Score(row, official)}</span>
                   <button className="mini-btn" style={{ fontSize: 10 }} onClick={() => copyRow(row)}>копия</button>
                 </div>
@@ -9237,7 +9237,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                 {rows.map((row, ri) => (
                   <tr key={row.id || `${row.name}_${ri}`} style={{ borderTop: "1px solid rgba(255,255,255,.05)" }}>
                     <td style={{ position: "sticky", left: 0, zIndex: 2, background: ri % 2 ? "#071a07" : "#0b1d0b", padding: "8px 10px", color: "#F0EDE6", fontWeight: 800 }}>
-                      <div>{row.name || "—"}</div>
+                      <div>{adminClubFullDisplayName(row.name) || row.name || "—"}</div>
                       <div style={{ color: "rgba(240,237,230,.38)", fontSize: 10, marginTop: 2 }}>{created(row)}</div>
                     </td>
                     <td style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "center", fontWeight: 900 }}>{clubRound4Score(row, round5OfficialMap)}</td>
