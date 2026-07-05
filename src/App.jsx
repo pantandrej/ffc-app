@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-r16-pair-score-display";
+const FFC_APP_BUILD = "2026-07-05-admin-r8-pair-hits";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -13110,6 +13110,8 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
   const [sqlMissing, setSqlMissing] = React.useState(false);
   const [r16PairHits, setR16PairHits] = React.useState([]);
   const [r16PairHitsLoading, setR16PairHitsLoading] = React.useState(false);
+  const [r8PairHits, setR8PairHits] = React.useState([]);
+  const [r8PairHitsLoading, setR8PairHitsLoading] = React.useState(false);
 
   // Локальные хелперы для этой вкладки. Раньше блок "Кто полностью угадал пары 1/16"
   // вызывал normalizeMatchId/participantKeys из другой области видимости и падал.
@@ -13233,7 +13235,7 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     return v;
   }
 
-  React.useEffect(() => { loadPairs(); loadR16PairHits(); }, []);
+  React.useEffect(() => { loadPairs(); loadR16PairHits(); loadR8PairHits(); }, []);
 
   async function loadPairs() {
     setLoading(true);
@@ -13390,6 +13392,44 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     };
   }
 
+  // Резолвер команды в любой стадии плей-офф (1/8 и дальше), рекурсивно идя от
+  // home_from/away_from к победителям предыдущих матчей — та же логика, что и в
+  // форме прогноза участника (resolveTeam/getMatchTeams), но по СОХРАНЁННОМУ прогнозу uid.
+  function adminResolveBracketTeam(fromId, side, tables, thirds, playoffScores, playoffPens) {
+    const mid = normalizeMatchId(fromId);
+    const bracket = allPlayoffMatches.find(b => normalizeMatchId(b.id) === mid);
+    if (!bracket) return { team: "?", tbd: true };
+    let home, away;
+    if (bracket.home_key) {
+      home = resolveKey(bracket.home_key, tables, thirds, bracket.id);
+      away = resolveKey(bracket.away_key, tables, thirds, bracket.id);
+    } else {
+      home = adminResolveBracketTeam(bracket.home_from.replace("_loser", ""), bracket.home_from.includes("_loser") ? "loser" : "win", tables, thirds, playoffScores, playoffPens);
+      away = adminResolveBracketTeam(bracket.away_from.replace("_loser", ""), bracket.away_from.includes("_loser") ? "loser" : "win", tables, thirds, playoffScores, playoffPens);
+    }
+    const winner = getWinner(mid, playoffScores, playoffPens);
+    if (!winner) return { team: `Пр.${fromId}`, tbd: true };
+    if (side === "loser") return winner === "home" ? away : home;
+    return winner === "home" ? home : away;
+  }
+
+  function adminR8TeamsFromPrediction(matchId, groupScores, playoffScores, playoffPens) {
+    const mid = normalizeMatchId(matchId);
+    const bracket = R8.find(m => normalizeMatchId(m.id) === mid);
+    if (!bracket) return null;
+    const tables = {};
+    ALL_GROUPS.forEach(g => { tables[g] = calcGroupTable(g, groupScores || {}, {}); });
+    const thirds = getThirdRanking(tables, {});
+    const hFrom = bracket.home_from.replace("_loser", "");
+    const aFrom = bracket.away_from.replace("_loser", "");
+    const hSide = bracket.home_from.includes("_loser") ? "loser" : "win";
+    const aSide = bracket.away_from.includes("_loser") ? "loser" : "win";
+    return {
+      home: adminResolveBracketTeam(hFrom, hSide, tables, thirds, playoffScores || {}, playoffPens || {}),
+      away: adminResolveBracketTeam(aFrom, aSide, tables, thirds, playoffScores || {}, playoffPens || {}),
+    };
+  }
+
   async function loadR16PairHits() {
     setR16PairHitsLoading(true);
     try {
@@ -13525,6 +13565,127 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     }
   }
 
+  // То же самое, но для 1/8: команда участника в паре определяется не напрямую
+  // из групповых таблиц, а через победителя его же прогноза на матч 1/16
+  // (см. adminR8TeamsFromPrediction/adminResolveBracketTeam выше).
+  async function loadR8PairHits() {
+    setR8PairHitsLoading(true);
+    try {
+      const r8Ids = new Set(R8.map(m => normalizeMatchId(m.id)));
+
+      const [profiles, statuses, predRows, payments, officialRows] = await Promise.all([
+        fetchAllAdminRows("profiles?select=*"),
+        fetchAllAdminRows("participant_status?select=*").catch(() => []),
+        fetchAllAdminRows("predictions?select=*"),
+        fetchAllAdminRows("payment_requests?select=*").catch(() => []),
+        fetchAllAdminRows("playoff_official_pairs?select=match_id,home_team,away_team")
+      ]);
+
+      const profileMap = {};
+      (profiles || []).forEach(p => {
+        participantKeys(p).forEach(k => {
+          profileMap[String(k)] = publicDisplayNameOverride(adminProfileName(p) || String(k).slice(0, 8));
+        });
+      });
+
+      const pMap = {};
+      function putPredictionForUser(uid, midRaw, row) {
+        const mid = normalizeMatchId(midRaw);
+        if (!uid || !mid) return;
+        const parsed = adminScoreFromPredictionRow(row);
+        const h = parsed?.h ?? row?.h ?? row?.home ?? row?.home_score;
+        const a = parsed?.a ?? row?.a ?? row?.away ?? row?.away_score;
+        if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+        if (!pMap[uid]) pMap[uid] = {};
+        pMap[uid][mid] = {
+          h,
+          a,
+          pen: parsed?.pen || row?.penalty_winner || row?.penaltyWinner || row?.predicted_winner || row?.pen || null,
+        };
+      }
+
+      (predRows || []).forEach(pr => {
+        const midRaw = pr?.match_id ?? pr?.match ?? pr?.game_id ?? pr?.fixture_id ?? pr?.id;
+        rowUserKeys(pr).forEach(uid => putPredictionForUser(uid, midRaw, pr));
+      });
+
+      const dummyBonusMap = {};
+      (profiles || []).forEach(u => addLegacyScoresToMaps(u, participantKeys(u), pMap, dummyBonusMap));
+      (statuses || []).forEach(st => {
+        const uid = String(st?.user_id || st?.profile_id || st?.id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid };
+        addLegacyScoresToMaps(st, participantKeys(u), pMap, dummyBonusMap);
+      });
+      (payments || []).forEach(pay => {
+        const uid = String(pay?.user_id || pay?.profile_id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid, email: pay?.email };
+        addLegacyScoresToMaps(pay, participantKeys(u), pMap, dummyBonusMap);
+      });
+
+      Object.keys(pMap).forEach(uid => {
+        if (!profileMap[uid]) profileMap[uid] = `Участник ${String(uid).slice(0, 6)}`;
+      });
+
+      const official = (officialRows || [])
+        .filter(r => r8Ids.has(normalizeMatchId(r.match_id)) && (r.home_team || r.away_team))
+        .map(r => ({
+          match_id: normalizeMatchId(r.match_id),
+          home: String(r.home_team || "").trim(),
+          away: String(r.away_team || "").trim()
+        }))
+        .filter(r => adminTeamKey(r.home) && adminTeamKey(r.away));
+
+      function mapsFromUserPrediction(uid) {
+        const rows = pMap[uid] || {};
+        const groupScores = {};
+        const playoffScores = {};
+        const playoffPens = {};
+        Object.entries(rows).forEach(([rawMid, val]) => {
+          const mid = normalizeMatchId(rawMid);
+          if (!mid || !val) return;
+          const h = val.h ?? val.home_score ?? val.home;
+          const a = val.a ?? val.away_score ?? val.away;
+          if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+          const row = { h, a, pen: val.pen || val.penalty_winner || val.predicted_winner || null };
+          if (ALL_GROUP_MATCH_IDS.has(mid)) {
+            groupScores[mid] = row;
+          } else {
+            playoffScores[mid] = row;
+            if (row.pen) playoffPens[mid] = String(row.pen);
+          }
+        });
+        return { groupScores, playoffScores, playoffPens };
+      }
+
+      function predictedR8PairForUser(uid, matchId) {
+        const maps = mapsFromUserPrediction(uid);
+        const teams = adminR8TeamsFromPrediction(matchId, maps.groupScores, maps.playoffScores, maps.playoffPens);
+        return { home: teams?.home?.team || "", away: teams?.away?.team || "" };
+      }
+
+      const out = official.map(off => {
+        const names = new Set();
+        Object.keys(pMap).forEach(uid => {
+          const pair = predictedR8PairForUser(uid, off.match_id);
+          if (adminSamePairUnordered(pair.home, pair.away, off.home, off.away)) {
+            names.add(profileMap[uid] || `Участник ${uid.slice(0, 6)}`);
+          }
+        });
+        return { ...off, players: Array.from(names).sort((a, b) => a.localeCompare(b, "ru")) };
+      }).sort((a, b) => Number(String(a.match_id).replace(/\D/g, "")) - Number(String(b.match_id).replace(/\D/g, "")));
+
+      setR8PairHits(out);
+      const total = out.reduce((sum, r) => sum + ((r.players || []).length), 0);
+      showToast(`✓ Проверка пар 1/8 обновлена: ${total} совпадений`);
+    } catch (e) {
+      console.error("loadR8PairHits failed", e);
+      showToast("Ошибка списка угаданных пар 1/8: " + String(e?.message || e).slice(0, 120));
+      setR8PairHits([]);
+    } finally {
+      setR8PairHitsLoading(false);
+    }
+  }
+
 
   function r16PairHitsPlayerRows() {
     const map = new Map();
@@ -13568,6 +13729,50 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     lines.push('По игрокам:');
     r16PairHitsPlayerRows().forEach(row => lines.push(`${row.name}: ${row.pairs.length} пар(ы) — ${row.pairs.join('; ')}`));
     const txt = lines.join('\n');
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(txt).then(() => showToast('Список скопирован')).catch(() => showToast('Не удалось скопировать'));
+    } else {
+      showToast('Clipboard недоступен');
+    }
+  }
+
+  function r8PairHitsPlayerRows() {
+    const map = new Map();
+    (r8PairHits || []).forEach(row => {
+      const pairLabel = `${row.home} — ${row.away}`;
+      (row.players || []).forEach(name => {
+        const key = String(name || '').trim();
+        if (!key) return;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(pairLabel);
+      });
+    });
+    return Array.from(map.entries())
+      .map(([name, pairs]) => ({ name, pairs: pairs.sort((a, b) => a.localeCompare(b, 'ru')) }))
+      .sort((a, b) => b.pairs.length - a.pairs.length || a.name.localeCompare(b.name, 'ru'));
+  }
+
+  function downloadR8PairHitsCsvAdmin() {
+    const rows = [];
+    rows.push(['Матч', 'Реальная пара', 'Кто полностью угадал']);
+    (r8PairHits || []).forEach(row => rows.push([
+      row.match_id,
+      `${row.home} — ${row.away}`,
+      (row.players && row.players.length) ? row.players.join(', ') : '—'
+    ]));
+    rows.push([]);
+    rows.push(['Игрок', 'Кол-во угаданных пар', 'Какие пары']);
+    r8PairHitsPlayerRows().forEach(row => rows.push([row.name, row.pairs.length, row.pairs.join(' | ')]));
+    const csv = rows.map(row => row.map(csvCellAdmin).join(';')).join('\n');
+    downloadTextFileAdmin('admin_r8_full_pair_hits.csv', '﻿' + csv);
+    showToast('CSV по угаданным парам 1/8 готов');
+  }
+
+  function copyR8PairHitsTextAdmin() {
+    const lines = [];
+    lines.push('Кто полностью угадал пары 1/8');
+    r8PairHitsPlayerRows().forEach(row => lines.push(`${row.name} — ${row.pairs.length} пар(ы)\n${row.pairs.join('; ')}`));
+    const txt = lines.join('\n\n');
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(txt).then(() => showToast('Список скопирован')).catch(() => showToast('Не удалось скопировать'));
     } else {
@@ -13695,6 +13900,39 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
               </div>
             ))}
             {!r16PairHitsPlayerRows().length && <div style={{ color: "rgba(240,237,230,.4)", fontSize: 11 }}>Совпадений пока нет.</div>}
+          </div>
+        </details>
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(253,230,138,.22)", borderRadius: 8, padding: 12, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          <b style={{ color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 15 }}>🔎 Кто полностью угадал пары 1/8</b>
+          <span className="tag ty">{r8PairHits.reduce((sum, r) => sum + ((r.players || []).length), 0)} совпадений</span>
+          <button className="mini-btn" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadR8PairHits} disabled={r8PairHitsLoading}>{r8PairHitsLoading ? "…" : "обновить"}</button>
+          <button className="mini-btn green" style={{ fontSize: 11 }} onClick={copyR8PairHitsTextAdmin}>копировать текст для поста</button>
+          <button className="mini-btn" style={{ fontSize: 11 }} onClick={downloadR8PairHitsCsvAdmin}>CSV</button>
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(240,237,230,.55)", marginBottom: 10 }}>
+          Пара участника в 1/8 определяется через победителя его же прогноза на соответствующий матч 1/16, а не напрямую из групп.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
+          {r8PairHitsPlayerRows().map(row => (
+            <div key={row.name} style={{ background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 6, padding: 8 }}>
+              <div style={{ color: "#FDE68A", fontWeight: 900, fontSize: 12 }}>{row.name} — {row.pairs.length} пар(ы)</div>
+              <div style={{ color: "#F0EDE6", fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>{row.pairs.join("; ")}</div>
+            </div>
+          ))}
+          {!r8PairHitsPlayerRows().length && <div style={{ color: "rgba(240,237,230,.4)", fontSize: 11 }}>Совпадений пока нет.</div>}
+        </div>
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать по матчам</summary>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
+            {(r8PairHits || []).map(row => (
+              <div key={row.match_id} style={{ fontSize: 11, color: "rgba(240,237,230,.72)", background: "rgba(147,197,253,.05)", border: "1px solid rgba(147,197,253,.12)", borderRadius: 6, padding: 7 }}>
+                <b style={{ color: "#86EFAC" }}>{row.home} — {row.away}</b><br />
+                <span>{(row.players && row.players.length) ? row.players.join(", ") : "никто"}</span>
+              </div>
+            ))}
           </div>
         </details>
       </div>
