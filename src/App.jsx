@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-tour5-calendar-chuprova-r16-default";
+const FFC_APP_BUILD = "2026-07-05-freeze-group-stage-round4-q9-text";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -4872,7 +4872,7 @@ const CLUB_TOUR5_YESNO_QUESTIONS = [
   "Будут хотя бы 3 серии пенальти?",
   "И Мбаппе, и Месси забьют?",
   "Канада и Египет забьют в сумме хотя бы 2 гола?",
-  "В 1/4 финала будет 4 европейских сборных?",
+  "В 1/4 финала будут хотя бы 4 европейских сборных?",
   "Во всех восьми матчах будут хотя бы 2 красные карточки?",
 ];
 
@@ -7869,7 +7869,7 @@ function AdminOneOnOneHistoryPanel({ session, showToast }) {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div style={{ background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.18)", borderRadius: 10, padding: 12, color: "rgba(240,237,230,.62)", fontSize: 12 }}>
-        Здесь история режима 1 на 1: составы, ответы 2-го тура и уже закрытый 3-й тур. Ответы 5-го тура протыкиваются во вкладке «🧾 5-й тур» и идут как тур 3 календаря. Старый 4-й тур больше не используется в подсчёте.
+        Здесь история режима 1 на 1: составы, ответы 2-го тура и уже закрытый 3-й тур. Групповой этап и 1/8 навсегда заморожены на результатах 4-го тура (вкладка «🧾 4-й тур»). Новый 5-й тур — отдельная форма, живёт во вкладке «🧾 5-й тур» и в «Все прогнозы», но не пересчитывает уже завершённый групповой этап.
       </div>
       <AdminFfcScoresPanel session={session} showToast={showToast} />
       <div style={{ height: 1, background: "rgba(255,255,255,.10)", margin: "2px 0" }} />
@@ -9372,12 +9372,12 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     const groupsR2 = buildClubRound2Groups(seeded);
     const officialCountR1 = Object.values(round2Official || {}).filter(Boolean).length;
     const officialCountR2 = Object.values(round3Official || {}).filter(Boolean).length;
-    const officialCountR3 = clubRound4OfficialCount(round5Official);
-    const fantasyOfficialCountR3 = clubRound4FantasyOfficialCount(round5Official);
-    const anyRound5OfficialR3 = officialCountR3 > 0 || fantasyOfficialCountR3 > 0;
+    const officialCountR3 = clubRound4OfficialCount(round4Official);
+    const fantasyOfficialCountR3 = clubRound4FantasyOfficialCount(round4Official);
+    const anyRound4OfficialR3 = officialCountR3 > 0 || fantasyOfficialCountR3 > 0;
     const officialCount = officialCountR1 + officialCountR2 + officialCountR3;
     const latestRound3 = buildLatestClubRound3Rows(round3Rows);
-    const latestRound5 = buildLatestClubRound4Rows(round5Rows);
+    const latestRound4 = buildLatestClubRound4Rows(round4Rows);
     const isR16View = roundGroup === "R16";
     const activeGroup = CLUB_R2_GROUP_KEYS.includes(roundGroup) ? roundGroup : "A";
     const members = groupsR2[activeGroup] || [];
@@ -9390,9 +9390,10 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
         return { score: clubRound3Score(r3, round3Official), active: officialCountR2 > 0 };
       }
       if (Number(roundNo) === 3) {
-        // Тур 3 календаря 1 на 1 теперь считается по 5-му туру формы (протыкивается в админке во вкладке «🧾 5-й тур»).
-        const r5 = latestRound5[clubRound2NameKey(member.name)] || latestRound5[clubRound2NameKey(member.round2Row?.name)];
-        return { score: clubRound4Score(r5, round5Official), active: anyRound5OfficialR3 };
+        // Групповой этап 1 на 1 завершён и заморожен на результатах 4-го тура —
+        // 5-й тур это отдельная, следующая форма и не должен пересчитывать уже завершённые группы/1-8.
+        const r4 = latestRound4[clubRound2NameKey(member.name)] || latestRound4[clubRound2NameKey(member.round2Row?.name)];
+        return { score: clubRound4Score(r4, round4Official), active: anyRound4OfficialR3 };
       }
       return { score: 0, active: false };
     }
@@ -9490,7 +9491,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
             24 участника · 6 групп по 4. Таблица считает матчи до выбранного тура. Пока нет верных ответов — очки групп не начисляются. Верный ответ — 2 балла.
           </div>
           <div style={{ marginTop: 8, color: "#86EFAC", fontSize: 12 }}>
-            Официальных ответов внесено: тур 1 — {officialCountR1}/{CLUB_TOUR2_QUESTIONS.length}, тур 2 — {officialCountR2}/{CLUB_TOUR3_QUESTIONS.length}, тур 3 — {officialCountR3}/{CLUB_TOUR5_SCORE_MATCHES.length + CLUB_TOUR5_YESNO_QUESTIONS.length}, фэнтези — {fantasyOfficialCountR3}
+            Официальных ответов внесено: тур 1 — {officialCountR1}/{CLUB_TOUR2_QUESTIONS.length}, тур 2 — {officialCountR2}/{CLUB_TOUR3_QUESTIONS.length}, тур 3 — {officialCountR3}/{CLUB_TOUR4_SCORE_MATCHES.length + CLUB_TOUR4_YESNO_QUESTIONS.length}, фэнтези — {fantasyOfficialCountR3}
           </div>
         </div>
 
