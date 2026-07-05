@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-freeze-group-stage-round4-q9-text";
+const FFC_APP_BUILD = "2026-07-05-r16-pair-score-display";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -9561,7 +9561,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                         <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{L ? `#${L.seed} ${L.name}` : "пока не определён"}</div>
                         {L && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{L.tablePoints} очк. · Б {L.score}</div>}
                       </div>
-                      <div style={{ color: "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900 }}>—</div>
+                      <div style={{ minWidth: 56, textAlign: "center", color: (L && R) ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: (L && R) ? 24 : 18, fontWeight: 900 }}>{(L && R) ? `${L.score}:${R.score}` : "—"}</div>
                       <div>
                         <div style={{ color: "#FDE68A", fontSize: 11, fontWeight: 900 }}>{slotLabel(right)}</div>
                         <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{R ? `#${R.seed} ${R.name}` : "пока не определён"}</div>
