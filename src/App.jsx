@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-04-admin-bonus-all-variants-fix";
+const FFC_APP_BUILD = "2026-07-04-admin-bonus-paginated-all-answers-fix";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -12798,15 +12798,33 @@ function AdminBonusPanel({ session, showToast }) {
     await saveOfficialAnswerRaw(qid, currentAnswer, "open");
   }
 
+  async function fetchBonusAdminAllRows(path, pageSize = 1000, maxPages = 30) {
+    // Supabase/PostgREST часто физически режет выдачу на 1000 строк, даже если написать limit=5000.
+    // В бонусах это критично: 80+ участников × 31 вопрос = 2500+ строк, и последние участники
+    // (как Роман/Арина) просто не попадали в быстрый блок протыкивания.
+    const rows = [];
+    const sep0 = path.includes("?") ? "&" : "?";
+    for (let page = 0; page < maxPages; page += 1) {
+      const offset = page * pageSize;
+      const res = await supa(`${path}${sep0}limit=${pageSize}&offset=${offset}`, { token });
+      if (!res.ok) return { ok: false, response: res, data: rows };
+      const chunk = await res.json().catch(() => []);
+      const arr = Array.isArray(chunk) ? chunk : [];
+      rows.push(...arr);
+      if (arr.length < pageSize) return { ok: true, response: res, data: rows };
+    }
+    return { ok: true, data: rows, truncated: true };
+  }
+
   async function loadPlayerCandidates() {
     setCandidatesLoading(true);
     try {
       const [answersR, profilesR] = await Promise.all([
-        supa("bonus_answers?select=user_id,question_id,answer&limit=5000", { token }),
-        supa("profiles?select=id,email,name,display_name&limit=5000", { token }).catch(() => null),
+        fetchBonusAdminAllRows("bonus_answers?select=user_id,question_id,answer&order=question_id.asc"),
+        fetchBonusAdminAllRows("profiles?select=id,email,name,display_name&order=created_at.asc").catch(() => null),
       ]);
-      const rows = answersR.ok ? await answersR.json().catch(() => []) : [];
-      const profiles = profilesR?.ok ? await profilesR.json().catch(() => []) : [];
+      const rows = answersR.ok ? answersR.data : [];
+      const profiles = profilesR?.ok ? profilesR.data : [];
       const pMap = {};
       (Array.isArray(profiles) ? profiles : []).forEach(p => {
         if (p.id) pMap[String(p.id)] = publicDisplayNameOverride(p.display_name || p.name || p.email || String(p.id).slice(0, 8));
