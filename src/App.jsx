@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-r16-round5-score-firstword-fallback";
+const FFC_APP_BUILD = "2026-07-05-r16-partial-score-antoha-alias";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -5028,6 +5028,8 @@ function clubRound2NameKey(name) {
     [["иван ккб", "ivan kkb", "иван"], "иван ккб"],
     [["денис сорока", "denis soroka", "soroka denis"], "denis soroka"],
     [["костиков андрей", "андрей костиков", "kostikov andrey", "andrey kostikov"], "костиков андрей"],
+    // Опечатка в собственном нике при отправке 5-го тура: "артоха010" вместо "антоха010".
+    [["antoha010", "антоха010", "artoha010", "артоха010"], "антоха010"],
   ];
 
   for (const [variants, canonical] of aliases) {
@@ -9585,7 +9587,10 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                 const R = slotPlayer(right);
                 const Ls5 = round5ScoreFor(L);
                 const Rs5 = round5ScoreFor(R);
-                const hasR5Score = Ls5 !== null && Rs5 !== null;
+                // Раньше если хотя бы у одного из пары не было счёта 5-го тура (не прислал форму,
+                // опечатался в имени), мы прятали счёт целиком — из-за этого пропадал и валидный
+                // счёт партнёра. Теперь показываем то, что есть, а недостающую сторону — как "—".
+                const hasAnyR5Score = Ls5 !== null || Rs5 !== null;
                 return (
                   <div key={`r16_${i}`} style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.08)" }}>
                     <div style={{ color: "rgba(240,237,230,.40)", fontSize: 11, fontWeight: 800, marginBottom: 8 }}>Матч 1/8 №{i + 1}</div>
@@ -9595,14 +9600,14 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                         <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{L ? `#${L.seed} ${L.name}` : "пока не определён"}</div>
                         {L && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{L.tablePoints} очк. · Б {L.score}</div>}
                       </div>
-                      <div style={{ minWidth: 56, textAlign: "center", color: hasR5Score ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: hasR5Score ? 24 : 18, fontWeight: 900 }}>{hasR5Score ? `${Ls5}:${Rs5}` : "—"}</div>
+                      <div style={{ minWidth: 56, textAlign: "center", color: hasAnyR5Score ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: hasAnyR5Score ? 24 : 18, fontWeight: 900 }}>{hasAnyR5Score ? `${Ls5 ?? "—"}:${Rs5 ?? "—"}` : "—"}</div>
                       <div>
                         <div style={{ color: "#FDE68A", fontSize: 11, fontWeight: 900 }}>{slotLabel(right)}</div>
                         <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{R ? `#${R.seed} ${R.name}` : "пока не определён"}</div>
                         {R && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{R.tablePoints} очк. · Б {R.score}</div>}
                       </div>
                     </div>
-                    {hasR5Score && <div style={{ textAlign: "center", color: "rgba(240,237,230,.4)", fontSize: 10, marginTop: 4 }}>счёт 5-го тура</div>}
+                    {hasAnyR5Score && <div style={{ textAlign: "center", color: "rgba(240,237,230,.4)", fontSize: 10, marginTop: 4 }}>счёт 5-го тура{(Ls5 === null || Rs5 === null) ? " (партнёр ещё не прислал)" : ""}</div>}
                   </div>
                 );
               })}
