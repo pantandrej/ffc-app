@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-fantasy-individual-override-priority-chuprova";
+const FFC_APP_BUILD = "2026-07-05-fantasy-list-hides-scored-r16-round5-score";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -7310,7 +7310,7 @@ NOTIFY pgrst, 'reload schema';`;
 
       <div style={{ border: "1px solid rgba(34,197,94,.22)", borderRadius: 14, background: "rgba(22,163,74,.055)", padding: 14 }}>
         <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 22, fontWeight: 900, marginBottom: 8 }}>Фэнтези — ручные баллы</div>
-        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 10 }}>В общем списке теперь всегда показаны ВСЕ варианты из всех отправленных составов — и проставленные, и ещё пустые. Если Кейн/Райс/любой игрок выбран у нескольких участников, его очки автоматически добавятся всем, у кого он есть в составе.</div>
+        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 10 }}>В общем списке показаны только ещё не проставленные варианты — как только вписал очки и нажал OK, игрок/тренер пропадает из списка. Если Кейн/Райс/любой игрок выбран у нескольких участников, его очки автоматически добавятся всем, у кого он есть в составе.</div>
 
         <div style={{ border: "1px solid rgba(253,230,138,.22)", borderRadius: 12, padding: 12, background: "rgba(245,158,11,.045)", marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
@@ -7320,9 +7320,11 @@ NOTIFY pgrst, 'reload schema';`;
           </div>
           {fantasyGlobalPicks.length === 0 ? (
             <div style={{ color: "rgba(240,237,230,.48)", fontSize: 12 }}>Составы пока не загружены.</div>
+          ) : fantasyGlobalOpenPicks.length === 0 ? (
+            <div style={{ color: "#86EFAC", fontSize: 12 }}>✓ Все игроки/тренеры проставлены.</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
-              {fantasyGlobalPicks.map((pick) => {
+              {fantasyGlobalOpenPicks.map((pick) => {
                 const val = fantasyGlobalValue(pick.key);
                 return (
                   <div key={pick.key} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px 44px", gap: 8, alignItems: "center", padding: 8, borderRadius: 9, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
@@ -7741,7 +7743,7 @@ NOTIFY pgrst, 'reload schema';`;
 
       <div style={{ border: "1px solid rgba(34,197,94,.22)", borderRadius: 14, background: "rgba(22,163,74,.055)", padding: 14 }}>
         <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 22, fontWeight: 900, marginBottom: 8 }}>Фэнтези — ручные баллы</div>
-        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 10 }}>В общем списке теперь всегда показаны ВСЕ варианты из всех отправленных составов — и проставленные, и ещё пустые. Если Кейн/Райс/любой игрок выбран у нескольких участников, его очки автоматически добавятся всем, у кого он есть в составе.</div>
+        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 10 }}>В общем списке показаны только ещё не проставленные варианты — как только вписал очки и нажал OK, игрок/тренер пропадает из списка. Если Кейн/Райс/любой игрок выбран у нескольких участников, его очки автоматически добавятся всем, у кого он есть в составе.</div>
 
         <div style={{ border: "1px solid rgba(253,230,138,.22)", borderRadius: 12, padding: 12, background: "rgba(245,158,11,.045)", marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
@@ -7751,9 +7753,11 @@ NOTIFY pgrst, 'reload schema';`;
           </div>
           {fantasyGlobalPicks.length === 0 ? (
             <div style={{ color: "rgba(240,237,230,.48)", fontSize: 12 }}>Составы пока не загружены.</div>
+          ) : fantasyGlobalOpenPicks.length === 0 ? (
+            <div style={{ color: "#86EFAC", fontSize: 12 }}>✓ Все игроки/тренеры проставлены.</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
-              {fantasyGlobalPicks.map((pick) => {
+              {fantasyGlobalOpenPicks.map((pick) => {
                 const val = fantasyGlobalValue(pick.key);
                 return (
                   <div key={pick.key} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px 44px", gap: 8, alignItems: "center", padding: 8, borderRadius: 9, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
@@ -9384,6 +9388,15 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     const activeGroup = CLUB_R2_GROUP_KEYS.includes(roundGroup) ? roundGroup : "A";
     const members = groupsR2[activeGroup] || [];
 
+    // Сами пары 1/8 и групповой этап заморожены на 4-м туре (см. scoreForMemberRound),
+    // но живой счёт рядом с парой 1/8 — это уже текущий, 5-й тур (это и есть матч 1/8).
+    const latestRound5ForR16 = buildLatestClubRound4Rows(round5Rows);
+    function round5ScoreFor(member) {
+      if (!member) return null;
+      const r5 = latestRound5ForR16[clubRound2NameKey(member.name)] || latestRound5ForR16[clubRound2NameKey(member.round2Row?.name)];
+      return r5 ? clubRound4Score(r5, round5Official) : null;
+    }
+
     function scoreForMemberRound(member, roundNo) {
       if (!member) return { score: 0, active: false };
       if (Number(roundNo) === 1) return { score: clubRound2Score(member.round2Row, round2Official), active: officialCountR1 > 0 };
@@ -9554,6 +9567,9 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
               {liveR16Pairs.map(([left, right], i) => {
                 const L = slotPlayer(left);
                 const R = slotPlayer(right);
+                const Ls5 = round5ScoreFor(L);
+                const Rs5 = round5ScoreFor(R);
+                const hasR5Score = Ls5 !== null && Rs5 !== null;
                 return (
                   <div key={`r16_${i}`} style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.08)" }}>
                     <div style={{ color: "rgba(240,237,230,.40)", fontSize: 11, fontWeight: 800, marginBottom: 8 }}>Матч 1/8 №{i + 1}</div>
@@ -9563,13 +9579,14 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                         <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{L ? `#${L.seed} ${L.name}` : "пока не определён"}</div>
                         {L && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{L.tablePoints} очк. · Б {L.score}</div>}
                       </div>
-                      <div style={{ minWidth: 56, textAlign: "center", color: (L && R) ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: (L && R) ? 24 : 18, fontWeight: 900 }}>{(L && R) ? `${L.score}:${R.score}` : "—"}</div>
+                      <div style={{ minWidth: 56, textAlign: "center", color: hasR5Score ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: hasR5Score ? 24 : 18, fontWeight: 900 }}>{hasR5Score ? `${Ls5}:${Rs5}` : "—"}</div>
                       <div>
                         <div style={{ color: "#FDE68A", fontSize: 11, fontWeight: 900 }}>{slotLabel(right)}</div>
                         <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{R ? `#${R.seed} ${R.name}` : "пока не определён"}</div>
                         {R && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{R.tablePoints} очк. · Б {R.score}</div>}
                       </div>
                     </div>
+                    {hasR5Score && <div style={{ textAlign: "center", color: "rgba(240,237,230,.4)", fontSize: 10, marginTop: 4 }}>счёт 5-го тура</div>}
                   </div>
                 );
               })}
