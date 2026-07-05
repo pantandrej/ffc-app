@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-fantasy-list-hides-scored-r16-round5-score";
+const FFC_APP_BUILD = "2026-07-05-r16-round5-score-firstword-fallback";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -9391,10 +9391,26 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     // Сами пары 1/8 и групповой этап заморожены на 4-м туре (см. scoreForMemberRound),
     // но живой счёт рядом с парой 1/8 — это уже текущий, 5-й тур (это и есть матч 1/8).
     const latestRound5ForR16 = buildLatestClubRound4Rows(round5Rows);
+    // Полное имя в группах (например "Арина Полякова") и ник, под которым реально
+    // отправлена форма 5-го тура (например "Арина"), не всегда совпадают побуквенно —
+    // добавляем подбор по первому слову имени, чтобы такие случаи не показывали пустой счёт.
+    const latestRound5ByFirstWord = {};
+    Object.entries(latestRound5ForR16).forEach(([key, row]) => {
+      const firstWord = key.split(" ")[0];
+      if (firstWord && !latestRound5ByFirstWord[firstWord]) latestRound5ByFirstWord[firstWord] = row;
+    });
     function round5ScoreFor(member) {
       if (!member) return null;
-      const r5 = latestRound5ForR16[clubRound2NameKey(member.name)] || latestRound5ForR16[clubRound2NameKey(member.round2Row?.name)];
-      return r5 ? clubRound4Score(r5, round5Official) : null;
+      const nameCandidates = [member.name, member.round2Row?.name].filter(Boolean);
+      for (const c of nameCandidates) {
+        const key = clubRound2NameKey(c);
+        if (latestRound5ForR16[key]) return clubRound4Score(latestRound5ForR16[key], round5Official);
+      }
+      for (const c of nameCandidates) {
+        const firstWord = clubRound2NameKey(c).split(" ")[0];
+        if (firstWord && latestRound5ByFirstWord[firstWord]) return clubRound4Score(latestRound5ByFirstWord[firstWord], round5Official);
+      }
+      return null;
     }
 
     function scoreForMemberRound(member, roundNo) {
