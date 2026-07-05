@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-04-admin-bonus-paginated-all-answers-fix";
+const FFC_APP_BUILD = "2026-07-05-tour5-calendar-chuprova-r16-default";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -4311,9 +4311,9 @@ function publicDisplayNameOverride(name) {
   if (n === "Ваня П" || n === "Ваня Cl" || n === "Иван П") return "Иван Cl";
   if (n === "Валерий П" || n === "Валерий GP") return "Валерия GP";
   // Для режима «1 на 1»: короткое имя в таблицах и матчах.
-  // В базе/формах могли быть варианты «Александра Капитанеску» / «Alexandra Kapitanescu»,
+  // В базе/формах могли быть варианты «Александра Капитанеску» / «Alexandra Kapitanescu» / «Александра Чупрова»,
   // но в группе и календаре показываем просто «Александра».
-  if (/^александра\s+капитанеск/i.test(n.toLowerCase().replace(/ё/g, "е")) || /^alexandra\s+kapitan/i.test(n.toLowerCase())) return "Александра";
+  if (/^александра\s+(капитанеск|чупров)/i.test(n.toLowerCase().replace(/ё/g, "е")) || /^alexandra\s+(kapitan|chuprov)/i.test(n.toLowerCase())) return "Александра";
   return s;
 }
 
@@ -7869,7 +7869,7 @@ function AdminOneOnOneHistoryPanel({ session, showToast }) {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div style={{ background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.18)", borderRadius: 10, padding: 12, color: "rgba(240,237,230,.62)", fontSize: 12 }}>
-        Здесь история режима 1 на 1: составы, ответы 2-го тура и уже закрытый 3-й тур. Ответы 4-го тура протыкиваются во вкладке «🧾 4-й тур» и идут как тур 3 календаря. Новый 5-й тур живёт отдельно во вкладке «🧾 5-й тур».
+        Здесь история режима 1 на 1: составы, ответы 2-го тура и уже закрытый 3-й тур. Ответы 5-го тура протыкиваются во вкладке «🧾 5-й тур» и идут как тур 3 календаря. Старый 4-й тур больше не используется в подсчёте.
       </div>
       <AdminFfcScoresPanel session={session} showToast={showToast} />
       <div style={{ height: 1, background: "rgba(255,255,255,.10)", margin: "2px 0" }} />
@@ -8396,7 +8396,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [loading, setLoading] = React.useState(true);
   const [debug, setDebug] = React.useState(null);
   const [round, setRound] = React.useState(() => mode === "current2" ? 3 : 1);
-  const [roundGroup, setRoundGroup] = React.useState("A");
+  const [roundGroup, setRoundGroup] = React.useState(() => mode === "current2" ? "R16" : "A");
   const [roundScores, setRoundScores] = React.useState({});
   const [round2Rows, setRound2Rows] = React.useState([]);
   const [round2Official, setRound2Official] = React.useState({});
@@ -8407,6 +8407,9 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [round4Rows, setRound4Rows] = React.useState([]);
   const [round4Official, setRound4Official] = React.useState({ scores: {}, yesno: {} });
   const [round4Debug, setRound4Debug] = React.useState(null);
+  const [round5Rows, setRound5Rows] = React.useState([]);
+  const [round5Official, setRound5Official] = React.useState({ scores: {}, yesno: {} });
+  const [round5Debug, setRound5Debug] = React.useState(null);
 
   // Страховка от вечной загрузки: если Supabase/сеть подвисли у пользователя,
   // всё равно показываем вкладку с диагностикой, а не бесконечное "Загружаю группы…".
@@ -8445,16 +8448,18 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     return map;
   }, []);
 
-  React.useEffect(() => { loadCards(); loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); }, [session?.access_token]);
+  React.useEffect(() => { loadCards(); loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); loadRound5PublicData(); }, [session?.access_token]);
   React.useEffect(() => {
-    const h = () => { loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); };
+    const h = () => { loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); loadRound5PublicData(); };
     window.addEventListener("ffc-round2-official-updated", h);
     window.addEventListener("ffc-round3-official-updated", h);
     window.addEventListener("ffc-round4-official-updated", h);
+    window.addEventListener("ffc-round5-official-updated", h);
     return () => {
       window.removeEventListener("ffc-round2-official-updated", h);
       window.removeEventListener("ffc-round3-official-updated", h);
       window.removeEventListener("ffc-round4-official-updated", h);
+      window.removeEventListener("ffc-round5-official-updated", h);
     };
   }, [session?.access_token]);
 
@@ -8466,6 +8471,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       loadRound2PublicData();
       loadRound3PublicData();
       loadRound4PublicData();
+      loadRound5PublicData();
     };
     const onVisibility = () => { if (!document.hidden) refreshPublicTables(); };
     window.addEventListener("focus", refreshPublicTables);
@@ -8550,6 +8556,34 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     } catch (e) {
       setRound4Debug({ error: e?.message || String(e) });
       setRound4Official(readClubRound4OfficialLocal());
+    }
+  }
+
+  async function loadRound5PublicData() {
+    try {
+      const [answerRows, officialRowsFallback] = await Promise.all([
+        fetchAnon(`${CLUB_NEXT_FORM_TABLE}?select=id,name,fantasy,scores,yesno,answers,created_at,source&order=created_at.asc`).catch(e => {
+          setRound5Debug({ answersError: e?.message || String(e) });
+          return [];
+        }),
+        fetchAnon("bonus_official_answers?select=*&question_id=like.round5_%&order=updated_at.desc.nullslast").catch(e => {
+          setRound5Debug({ fallbackError: e?.message || String(e) });
+          return [];
+        }),
+      ]);
+      setRound5Rows(Array.isArray(answerRows) ? answerRows : []);
+      const localMap = normalizeClubRound4OfficialMap(readClubRound5OfficialLocal());
+      const dbMap = buildClubRound4OfficialMap(Array.isArray(officialRowsFallback) ? officialRowsFallback : []);
+      const merged = normalizeClubRound4OfficialMap({
+        scores: { ...localMap.scores, ...(dbMap.scores || {}) },
+        yesno: { ...localMap.yesno, ...(dbMap.yesno || {}) },
+        fantasy: { ...localMap.fantasy, ...(dbMap.fantasy || {}) },
+      });
+      setRound5Official(merged);
+      writeClubRound5OfficialLocal(merged);
+    } catch (e) {
+      setRound5Debug({ error: e?.message || String(e) });
+      setRound5Official(readClubRound5OfficialLocal());
     }
   }
 
@@ -9097,15 +9131,15 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   }
 
   if (mode === "round2predictions") {
-    const round4OfficialMap = normalizeClubRound4OfficialMap(round4Official);
-    const latestMap = buildLatestClubRound4Rows(round4Rows);
+    const round5OfficialMap = normalizeClubRound4OfficialMap(round5Official);
+    const latestMap = buildLatestClubRound4Rows(round5Rows);
     const rows = Object.values(latestMap).sort((a, b) => {
-      const scoreDiff = clubRound4Score(b, round4OfficialMap) - clubRound4Score(a, round4OfficialMap);
+      const scoreDiff = clubRound4Score(b, round5OfficialMap) - clubRound4Score(a, round5OfficialMap);
       if (scoreDiff !== 0) return scoreDiff;
       return String(a.name || "").localeCompare(String(b.name || ""), "ru");
     });
-    const officialCount = clubRound4OfficialCount(round4OfficialMap);
-    const fantasyOfficialCount = clubRound4FantasyOfficialCount(round4OfficialMap);
+    const officialCount = clubRound4OfficialCount(round5OfficialMap);
+    const fantasyOfficialCount = clubRound4FantasyOfficialCount(round5OfficialMap);
     const created = row => {
       try { return row?.created_at ? new Date(row.created_at).toLocaleString("ru-RU") : "—"; } catch { return row?.created_at || "—"; }
     };
@@ -9119,18 +9153,18 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     return (
       <div>
         <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>📋 Все прогнозы · 4-й тур</div>
+          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>📋 Все прогнозы · 5-й тур</div>
           <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 5 }}>
-            Фэнтези, 5 точных счетов и 10 вопросов Да/Нет. Этот 4-й тур считается как тур 3 в группах 1 на 1.
+            Фэнтези, 5 точных счетов и 10 вопросов Да/Нет. Этот 5-й тур считается как тур 3 в группах 1 на 1.
           </div>
           <div style={{ marginTop: 8, color: "#86EFAC", fontSize: 12 }}>
-            Прогнозов: {rows.length} · официальных ответов внесено: {officialCount}/{CLUB_TOUR4_SCORE_MATCHES.length + CLUB_TOUR4_YESNO_QUESTIONS.length} · фэнтези баллов: {fantasyOfficialCount}
+            Прогнозов: {rows.length} · официальных ответов внесено: {officialCount}/{CLUB_TOUR5_SCORE_MATCHES.length + CLUB_TOUR5_YESNO_QUESTIONS.length} · фэнтези баллов: {fantasyOfficialCount}
           </div>
         </div>
 
         <div style={{ marginBottom: 14, background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ padding: "10px 12px", background: "rgba(245,158,11,.07)", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, color: "#FDE68A" }}>Матчи и вопросы 4-го тура</div>
+            <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, color: "#FDE68A" }}>Матчи и вопросы 5-го тура</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
               <span style={{ color: "#86EFAC" }}>зелёный — верно</span>
               <span style={{ color: "#FCA5A5" }}>красный — неверно</span>
@@ -9138,8 +9172,8 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 8, padding: 12 }}>
-            {CLUB_TOUR4_SCORE_MATCHES.map((m, i) => {
-              const correct = String(round4OfficialMap.scores?.[String(i + 1)] || "").trim();
+            {CLUB_TOUR5_SCORE_MATCHES.map((m, i) => {
+              const correct = String(round5OfficialMap.scores?.[String(i + 1)] || "").trim();
               return (
                 <div key={`m_${i}`} style={{ padding: "8px 10px", borderRadius: 8, background: correct ? "rgba(22,163,74,.055)" : "rgba(255,255,255,.035)", border: correct ? "1px solid rgba(22,163,74,.18)" : "1px solid rgba(255,255,255,.07)", display: "flex", gap: 8, alignItems: "flex-start" }}>
                   <span style={{ flexShrink: 0, minWidth: 30, height: 24, borderRadius: 6, background: "rgba(147,197,253,.12)", border: "1px solid rgba(147,197,253,.28)", color: "#93C5FD", fontFamily: "Oswald,sans-serif", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>M{i + 1}</span>
@@ -9150,8 +9184,8 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                 </div>
               );
             })}
-            {CLUB_TOUR4_YESNO_QUESTIONS.map((q, i) => {
-              const correct = String(round4OfficialMap.yesno?.[String(i + 1)] || "").trim();
+            {CLUB_TOUR5_YESNO_QUESTIONS.map((q, i) => {
+              const correct = String(round5OfficialMap.yesno?.[String(i + 1)] || "").trim();
               return (
                 <div key={`q_${i}`} style={{ padding: "8px 10px", borderRadius: 8, background: correct ? "rgba(22,163,74,.055)" : "rgba(255,255,255,.035)", border: correct ? "1px solid rgba(22,163,74,.18)" : "1px solid rgba(255,255,255,.07)", display: "flex", gap: 8, alignItems: "flex-start" }}>
                   <span style={{ flexShrink: 0, minWidth: 30, height: 24, borderRadius: 6, background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.28)", color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>Q{i + 1}</span>
@@ -9178,8 +9212,8 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                   <th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", minWidth: 70 }}>Очки</th>
                   <th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", minWidth: 90 }}>Фэнтези</th>
                   {CLUB_TOUR4_FANTASY_FIELDS.map(f => <th key={f.key} style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "left", minWidth: 130 }}>{f.label}</th>)}
-                  {CLUB_TOUR4_SCORE_MATCHES.map((m, i) => <th key={m} title={m} style={{ padding: "8px 10px", color: "#93C5FD", textAlign: "center", minWidth: 86 }}>M{i + 1}</th>)}
-                  {CLUB_TOUR4_YESNO_QUESTIONS.map((q, i) => <th key={q} title={q} style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "center", minWidth: 76, fontSize: 10 }}>Q{i + 1}</th>)}
+                  {CLUB_TOUR5_SCORE_MATCHES.map((m, i) => <th key={m} title={m} style={{ padding: "8px 10px", color: "#93C5FD", textAlign: "center", minWidth: 86 }}>M{i + 1}</th>)}
+                  {CLUB_TOUR5_YESNO_QUESTIONS.map((q, i) => <th key={q} title={q} style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "center", minWidth: 76, fontSize: 10 }}>Q{i + 1}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -9189,21 +9223,21 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                       <div>{row.name || "—"}</div>
                       <div style={{ color: "rgba(240,237,230,.38)", fontSize: 10, marginTop: 2 }}>{created(row)}</div>
                     </td>
-                    <td style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "center", fontWeight: 900 }}>{clubRound4Score(row, round4OfficialMap)}</td>
-                    <td style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", fontWeight: 900 }}>{clubRound4FantasyPointsFor(row, round4OfficialMap)}</td>
-                    {CLUB_TOUR4_FANTASY_FIELDS.map(f => { const fp = clubRound4FantasyFieldPointsFor(row, f.key, round4OfficialMap); return <td key={f.key} title={`${f.label}: ${getFantasyPublic(row, f.key)}`} style={{ padding: "8px 10px", color: "#F0EDE6", fontWeight: 800, maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getFantasyPublic(row, f.key)}<div style={{ color: fp ? "#F59E0B" : "rgba(240,237,230,.30)", fontSize: 10 }}>+{fp}</div></td>; })}
-                    {CLUB_TOUR4_SCORE_MATCHES.map((_, i) => {
+                    <td style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "center", fontWeight: 900 }}>{clubRound4Score(row, round5OfficialMap)}</td>
+                    <td style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", fontWeight: 900 }}>{clubRound4FantasyPointsFor(row, round5OfficialMap)}</td>
+                    {CLUB_TOUR4_FANTASY_FIELDS.map(f => { const fp = clubRound4FantasyFieldPointsFor(row, f.key, round5OfficialMap); return <td key={f.key} title={`${f.label}: ${getFantasyPublic(row, f.key)}`} style={{ padding: "8px 10px", color: "#F0EDE6", fontWeight: 800, maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getFantasyPublic(row, f.key)}<div style={{ color: fp ? "#F59E0B" : "rgba(240,237,230,.30)", fontSize: 10 }}>+{fp}</div></td>; })}
+                    {CLUB_TOUR5_SCORE_MATCHES.map((_, i) => {
                       const ans = getScorePublic(row, i);
                       const pred = parseRound4ScoreString(ans);
-                      const cor = parseRound4ScoreString(round4OfficialMap.scores?.[String(i + 1)]);
+                      const cor = parseRound4ScoreString(round5OfficialMap.scores?.[String(i + 1)]);
                       const pts = pred && cor ? (calculateMatchPredictionPoints(pred.h, pred.a, cor.h, cor.a) || 0) : null;
                       const hasOfficial = Boolean(cor);
                       const isOk = hasOfficial && pts > 0;
-                      return <td key={i} title={hasOfficial ? `Верный счёт: ${round4OfficialMap.scores[String(i + 1)]}` : CLUB_TOUR4_SCORE_MATCHES[i]} style={{ padding: "8px 10px", color: !hasOfficial ? "rgba(240,237,230,.45)" : isOk ? "#86EFAC" : "#FCA5A5", textAlign: "center", fontWeight: 900 }}>{ans}{pts !== null && <div style={{ color: pts ? "#F59E0B" : "rgba(240,237,230,.35)", fontSize: 10 }}>+{pts}</div>}</td>;
+                      return <td key={i} title={hasOfficial ? `Верный счёт: ${round5OfficialMap.scores[String(i + 1)]}` : CLUB_TOUR5_SCORE_MATCHES[i]} style={{ padding: "8px 10px", color: !hasOfficial ? "rgba(240,237,230,.45)" : isOk ? "#86EFAC" : "#FCA5A5", textAlign: "center", fontWeight: 900 }}>{ans}{pts !== null && <div style={{ color: pts ? "#F59E0B" : "rgba(240,237,230,.35)", fontSize: 10 }}>+{pts}</div>}</td>;
                     })}
-                    {CLUB_TOUR4_YESNO_QUESTIONS.map((q, i) => {
+                    {CLUB_TOUR5_YESNO_QUESTIONS.map((q, i) => {
                       const ans = getYesNoPublic(row, i);
-                      const correct = String(round4OfficialMap.yesno?.[String(i + 1)] || "").trim();
+                      const correct = String(round5OfficialMap.yesno?.[String(i + 1)] || "").trim();
                       const hasOfficial = Boolean(correct);
                       const isOk = hasOfficial && ans === correct;
                       const isWrong = hasOfficial && ans !== "—" && ans !== correct;
@@ -9338,12 +9372,12 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     const groupsR2 = buildClubRound2Groups(seeded);
     const officialCountR1 = Object.values(round2Official || {}).filter(Boolean).length;
     const officialCountR2 = Object.values(round3Official || {}).filter(Boolean).length;
-    const officialCountR3 = clubRound4OfficialCount(round4Official);
-    const fantasyOfficialCountR3 = clubRound4FantasyOfficialCount(round4Official);
-    const anyRound4OfficialR3 = officialCountR3 > 0 || fantasyOfficialCountR3 > 0;
+    const officialCountR3 = clubRound4OfficialCount(round5Official);
+    const fantasyOfficialCountR3 = clubRound4FantasyOfficialCount(round5Official);
+    const anyRound5OfficialR3 = officialCountR3 > 0 || fantasyOfficialCountR3 > 0;
     const officialCount = officialCountR1 + officialCountR2 + officialCountR3;
     const latestRound3 = buildLatestClubRound3Rows(round3Rows);
-    const latestRound4 = buildLatestClubRound4Rows(round4Rows);
+    const latestRound5 = buildLatestClubRound4Rows(round5Rows);
     const isR16View = roundGroup === "R16";
     const activeGroup = CLUB_R2_GROUP_KEYS.includes(roundGroup) ? roundGroup : "A";
     const members = groupsR2[activeGroup] || [];
@@ -9356,8 +9390,9 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
         return { score: clubRound3Score(r3, round3Official), active: officialCountR2 > 0 };
       }
       if (Number(roundNo) === 3) {
-        const r4 = latestRound4[clubRound2NameKey(member.name)] || latestRound4[clubRound2NameKey(member.round2Row?.name)];
-        return { score: clubRound4Score(r4, round4Official), active: anyRound4OfficialR3 };
+        // Тур 3 календаря 1 на 1 теперь считается по 5-му туру формы (протыкивается в админке во вкладке «🧾 5-й тур»).
+        const r5 = latestRound5[clubRound2NameKey(member.name)] || latestRound5[clubRound2NameKey(member.round2Row?.name)];
+        return { score: clubRound4Score(r5, round5Official), active: anyRound5OfficialR3 };
       }
       return { score: 0, active: false };
     }
@@ -9455,7 +9490,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
             24 участника · 6 групп по 4. Таблица считает матчи до выбранного тура. Пока нет верных ответов — очки групп не начисляются. Верный ответ — 2 балла.
           </div>
           <div style={{ marginTop: 8, color: "#86EFAC", fontSize: 12 }}>
-            Официальных ответов внесено: тур 1 — {officialCountR1}/{CLUB_TOUR2_QUESTIONS.length}, тур 2 — {officialCountR2}/{CLUB_TOUR3_QUESTIONS.length}, тур 3 — {officialCountR3}/{CLUB_TOUR4_SCORE_MATCHES.length + CLUB_TOUR4_YESNO_QUESTIONS.length}, фэнтези — {fantasyOfficialCountR3}
+            Официальных ответов внесено: тур 1 — {officialCountR1}/{CLUB_TOUR2_QUESTIONS.length}, тур 2 — {officialCountR2}/{CLUB_TOUR3_QUESTIONS.length}, тур 3 — {officialCountR3}/{CLUB_TOUR5_SCORE_MATCHES.length + CLUB_TOUR5_YESNO_QUESTIONS.length}, фэнтези — {fantasyOfficialCountR3}
           </div>
         </div>
 
@@ -19942,7 +19977,7 @@ const TEAM_MEMBER_ALIASES = {
   "Ключкина":               ["Надежда Ключкина", "Ключкина"],
   "Альберт":                ["Альберт"],
 
-  "Александра Капитанеску": ["Александра Капитанеску"],
+  "Александра Чупрова":     ["Александра Чупрова", "Александра Капитанеску"],
   "Терентьев":              ["Александр Терентьев", "Терентьев"],
 
   "Илья Крикун":            ["Илья Крикун"],
@@ -19974,7 +20009,7 @@ const PREDICTOR_TEAMS_ROSTERS = [
   { name: "Parkovaya City",         members: ["Eugene Fadeev", "АнтонВоробей", "Antosha046"] },
   { name: "Атомные отруби",       members: ["Пантелеев", "Пантелеева"] },
   { name: "Crazy girls and boys",   members: ["Ключкина", "Альберт"] },
-  { name: "Верните Саутгейта",      members: ["Александра Капитанеску", "Терентьев"] },
+  { name: "Верните Саутгейта",      members: ["Александра Чупрова", "Терентьев"] },
   { name: "Геленджик",              members: ["Илья Крикун", "Аманатов", "Nikita"] },
   { name: "Грузинские псы",         members: ["Анищенко", "Боев"] },
   { name: "Псовские грузины",       members: ["Zizu", "Kirill \"Mr_J\" GJ"] },
