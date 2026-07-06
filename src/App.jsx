@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-fix-like-wildcard-official-answers-fetch";
+const FFC_APP_BUILD = "2026-07-05-leaderboard-total-column-order";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -11123,7 +11123,7 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: isNarrowViewport ? 720 : 560, tableLayout: "auto" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-                {["#", "Участник", "Группы", "Плей-офф", "Бонусы", "Итого", "Точных", "Исходов"].map(h => (
+                {["#", "Участник", "Итого", "Группы", "Плей-офф", "Бонусы", "Точных", "Исходов"].map(h => (
                   <th key={h} style={{ padding: "6px 10px", fontSize: 11, color: "rgba(240,237,230,.45)", fontWeight: 700, textAlign: h === "Участник" ? "left" : "center", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -11133,10 +11133,10 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
                 <tr key={u.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)", background: i === 0 ? "rgba(245,158,11,.06)" : i < 3 ? "rgba(255,255,255,.015)" : "transparent" }}>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, fontWeight: 800, color: i === 0 ? "#FDE68A" : i === 1 ? "#D1D5DB" : i === 2 ? "#F59E0B" : "rgba(240,237,230,.4)" }}>{i+1}</td>
                   <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, color: "#F0EDE6", minWidth: 150, maxWidth: 240, whiteSpace: "normal", overflowWrap: "anywhere", lineHeight: 1.15 }}>{uName(u)}</td>
+                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 15, fontFamily: "Oswald,sans-serif", fontWeight: 800, color: i === 0 ? "#F59E0B" : "#F0EDE6" }}>{total}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#86EFAC", fontWeight: 700 }}>{group}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#93C5FD", fontWeight: 700 }}>{playoff}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#FDE68A", fontWeight: 700 }}>{bonus}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 15, fontFamily: "Oswald,sans-serif", fontWeight: 800, color: i === 0 ? "#F59E0B" : "#F0EDE6" }}>{total}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(134,239,172,.8)" }}>{exact}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(240,237,230,.5)" }}>{outcome}</td>
                 </tr>
