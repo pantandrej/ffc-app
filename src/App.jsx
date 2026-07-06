@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-leaderboard-total-column-order";
+const FFC_APP_BUILD = "2026-07-05-longer-error-toasts-for-debugging";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -12545,7 +12545,7 @@ function AdminMatchesPanel({ session, showToast }) {
       showToast(status === "confirmed" ? "✓ Сохранено" : "✓ Черновик");
     } else {
       const txt = await r.clone().text().catch(() => "");
-      showToast("Ошибка: " + txt.slice(0, 80));
+      showToast("Ошибка: " + txt.slice(0, 300));
     }
     setSaving(p => ({ ...p, [mid]: false }));
   }
@@ -12901,7 +12901,7 @@ function AdminBonusPanel({ session, showToast }) {
     } else {
       const txt = await r.clone().text().catch(() => "");
       if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка сохранения: " + txt.slice(0, 80));
+      showToast("Ошибка сохранения: " + txt.slice(0, 300));
     }
     setSaving(p => ({ ...p, [qid]: false }));
   }
@@ -13023,7 +13023,7 @@ function AdminBonusPanel({ session, showToast }) {
       });
       setPlayerCandidates(asArrays);
     } catch (e) {
-      showToast("Ошибка загрузки ответов игроков: " + String(e?.message || e).slice(0, 80));
+      showToast("Ошибка загрузки ответов игроков: " + String(e?.message || e).slice(0, 300));
     } finally {
       setCandidatesLoading(false);
     }
@@ -13068,7 +13068,7 @@ function AdminBonusPanel({ session, showToast }) {
     } else {
       const txt = await r.clone().text().catch(() => "");
       if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка сохранения: " + txt.slice(0, 80));
+      showToast("Ошибка сохранения: " + txt.slice(0, 300));
     }
     setSaving(p => ({ ...p, [qid]: false }));
   }
@@ -13399,7 +13399,7 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     } else {
       const txt = await r.clone().text().catch(() => "");
       if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка: " + txt.slice(0, 80));
+      showToast("Ошибка: " + txt.slice(0, 300));
     }
     setSaving(p => ({ ...p, [mid]: false }));
   }
@@ -18818,7 +18818,7 @@ function PredictorTeamBlock({ session, profile, isPaid, showToast }) {
         if (txt.includes("does not exist") || txt.includes("relation")) {
           showToast("Командный зачёт пока не настроен. Нужен SQL в Supabase.");
         } else {
-          showToast("Ошибка поиска команды: " + txt.slice(0, 80));
+          showToast("Ошибка поиска команды: " + txt.slice(0, 300));
         }
         setLoading(false); return;
       }
@@ -18839,7 +18839,7 @@ function PredictorTeamBlock({ session, profile, isPaid, showToast }) {
       await load();
       showToast(`✓ Ты вступил в команду «${team.name}»!`);
     } catch (e) {
-      showToast("Ошибка: " + String(e?.message || e).slice(0, 80));
+      showToast("Ошибка: " + String(e?.message || e).slice(0, 300));
       setLoading(false);
     }
   }
@@ -19095,7 +19095,7 @@ function AdminBonusOfficialAnswers({ token, showToast }) {
     } else {
       const txt = await res.text();
       if (txt.includes("does not exist")) { setSqlMissing(true); showToast("Нужен SQL для bonus_official_answers"); }
-      else showToast("Ошибка: " + txt.slice(0, 80));
+      else showToast("Ошибка: " + txt.slice(0, 300));
     }
   }
 
@@ -19592,7 +19592,7 @@ function AdminDailyQuizImport({ token, showToast, isAdmin }) {
     } catch (e) {
       console.error("PPTX parse error:", e);
       setParseError(e.message || String(e));
-      showToast("Ошибка парсинга: " + (e.message || "").slice(0, 80));
+      showToast("Ошибка парсинга: " + (e.message || "").slice(0, 300));
     }
     setParsing(false);
   }
@@ -19608,7 +19608,7 @@ function AdminDailyQuizImport({ token, showToast, isAdmin }) {
         headers: { Prefer: "resolution=merge-duplicates,return=representation" },
         body: JSON.stringify({ quiz_date: quizDate, title: quizTitle, status: "draft", questions_per_game: questionsPerGame, source_file_name: file?.name || null }),
       });
-      if (!quizRes.ok) { const t = await quizRes.text(); showToast("Ошибка создания квиза: " + t.slice(0, 80)); setSaving(false); return; }
+      if (!quizRes.ok) { const t = await quizRes.text(); showToast("Ошибка создания квиза: " + t.slice(0, 300)); setSaving(false); return; }
       const [quiz] = await quizRes.json();
       const quizId = quiz.id;
 
@@ -19662,7 +19662,7 @@ function AdminDailyQuizImport({ token, showToast, isAdmin }) {
       showToast(`✓ Сохранено ${saved}/${questions.length} вопросов`);
       loadQuizList();
     } catch (e) {
-      showToast("Ошибка сохранения: " + (e.message || "").slice(0, 80));
+      showToast("Ошибка сохранения: " + (e.message || "").slice(0, 300));
     }
     setSaving(false);
   }
