@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-fantasy-scored-list-editable-toggle";
+const FFC_APP_BUILD = "2026-07-05-project-qf-winners-from-round5-score";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -9544,8 +9544,22 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       [getGroupPlace("C", 2), getGroupPlace("D", 2)],
     ];
 
+    // Победитель каждого матча 1/8 — по счёту 5-го тура (см. round5ScoreFor выше).
+    // Если счёта нет у кого-то из пары или счёт равный — победитель ещё не определён.
+    const r16MatchWinners = liveR16Pairs.map(([left, right]) => {
+      const L = slotPlayer(left);
+      const R = slotPlayer(right);
+      const Ls5 = round5ScoreFor(L);
+      const Rs5 = round5ScoreFor(R);
+      if (Ls5 === null || Rs5 === null || Ls5 === Rs5) return null;
+      return Ls5 > Rs5 ? L : R;
+    });
+
     const futureSlot = (label) => ({ label, row: null, future: true });
-    const w18 = (n) => futureSlot(`Победитель 1/8 М${n}`);
+    const w18 = (n) => {
+      const winner = r16MatchWinners[n - 1];
+      return { label: `Победитель 1/8 М${n}`, row: winner || null, future: !winner };
+    };
     const w14 = (n) => futureSlot(`Победитель 1/4 М${n}`);
     const w12 = (n) => futureSlot(`Победитель 1/2 М${n}`);
     // Важно: победители матчей 7 и 8 НЕ сводятся между собой в 1/4.
@@ -9680,16 +9694,26 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                 <div id={anchorId} key={key} style={{ border: "1px solid rgba(245,158,11,.18)", background: "rgba(245,158,11,.045)", borderRadius: 12, overflow: "hidden" }}>
                   <div style={{ padding: "9px 11px", color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 20, fontWeight: 900, background: "rgba(245,158,11,.08)" }}>{stageTitle}</div>
                   <div style={{ padding: 10, display: "grid", gap: 8 }}>
-                    {pairs.map(([left, right], i) => (
+                    {pairs.map(([left, right], i) => {
+                      const L = slotPlayer(left);
+                      const R = slotPlayer(right);
+                      return (
                       <div key={`${key}_${i}`} style={{ padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.14)", border: "1px solid rgba(255,255,255,.07)" }}>
                         <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, fontWeight: 900, marginBottom: 5 }}>Матч {stageTitle.replace(' финала','')} №{i + 1}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "center" }}>
-                          <div style={{ color: "#86EFAC", fontWeight: 900, textAlign: "right", lineHeight: 1.15 }}>{slotLabel(left)}</div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ color: "#FDE68A", fontSize: 10, fontWeight: 900 }}>{slotLabel(left)}</div>
+                            <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontWeight: 900, lineHeight: 1.15 }}>{L ? L.name : "пока не определён"}</div>
+                          </div>
                           <div style={{ color: "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 900 }}>—</div>
-                          <div style={{ color: "#86EFAC", fontWeight: 900, lineHeight: 1.15 }}>{slotLabel(right)}</div>
+                          <div>
+                            <div style={{ color: "#FDE68A", fontSize: 10, fontWeight: 900 }}>{slotLabel(right)}</div>
+                            <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontWeight: 900, lineHeight: 1.15 }}>{R ? R.name : "пока не определён"}</div>
+                          </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
