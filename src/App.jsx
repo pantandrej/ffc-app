@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-chuprova-name-public-round3-tables";
+const FFC_APP_BUILD = "2026-07-05-fantasy-scored-list-editable-toggle";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -7291,6 +7291,10 @@ NOTIFY pgrst, 'reload schema';`;
       return saved === "";
     });
   }, [fantasyGlobalPicks, official]);
+  const fantasyGlobalDonePicks = React.useMemo(() => {
+    const openKeys = new Set(fantasyGlobalOpenPicks.map(p => p.key));
+    return fantasyGlobalPicks.filter((pick) => !openKeys.has(pick.key));
+  }, [fantasyGlobalPicks, fantasyGlobalOpenPicks]);
   const fantasyGlobalDoneCount = Math.max(0, fantasyGlobalPicks.filter((pick) => {
     return String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key] ?? "").trim() !== "";
   }).length);
@@ -7349,6 +7353,26 @@ NOTIFY pgrst, 'reload schema';`;
                 );
               })}
             </div>
+          )}
+          {fantasyGlobalDonePicks.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать проставленные ({fantasyGlobalDonePicks.length}) — если нужно исправить балл</summary>
+              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
+                {fantasyGlobalDonePicks.map((pick) => {
+                  const val = fantasyGlobalValue(pick.key);
+                  return (
+                    <div key={pick.key} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px 44px", gap: 8, alignItems: "center", padding: 8, borderRadius: 9, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div title={`${pick.name}${pick.variants?.length ? " — варианты: " + pick.variants.join(", ") : ""}`} style={{ color: "#86EFAC", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.name}</div>
+                        <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.roles.join(", ")} · у {pick.users.length} · сейчас: {String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key] ?? "")}</div>
+                      </div>
+                      <input type="number" value={val} onChange={e => setFantasyDrafts(p => ({ ...p, [pick.key]: e.target.value }))} placeholder="0" style={{ width: 64, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 7, color: "#F0EDE6", padding: "6px 7px", fontWeight: 900, textAlign: "center" }} />
+                      <button className="mini-btn green" style={{ fontSize: 10, padding: "6px 7px" }} disabled={saving[`fantasy_${pick.key}`]} onClick={() => saveOfficial("fantasy", pick.key, fantasyDrafts[pick.key] ?? val ?? 0)}>OK</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
           )}
         </div>
 
@@ -7724,6 +7748,10 @@ NOTIFY pgrst, 'reload schema';`;
       return saved === "";
     });
   }, [fantasyGlobalPicks, official]);
+  const fantasyGlobalDonePicks = React.useMemo(() => {
+    const openKeys = new Set(fantasyGlobalOpenPicks.map(p => p.key));
+    return fantasyGlobalPicks.filter((pick) => !openKeys.has(pick.key));
+  }, [fantasyGlobalPicks, fantasyGlobalOpenPicks]);
   const fantasyGlobalDoneCount = Math.max(0, fantasyGlobalPicks.filter((pick) => {
     return String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key] ?? "").trim() !== "";
   }).length);
@@ -7782,6 +7810,26 @@ NOTIFY pgrst, 'reload schema';`;
                 );
               })}
             </div>
+          )}
+          {fantasyGlobalDonePicks.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать проставленные ({fantasyGlobalDonePicks.length}) — если нужно исправить балл</summary>
+              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
+                {fantasyGlobalDonePicks.map((pick) => {
+                  const val = fantasyGlobalValue(pick.key);
+                  return (
+                    <div key={pick.key} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px 44px", gap: 8, alignItems: "center", padding: 8, borderRadius: 9, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div title={`${pick.name}${pick.variants?.length ? " — варианты: " + pick.variants.join(", ") : ""}`} style={{ color: "#86EFAC", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.name}</div>
+                        <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.roles.join(", ")} · у {pick.users.length} · сейчас: {String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key] ?? "")}</div>
+                      </div>
+                      <input type="number" value={val} onChange={e => setFantasyDrafts(p => ({ ...p, [pick.key]: e.target.value }))} placeholder="0" style={{ width: 64, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 7, color: "#F0EDE6", padding: "6px 7px", fontWeight: 900, textAlign: "center" }} />
+                      <button className="mini-btn green" style={{ fontSize: 10, padding: "6px 7px" }} disabled={saving[`fantasy_${pick.key}`]} onClick={() => saveOfficial("fantasy", pick.key, fantasyDrafts[pick.key] ?? val ?? 0)}>OK</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
           )}
         </div>
 
