@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-bonus-patch-uses-fresh-token";
+const FFC_APP_BUILD = "2026-07-05-remove-force-open-bonus-questions";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -8314,10 +8314,6 @@ function isZeroedBonusQuestion(qid) {
   return ZEROED_BONUS_QUESTION_IDS.has(String(qid || ""));
 }
 
-// Эти вопросы принудительно показываем в быстром блоке админки, даже если раньше
-// они были скрыты кнопкой «закрыть». Так их можно быстро исправить вручную.
-const FORCE_OPEN_BONUS_IDS = new Set(["least_goals_scored_group", "goalkeeper_saves_penalty"]);
-
 const ADDITIVE_BONUS_QUESTION_IDS = new Set([
   "player_scores_header",
   "player_gets_yellow_card",
@@ -12832,7 +12828,6 @@ function AdminBonusPanel({ session, showToast }) {
   }
 
   function isBonusAdminClosed(qid) {
-    if (FORCE_OPEN_BONUS_IDS.has(String(qid))) return false;
     return String(bonusMap[String(qid)]?.status || "") === "closed";
   }
 
