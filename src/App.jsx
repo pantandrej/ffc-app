@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-longer-error-toasts-for-debugging";
+const FFC_APP_BUILD = "2026-07-05-bonus-patch-uses-fresh-token";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -12842,7 +12842,7 @@ function AdminBonusPanel({ session, showToast }) {
 
     async function patchAll(payload) {
       return await supa(`bonus_official_answers?question_id=eq.${qid}`, {
-        method: "PATCH", token,
+        method: "PATCH", token: writeToken,
         headers: { Prefer: "return=representation" },
         body: JSON.stringify(payload),
       });
