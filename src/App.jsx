@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-no-submission-round5-counts-as-zero";
+const FFC_APP_BUILD = "2026-07-05-guest-clubs-tab-skips-landing-screen";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -21716,7 +21716,7 @@ function AppInner() {
         </header>
 
         {/* ══════════ ЛЕНДИНГ ДЛЯ ГОСТЕЙ ══════════ */}
-        {isGuest && tab !== "predict" && tab !== "leaderboard" && tab !== "team" && (
+        {isGuest && tab !== "predict" && tab !== "leaderboard" && tab !== "team" && tab !== "clubs" && (
           <div style={{ maxWidth: 820, margin: "0 auto", padding: "0 12px 120px" }}>
 
             {/* ── HERO ── */}
