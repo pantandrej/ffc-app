@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-guest-clubs-tab-skips-landing-screen";
+const FFC_APP_BUILD = "2026-07-05-fix-like-wildcard-official-answers-fetch";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -6426,7 +6426,7 @@ function AdminRound2AnswersPanel({ session, showToast }) {
 
       // Всегда читаем резервное хранилище тоже: если основная таблица пустая/не видна,
       // ответы всё равно подтянутся из bonus_official_answers.
-      const fb = await supa("bonus_official_answers?select=*&question_id=like.round2_%&order=updated_at.desc.nullslast&limit=100", { token }).catch(() => null);
+      const fb = await supa("bonus_official_answers?select=*&question_id=like.round2_*&order=updated_at.desc.nullslast&limit=100", { token }).catch(() => null);
       if (fb?.ok) {
         data2.push(...(await fb.json().catch(() => [])));
       }
@@ -6729,7 +6729,7 @@ function AdminRound3AnswersPanel({ session, showToast }) {
       const r2 = await supa("ffc_round3_official_answers?select=*&order=question_no.asc", { token }).catch(() => null);
       if (r2?.ok) data2.push(...(await r2.json().catch(() => [])));
 
-      const fb = await supa("bonus_official_answers?select=*&question_id=like.round3_%&order=updated_at.desc.nullslast&limit=200", { token }).catch(() => null);
+      const fb = await supa("bonus_official_answers?select=*&question_id=like.round3_*&order=updated_at.desc.nullslast&limit=200", { token }).catch(() => null);
       if (fb?.ok) data2.push(...(await fb.json().catch(() => [])));
 
       const merged = { ...readClubRound3OfficialLocal(), ...buildClubRound3OfficialMap(data2) };
@@ -7087,7 +7087,7 @@ function AdminRound4AnswersPanel({ session, showToast }) {
       setErr(String(e?.message || e));
     }
     try {
-      const fb = await supa("bonus_official_answers?select=*&question_id=like.round4_%&order=updated_at.desc.nullslast&limit=300", { token }).catch(() => null);
+      const fb = await supa("bonus_official_answers?select=*&question_id=like.round4_*&order=updated_at.desc.nullslast&limit=300", { token }).catch(() => null);
       const dbMap = fb?.ok ? buildClubRound4OfficialMap(await fb.json().catch(() => [])) : { scores: {}, yesno: {} };
       const localMap = normalizeClubRound4OfficialMap(readClubRound4OfficialLocal());
       const merged = normalizeClubRound4OfficialMap({
@@ -7544,7 +7544,7 @@ function AdminRound5AnswersPanel({ session, showToast }) {
       setErr(String(e?.message || e));
     }
     try {
-      const fb = await supa("bonus_official_answers?select=*&question_id=like.round5_%&limit=300", { token }).catch(() => null);
+      const fb = await supa("bonus_official_answers?select=*&question_id=like.round5_*&limit=300", { token }).catch(() => null);
       const dbMap = fb?.ok ? buildClubRound4OfficialMap(await fb.json().catch(() => [])) : { scores: {}, yesno: {} };
       const localMap = normalizeClubRound4OfficialMap(readClubRound5OfficialLocal());
       const merged = normalizeClubRound4OfficialMap({
@@ -8560,7 +8560,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
           setRound2Debug({ officialError: e?.message || String(e) });
           return [];
         }),
-        fetchAnon("bonus_official_answers?select=*&question_id=like.round2_%").catch(e => {
+        fetchAnon("bonus_official_answers?select=*&question_id=like.round2_*").catch(e => {
           setRound2Debug({ fallbackError: e?.message || String(e) });
           return [];
         }),
@@ -8583,7 +8583,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
           setRound3Debug({ officialError: e?.message || String(e) });
           return [];
         }),
-        fetchAnon("bonus_official_answers?select=*&question_id=like.round3_%").catch(e => {
+        fetchAnon("bonus_official_answers?select=*&question_id=like.round3_*").catch(e => {
           setRound3Debug({ fallbackError: e?.message || String(e) });
           return [];
         }),
@@ -8603,7 +8603,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
           setRound4Debug({ answersError: e?.message || String(e) });
           return [];
         }),
-        fetchAnon("bonus_official_answers?select=*&question_id=like.round4_%&order=updated_at.desc.nullslast").catch(e => {
+        fetchAnon("bonus_official_answers?select=*&question_id=like.round4_*&order=updated_at.desc.nullslast").catch(e => {
           setRound4Debug({ fallbackError: e?.message || String(e) });
           return [];
         }),
@@ -8631,7 +8631,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
           setRound5Debug({ answersError: e?.message || String(e) });
           return [];
         }),
-        fetchAnon("bonus_official_answers?select=*&question_id=like.round5_%&order=updated_at.desc.nullslast").catch(e => {
+        fetchAnon("bonus_official_answers?select=*&question_id=like.round5_*&order=updated_at.desc.nullslast").catch(e => {
           setRound5Debug({ fallbackError: e?.message || String(e) });
           return [];
         }),
