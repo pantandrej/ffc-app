@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-05-project-qf-winners-from-round5-score";
+const FFC_APP_BUILD = "2026-07-05-no-submission-round5-counts-as-zero";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -9459,6 +9459,9 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       if (firstWord && !latestRound5ByFirstWord[firstWord]) latestRound5ByFirstWord[firstWord] = row;
     });
     function round5ScoreFor(member) {
+      // null — сам слот/участник ещё не определён (например место "лучших 3-х" не решено).
+      // 0 — участник определён, но прогноза 5-го тура нет (не прислал/не пришлёт) —
+      // считается как поражение по нулям, а не как "нет данных".
       if (!member) return null;
       const nameCandidates = [member.name, member.round2Row?.name].filter(Boolean);
       for (const c of nameCandidates) {
@@ -9469,7 +9472,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
         const firstWord = clubRound2NameKey(c).split(" ")[0];
         if (firstWord && latestRound5ByFirstWord[firstWord]) return clubRound4Score(latestRound5ByFirstWord[firstWord], round5Official);
       }
-      return null;
+      return 0;
     }
 
     function scoreForMemberRound(member, roundNo) {
