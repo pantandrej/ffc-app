@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-06-tables-tab-opens-on-qf";
+const FFC_APP_BUILD = "2026-07-06-add-qf-stage-button-default-active";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -8947,6 +8947,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [debug, setDebug] = React.useState(null);
   const [round, setRound] = React.useState(() => mode === "current2" ? 3 : 1);
   const [roundGroup, setRoundGroup] = React.useState(() => mode === "current2" ? "R16" : "A");
+  const [activeBracketAnchor, setActiveBracketAnchor] = React.useState("1/4");
 
   // При заходе в "Таблицы" сразу прокручиваем к сетке 1/4, а не к 1/8.
   React.useEffect(() => {
@@ -8956,6 +8957,14 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     }, 50);
     return () => clearTimeout(t);
   }, [mode]);
+
+  function goToBracketStage(stage) {
+    setRoundGroup("R16");
+    setActiveBracketAnchor(stage);
+    setTimeout(() => {
+      document.getElementById(`club-bracket-${stage}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
 
   const [roundScores, setRoundScores] = React.useState({});
   const [round2Rows, setRound2Rows] = React.useState([]);
@@ -10163,13 +10172,20 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
               fontFamily: "Barlow Condensed,sans-serif", fontWeight: 900, fontSize: 13,
             }}>Группа {g}</button>
           ))}
-          <button onClick={() => setRoundGroup("R16")} style={{
+          <button onClick={() => goToBracketStage("1/8")} style={{
             padding: "8px 14px", borderRadius: 7, cursor: "pointer",
-            border: isR16View ? "1px solid rgba(34,197,94,.78)" : "1px solid rgba(255,255,255,.12)",
-            background: isR16View ? "rgba(22,163,74,.20)" : "rgba(255,255,255,.04)",
-            color: isR16View ? "#86EFAC" : "rgba(240,237,230,.58)",
+            border: isR16View && activeBracketAnchor === "1/8" ? "1px solid rgba(34,197,94,.78)" : "1px solid rgba(255,255,255,.12)",
+            background: isR16View && activeBracketAnchor === "1/8" ? "rgba(22,163,74,.20)" : "rgba(255,255,255,.04)",
+            color: isR16View && activeBracketAnchor === "1/8" ? "#86EFAC" : "rgba(240,237,230,.58)",
             fontFamily: "Barlow Condensed,sans-serif", fontWeight: 900, fontSize: 13,
           }}>1/8 финала</button>
+          <button onClick={() => goToBracketStage("1/4")} style={{
+            padding: "8px 14px", borderRadius: 7, cursor: "pointer",
+            border: isR16View && activeBracketAnchor === "1/4" ? "1px solid rgba(34,197,94,.78)" : "1px solid rgba(255,255,255,.12)",
+            background: isR16View && activeBracketAnchor === "1/4" ? "rgba(22,163,74,.20)" : "rgba(255,255,255,.04)",
+            color: isR16View && activeBracketAnchor === "1/4" ? "#86EFAC" : "rgba(240,237,230,.58)",
+            fontFamily: "Barlow Condensed,sans-serif", fontWeight: 900, fontSize: 13,
+          }}>1/4 финала</button>
         </div>
 
         <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
