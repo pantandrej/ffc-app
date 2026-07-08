@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-06-add-qf-stage-button-default-active";
+const FFC_APP_BUILD = "2026-07-06-bracket-stage-real-tabs-not-scroll";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -8949,21 +8949,9 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [roundGroup, setRoundGroup] = React.useState(() => mode === "current2" ? "R16" : "A");
   const [activeBracketAnchor, setActiveBracketAnchor] = React.useState("1/4");
 
-  // При заходе в "Таблицы" сразу прокручиваем к сетке 1/4, а не к 1/8.
-  React.useEffect(() => {
-    if (mode !== "current2") return;
-    const t = setTimeout(() => {
-      document.getElementById("club-bracket-1/4")?.scrollIntoView({ behavior: "auto", block: "start" });
-    }, 50);
-    return () => clearTimeout(t);
-  }, [mode]);
-
   function goToBracketStage(stage) {
     setRoundGroup("R16");
     setActiveBracketAnchor(stage);
-    setTimeout(() => {
-      document.getElementById(`club-bracket-${stage}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
   }
 
   const [roundScores, setRoundScores] = React.useState({});
@@ -10204,93 +10192,102 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
           <div style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(34,197,94,.24)", borderRadius: 14, overflow: "hidden", marginBottom: 18 }}>
             <div style={{ padding: "12px 14px", background: "rgba(22,163,74,.10)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div>
-                <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 24, fontWeight: 900 }}>Пары 1/8 финала — сейчас</div>
-                <div style={{ color: "rgba(240,237,230,.48)", fontSize: 12, marginTop: 3 }}>Сетка считается по таблицам групп после выбранного тура. Первые два места групп + 4 лучших третьих.</div>
+                <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 24, fontWeight: 900 }}>
+                  {activeBracketAnchor === "1/8" ? "Пары 1/8 финала — сейчас" : activeBracketAnchor === "1/4" ? "Пары 1/4 финала" : activeBracketAnchor === "1/2" ? "Пары 1/2 финала" : "Финал"}
+                </div>
+                <div style={{ color: "rgba(240,237,230,.48)", fontSize: 12, marginTop: 3 }}>
+                  {activeBracketAnchor === "1/8" ? "Сетка считается по таблицам групп после выбранного тура. Первые два места групп + 4 лучших третьих." : "Победители определяются по счёту предыдущего тура."}
+                </div>
               </div>
               <div style={{ color: "#86EFAC", fontWeight: 900, fontSize: 12 }}>после тура {round}</div>
             </div>
             <div style={{ padding: "12px 14px 0", display: "flex", gap: 8, flexWrap: "wrap" }}>
               {["1/8", "1/4", "1/2", "Финал"].map(label => (
-                <a key={label} href={`#club-bracket-${label}`} style={{
-                  padding: "7px 12px", borderRadius: 8, textDecoration: "none",
-                  border: "1px solid rgba(34,197,94,.35)", background: "rgba(22,163,74,.13)",
+                <button key={label} onClick={() => goToBracketStage(label)} style={{
+                  padding: "7px 12px", borderRadius: 8, cursor: "pointer",
+                  border: activeBracketAnchor === label ? "1px solid rgba(34,197,94,.75)" : "1px solid rgba(34,197,94,.35)",
+                  background: activeBracketAnchor === label ? "rgba(22,163,74,.30)" : "rgba(22,163,74,.13)",
                   color: "#86EFAC", fontFamily: "Barlow Condensed,sans-serif", fontWeight: 900, fontSize: 13,
-                }}>{label}</a>
+                }}>{label}</button>
               ))}
             </div>
 
-            <div id="club-bracket-1/8" style={{ padding: 14 }}>
-              <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 22, fontWeight: 900, marginBottom: 10 }}>1/8 финала</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 10 }}>
-              {liveR16Pairs.map(([left, right], i) => {
-                const L = slotPlayer(left);
-                const R = slotPlayer(right);
-                const Ls5 = round5ScoreFor(L);
-                const Rs5 = round5ScoreFor(R);
-                // Раньше если хотя бы у одного из пары не было счёта 5-го тура (не прислал форму,
-                // опечатался в имени), мы прятали счёт целиком — из-за этого пропадал и валидный
-                // счёт партнёра. Теперь показываем то, что есть, а недостающую сторону — как "—".
-                const hasAnyR5Score = Ls5 !== null || Rs5 !== null;
-                return (
-                  <div key={`r16_${i}`} style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.08)" }}>
-                    <div style={{ color: "rgba(240,237,230,.40)", fontSize: 11, fontWeight: 800, marginBottom: 8 }}>Матч 1/8 №{i + 1}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center" }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ color: "#FDE68A", fontSize: 11, fontWeight: 900 }}>{slotLabel(left)}</div>
-                        <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{L ? `#${L.seed} ${L.name}` : "пока не определён"}</div>
-                        {L && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{L.tablePoints} очк. · Б {L.score}</div>}
-                      </div>
-                      <div style={{ minWidth: 56, textAlign: "center", color: hasAnyR5Score ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: hasAnyR5Score ? 24 : 18, fontWeight: 900 }}>{hasAnyR5Score ? `${Ls5 ?? "—"}:${Rs5 ?? "—"}` : "—"}</div>
-                      <div>
-                        <div style={{ color: "#FDE68A", fontSize: 11, fontWeight: 900 }}>{slotLabel(right)}</div>
-                        <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{R ? `#${R.seed} ${R.name}` : "пока не определён"}</div>
-                        {R && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{R.tablePoints} очк. · Б {R.score}</div>}
-                      </div>
-                    </div>
-                    {hasAnyR5Score && <div style={{ textAlign: "center", color: "rgba(240,237,230,.4)", fontSize: 10, marginTop: 4 }}>счёт 5-го тура{(Ls5 === null || Rs5 === null) ? " (партнёр ещё не прислал)" : ""}</div>}
-                  </div>
-                );
-              })}
-              </div>
-            </div>
-
-            <div style={{ padding: "0 14px 14px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
-              {[
-                ["1/4 финала", liveQFPairs, "qf", "club-bracket-1/4"],
-                ["1/2 финала", liveSFPairs, "sf", "club-bracket-1/2"],
-                ["Финал", liveFinalPairs, "fin", "club-bracket-Финал"],
-              ].map(([stageTitle, pairs, key, anchorId]) => (
-                <div id={anchorId} key={key} style={{ border: "1px solid rgba(245,158,11,.18)", background: "rgba(245,158,11,.045)", borderRadius: 12, overflow: "hidden" }}>
-                  <div style={{ padding: "9px 11px", color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 20, fontWeight: 900, background: "rgba(245,158,11,.08)" }}>{stageTitle}</div>
-                  <div style={{ padding: 10, display: "grid", gap: 8 }}>
-                    {pairs.map(([left, right], i) => {
-                      const L = slotPlayer(left);
-                      const R = slotPlayer(right);
-                      const L6 = key === "qf" ? round6ScoreFor(L) : null;
-                      const R6 = key === "qf" ? round6ScoreFor(R) : null;
-                      const hasQfScore = key === "qf" && (L6 !== null || R6 !== null);
-                      return (
-                      <div key={`${key}_${i}`} style={{ padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.14)", border: "1px solid rgba(255,255,255,.07)" }}>
-                        <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, fontWeight: 900, marginBottom: 5 }}>Матч {stageTitle.replace(' финала','')} №{i + 1}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "center" }}>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ color: "#FDE68A", fontSize: 10, fontWeight: 900 }}>{slotLabel(left)}</div>
-                            <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontWeight: 900, lineHeight: 1.15 }}>{L ? L.name : "пока не определён"}</div>
-                          </div>
-                          <div style={{ color: hasQfScore ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: hasQfScore ? 20 : 16, fontWeight: 900 }}>{hasQfScore ? `${L6 ?? "—"}:${R6 ?? "—"}` : "—"}</div>
-                          <div>
-                            <div style={{ color: "#FDE68A", fontSize: 10, fontWeight: 900 }}>{slotLabel(right)}</div>
-                            <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontWeight: 900, lineHeight: 1.15 }}>{R ? R.name : "пока не определён"}</div>
-                          </div>
+            {activeBracketAnchor === "1/8" && (
+              <div style={{ padding: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 10 }}>
+                {liveR16Pairs.map(([left, right], i) => {
+                  const L = slotPlayer(left);
+                  const R = slotPlayer(right);
+                  const Ls5 = round5ScoreFor(L);
+                  const Rs5 = round5ScoreFor(R);
+                  // Раньше если хотя бы у одного из пары не было счёта 5-го тура (не прислал форму,
+                  // опечатался в имени), мы прятали счёт целиком — из-за этого пропадал и валидный
+                  // счёт партнёра. Теперь показываем то, что есть, а недостающую сторону — как "—".
+                  const hasAnyR5Score = Ls5 !== null || Rs5 !== null;
+                  return (
+                    <div key={`r16_${i}`} style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.08)" }}>
+                      <div style={{ color: "rgba(240,237,230,.40)", fontSize: 11, fontWeight: 800, marginBottom: 8 }}>Матч 1/8 №{i + 1}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center" }}>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ color: "#FDE68A", fontSize: 11, fontWeight: 900 }}>{slotLabel(left)}</div>
+                          <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{L ? `#${L.seed} ${L.name}` : "пока не определён"}</div>
+                          {L && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{L.tablePoints} очк. · Б {L.score}</div>}
                         </div>
-                        {hasQfScore && <div style={{ textAlign: "center", color: "rgba(240,237,230,.4)", fontSize: 9, marginTop: 4 }}>счёт 6-го тура</div>}
+                        <div style={{ minWidth: 56, textAlign: "center", color: hasAnyR5Score ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: hasAnyR5Score ? 24 : 18, fontWeight: 900 }}>{hasAnyR5Score ? `${Ls5 ?? "—"}:${Rs5 ?? "—"}` : "—"}</div>
+                        <div>
+                          <div style={{ color: "#FDE68A", fontSize: 11, fontWeight: 900 }}>{slotLabel(right)}</div>
+                          <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontFamily: "Oswald,sans-serif", fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>{R ? `#${R.seed} ${R.name}` : "пока не определён"}</div>
+                          {R && <div style={{ color: "rgba(240,237,230,.45)", fontSize: 10 }}>{R.tablePoints} очк. · Б {R.score}</div>}
+                        </div>
                       </div>
-                      );
-                    })}
+                      {hasAnyR5Score && <div style={{ textAlign: "center", color: "rgba(240,237,230,.4)", fontSize: 10, marginTop: 4 }}>счёт 5-го тура{(Ls5 === null || Rs5 === null) ? " (партнёр ещё не прислал)" : ""}</div>}
+                    </div>
+                  );
+                })}
+                </div>
+              </div>
+            )}
+
+            {activeBracketAnchor !== "1/8" && (() => {
+              const stageMap = {
+                "1/4": ["1/4 финала", liveQFPairs, "qf"],
+                "1/2": ["1/2 финала", liveSFPairs, "sf"],
+                "Финал": ["Финал", liveFinalPairs, "fin"],
+              };
+              const [stageTitle, pairs, key] = stageMap[activeBracketAnchor] || stageMap["1/4"];
+              return (
+                <div style={{ padding: "0 14px 14px" }}>
+                  <div style={{ border: "1px solid rgba(245,158,11,.18)", background: "rgba(245,158,11,.045)", borderRadius: 12, overflow: "hidden" }}>
+                    <div style={{ padding: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
+                      {pairs.map(([left, right], i) => {
+                        const L = slotPlayer(left);
+                        const R = slotPlayer(right);
+                        const L6 = key === "qf" ? round6ScoreFor(L) : null;
+                        const R6 = key === "qf" ? round6ScoreFor(R) : null;
+                        const hasQfScore = key === "qf" && (L6 !== null || R6 !== null);
+                        return (
+                        <div key={`${key}_${i}`} style={{ padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.14)", border: "1px solid rgba(255,255,255,.07)" }}>
+                          <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, fontWeight: 900, marginBottom: 5 }}>Матч {stageTitle.replace(' финала','')} №{i + 1}</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "center" }}>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ color: "#FDE68A", fontSize: 10, fontWeight: 900 }}>{slotLabel(left)}</div>
+                              <div style={{ color: L ? "#86EFAC" : "rgba(240,237,230,.35)", fontWeight: 900, lineHeight: 1.15 }}>{L ? L.name : "пока не определён"}</div>
+                            </div>
+                            <div style={{ color: hasQfScore ? "#86EFAC" : "#F59E0B", fontFamily: "Oswald,sans-serif", fontSize: hasQfScore ? 20 : 16, fontWeight: 900 }}>{hasQfScore ? `${L6 ?? "—"}:${R6 ?? "—"}` : "—"}</div>
+                            <div>
+                              <div style={{ color: "#FDE68A", fontSize: 10, fontWeight: 900 }}>{slotLabel(right)}</div>
+                              <div style={{ color: R ? "#86EFAC" : "rgba(240,237,230,.35)", fontWeight: 900, lineHeight: 1.15 }}>{R ? R.name : "пока не определён"}</div>
+                            </div>
+                          </div>
+                          {hasQfScore && <div style={{ textAlign: "center", color: "rgba(240,237,230,.4)", fontSize: 9, marginTop: 4 }}>счёт 6-го тура</div>}
+                        </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
             <div style={{ padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,.06)", color: "rgba(240,237,230,.45)", fontSize: 12 }}>
               Текущие лучшие третьи: {bestThirdsLive.map((x, i) => `${i + 1}) ${x.row.name} (${x.group}, ${x.row.tablePoints} очк.)`).join(" · ") || "—"}.
             </div>
