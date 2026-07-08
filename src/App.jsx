@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-06-bracket-stage-real-tabs-not-scroll";
+const FFC_APP_BUILD = "2026-07-06-all-predictions-5-6-tour-tabs";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -8948,6 +8948,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [round, setRound] = React.useState(() => mode === "current2" ? 3 : 1);
   const [roundGroup, setRoundGroup] = React.useState(() => mode === "current2" ? "R16" : "A");
   const [activeBracketAnchor, setActiveBracketAnchor] = React.useState("1/4");
+  const [predTourTab, setPredTourTab] = React.useState("6");
 
   function goToBracketStage(stage) {
     setRoundGroup("R16");
@@ -9722,15 +9723,22 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   }
 
   if (mode === "round2predictions") {
-    const round6OfficialMap = normalizeClubRound4OfficialMap(round6Official);
-    const latestMap = buildLatestClubRound4Rows(round6Rows);
+    const isT6 = predTourTab === "6";
+    const activeOfficial = isT6 ? round6Official : round5Official;
+    const activeRows = isT6 ? round6Rows : round5Rows;
+    const activeScoreMatches = isT6 ? CLUB_TOUR6_SCORE_MATCHES : CLUB_TOUR5_SCORE_MATCHES;
+    const activeYesNoQuestions = isT6 ? CLUB_TOUR6_YESNO_QUESTIONS : CLUB_TOUR5_YESNO_QUESTIONS;
+    const tourNo = isT6 ? "6" : "5";
+
+    const activeOfficialMap = normalizeClubRound4OfficialMap(activeOfficial);
+    const latestMap = buildLatestClubRound4Rows(activeRows);
     const rows = Object.values(latestMap).sort((a, b) => {
-      const scoreDiff = clubRound4Score(b, round6OfficialMap) - clubRound4Score(a, round6OfficialMap);
+      const scoreDiff = clubRound4Score(b, activeOfficialMap) - clubRound4Score(a, activeOfficialMap);
       if (scoreDiff !== 0) return scoreDiff;
       return String(a.name || "").localeCompare(String(b.name || ""), "ru");
     });
-    const officialCount = clubRound4OfficialCount(round6OfficialMap);
-    const fantasyOfficialCount = clubRound4FantasyOfficialCount(round6OfficialMap);
+    const officialCount = clubRound4OfficialCount(activeOfficialMap);
+    const fantasyOfficialCount = clubRound4FantasyOfficialCount(activeOfficialMap);
     const created = row => {
       try { return row?.created_at ? new Date(row.created_at).toLocaleString("ru-RU") : "—"; } catch { return row?.created_at || "—"; }
     };
@@ -9743,19 +9751,33 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
 
     return (
       <div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 14 }}>
+          {["6", "5"].map(t => (
+            <button key={t} onClick={() => setPredTourTab(t)} style={{
+              padding: "8px 14px", borderRadius: 7, cursor: "pointer",
+              border: predTourTab === t ? "1px solid rgba(245,158,11,.75)" : "1px solid rgba(255,255,255,.12)",
+              background: predTourTab === t ? "rgba(245,158,11,.20)" : "rgba(255,255,255,.04)",
+              color: predTourTab === t ? "#FDE68A" : "rgba(240,237,230,.58)",
+              fontFamily: "Barlow Condensed,sans-serif", fontWeight: 900, fontSize: 13,
+            }}>{t}-й тур</button>
+          ))}
+        </div>
+
         <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>📋 Все прогнозы · 6-й тур</div>
+          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(24px,3vw,42px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>📋 Все прогнозы · {tourNo}-й тур</div>
           <div style={{ color: "rgba(240,237,230,.48)", fontSize: 13, marginTop: 5 }}>
-            Фэнтези, 4 точных счёта и 10 вопросов Да/Нет. Этот 6-й тур — стадия 1/4, его счёт транслируется в парах 1/4 в «Группы и календарь».
+            {isT6
+              ? "Фэнтези, 4 точных счёта и 10 вопросов Да/Нет. Этот 6-й тур — стадия 1/4, его счёт транслируется в парах 1/4 в «Таблицы»."
+              : "Фэнтези, 5 точных счетов и 10 вопросов Да/Нет. Этот 5-й тур — стадия 1/8, его счёт транслируется в парах 1/8 в «Таблицы»."}
           </div>
           <div style={{ marginTop: 8, color: "#86EFAC", fontSize: 12 }}>
-            Прогнозов: {rows.length} · официальных ответов внесено: {officialCount}/{CLUB_TOUR6_SCORE_MATCHES.length + CLUB_TOUR6_YESNO_QUESTIONS.length} · фэнтези баллов: {fantasyOfficialCount}
+            Прогнозов: {rows.length} · официальных ответов внесено: {officialCount}/{activeScoreMatches.length + activeYesNoQuestions.length} · фэнтези баллов: {fantasyOfficialCount}
           </div>
         </div>
 
         <div style={{ marginBottom: 14, background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ padding: "10px 12px", background: "rgba(245,158,11,.07)", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, color: "#FDE68A" }}>Матчи и вопросы 6-го тура</div>
+            <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 18, fontWeight: 900, color: "#FDE68A" }}>Матчи и вопросы {tourNo}-го тура</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
               <span style={{ color: "#86EFAC" }}>зелёный — верно</span>
               <span style={{ color: "#FCA5A5" }}>красный — неверно</span>
@@ -9763,8 +9785,8 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 8, padding: 12 }}>
-            {CLUB_TOUR6_SCORE_MATCHES.map((m, i) => {
-              const correct = String(round6OfficialMap.scores?.[String(i + 1)] || "").trim();
+            {activeScoreMatches.map((m, i) => {
+              const correct = String(activeOfficialMap.scores?.[String(i + 1)] || "").trim();
               return (
                 <div key={`m_${i}`} style={{ padding: "8px 10px", borderRadius: 8, background: correct ? "rgba(22,163,74,.055)" : "rgba(255,255,255,.035)", border: correct ? "1px solid rgba(22,163,74,.18)" : "1px solid rgba(255,255,255,.07)", display: "flex", gap: 8, alignItems: "flex-start" }}>
                   <span style={{ flexShrink: 0, minWidth: 30, height: 24, borderRadius: 6, background: "rgba(147,197,253,.12)", border: "1px solid rgba(147,197,253,.28)", color: "#93C5FD", fontFamily: "Oswald,sans-serif", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>M{i + 1}</span>
@@ -9775,8 +9797,8 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                 </div>
               );
             })}
-            {CLUB_TOUR6_YESNO_QUESTIONS.map((q, i) => {
-              const correct = String(round6OfficialMap.yesno?.[String(i + 1)] || "").trim();
+            {activeYesNoQuestions.map((q, i) => {
+              const correct = String(activeOfficialMap.yesno?.[String(i + 1)] || "").trim();
               return (
                 <div key={`q_${i}`} style={{ padding: "8px 10px", borderRadius: 8, background: correct ? "rgba(22,163,74,.055)" : "rgba(255,255,255,.035)", border: correct ? "1px solid rgba(22,163,74,.18)" : "1px solid rgba(255,255,255,.07)", display: "flex", gap: 8, alignItems: "flex-start" }}>
                   <span style={{ flexShrink: 0, minWidth: 30, height: 24, borderRadius: 6, background: "rgba(245,158,11,.12)", border: "1px solid rgba(245,158,11,.28)", color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>Q{i + 1}</span>
@@ -9792,7 +9814,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
 
         {rows.length === 0 ? (
           <div style={{ padding: 18, border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, background: "rgba(245,158,11,.06)", color: "#FDE68A", fontSize: 13 }}>
-            Ответы 6-го тура пока не найдены или недоступны для просмотра.
+            Ответы {tourNo}-го тура пока не найдены или недоступны для просмотра.
           </div>
         ) : (
           <div style={{ overflowX: "auto", background: "rgba(255,255,255,.03)", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12 }}>
@@ -9803,8 +9825,8 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                   <th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", minWidth: 70 }}>Очки</th>
                   <th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", minWidth: 90 }}>Фэнтези</th>
                   {CLUB_TOUR4_FANTASY_FIELDS.map(f => <th key={f.key} style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "left", minWidth: 130 }}>{f.label}</th>)}
-                  {CLUB_TOUR6_SCORE_MATCHES.map((m, i) => <th key={m} title={m} style={{ padding: "8px 10px", color: "#93C5FD", textAlign: "center", minWidth: 86 }}>M{i + 1}</th>)}
-                  {CLUB_TOUR6_YESNO_QUESTIONS.map((q, i) => <th key={q} title={q} style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "center", minWidth: 76, fontSize: 10 }}>Q{i + 1}</th>)}
+                  {activeScoreMatches.map((m, i) => <th key={m} title={m} style={{ padding: "8px 10px", color: "#93C5FD", textAlign: "center", minWidth: 86 }}>M{i + 1}</th>)}
+                  {activeYesNoQuestions.map((q, i) => <th key={q} title={q} style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "center", minWidth: 76, fontSize: 10 }}>Q{i + 1}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -9814,21 +9836,21 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
                       <div>{adminClubFullDisplayName(row.name) || row.name || "—"}</div>
                       <div style={{ color: "rgba(240,237,230,.38)", fontSize: 10, marginTop: 2 }}>{created(row)}</div>
                     </td>
-                    <td style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "center", fontWeight: 900 }}>{clubRound4Score(row, round6OfficialMap)}</td>
-                    <td style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", fontWeight: 900 }}>{clubRound4FantasyPointsFor(row, round6OfficialMap)}</td>
-                    {CLUB_TOUR4_FANTASY_FIELDS.map(f => { const fp = clubRound4FantasyFieldPointsFor(row, f.key, round6OfficialMap); return <td key={f.key} title={`${f.label}: ${getFantasyPublic(row, f.key)}`} style={{ padding: "8px 10px", color: "#F0EDE6", fontWeight: 800, maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getFantasyPublic(row, f.key)}<div style={{ color: fp ? "#F59E0B" : "rgba(240,237,230,.30)", fontSize: 10 }}>+{fp}</div></td>; })}
-                    {CLUB_TOUR6_SCORE_MATCHES.map((_, i) => {
+                    <td style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "center", fontWeight: 900 }}>{clubRound4Score(row, activeOfficialMap)}</td>
+                    <td style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", fontWeight: 900 }}>{clubRound4FantasyPointsFor(row, activeOfficialMap)}</td>
+                    {CLUB_TOUR4_FANTASY_FIELDS.map(f => { const fp = clubRound4FantasyFieldPointsFor(row, f.key, activeOfficialMap); return <td key={f.key} title={`${f.label}: ${getFantasyPublic(row, f.key)}`} style={{ padding: "8px 10px", color: "#F0EDE6", fontWeight: 800, maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getFantasyPublic(row, f.key)}<div style={{ color: fp ? "#F59E0B" : "rgba(240,237,230,.30)", fontSize: 10 }}>+{fp}</div></td>; })}
+                    {activeScoreMatches.map((_, i) => {
                       const ans = getScorePublic(row, i);
                       const pred = parseRound4ScoreString(ans);
-                      const cor = parseRound4ScoreString(round6OfficialMap.scores?.[String(i + 1)]);
+                      const cor = parseRound4ScoreString(activeOfficialMap.scores?.[String(i + 1)]);
                       const pts = pred && cor ? (calculateMatchPredictionPoints(pred.h, pred.a, cor.h, cor.a) || 0) : null;
                       const hasOfficial = Boolean(cor);
                       const isOk = hasOfficial && pts > 0;
-                      return <td key={i} title={hasOfficial ? `Верный счёт: ${round6OfficialMap.scores[String(i + 1)]}` : CLUB_TOUR6_SCORE_MATCHES[i]} style={{ padding: "8px 10px", color: !hasOfficial ? "rgba(240,237,230,.45)" : isOk ? "#86EFAC" : "#FCA5A5", textAlign: "center", fontWeight: 900 }}>{ans}{pts !== null && <div style={{ color: pts ? "#F59E0B" : "rgba(240,237,230,.35)", fontSize: 10 }}>+{pts}</div>}</td>;
+                      return <td key={i} title={hasOfficial ? `Верный счёт: ${activeOfficialMap.scores[String(i + 1)]}` : activeScoreMatches[i]} style={{ padding: "8px 10px", color: !hasOfficial ? "rgba(240,237,230,.45)" : isOk ? "#86EFAC" : "#FCA5A5", textAlign: "center", fontWeight: 900 }}>{ans}{pts !== null && <div style={{ color: pts ? "#F59E0B" : "rgba(240,237,230,.35)", fontSize: 10 }}>+{pts}</div>}</td>;
                     })}
-                    {CLUB_TOUR6_YESNO_QUESTIONS.map((q, i) => {
+                    {activeYesNoQuestions.map((q, i) => {
                       const ans = getYesNoPublic(row, i);
-                      const correct = String(round6OfficialMap.yesno?.[String(i + 1)] || "").trim();
+                      const correct = String(activeOfficialMap.yesno?.[String(i + 1)] || "").trim();
                       const hasOfficial = Boolean(correct);
                       const isOk = hasOfficial && ans === correct;
                       const isWrong = hasOfficial && ans !== "—" && ans !== correct;
