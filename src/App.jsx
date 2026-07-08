@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-06-tour6-quarterfinal-round";
+const FFC_APP_BUILD = "2026-07-06-tables-tab-opens-on-qf";
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -8947,6 +8947,16 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [debug, setDebug] = React.useState(null);
   const [round, setRound] = React.useState(() => mode === "current2" ? 3 : 1);
   const [roundGroup, setRoundGroup] = React.useState(() => mode === "current2" ? "R16" : "A");
+
+  // При заходе в "Таблицы" сразу прокручиваем к сетке 1/4, а не к 1/8.
+  React.useEffect(() => {
+    if (mode !== "current2") return;
+    const t = setTimeout(() => {
+      document.getElementById("club-bracket-1/4")?.scrollIntoView({ behavior: "auto", block: "start" });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [mode]);
+
   const [roundScores, setRoundScores] = React.useState({});
   const [round2Rows, setRound2Rows] = React.useState([]);
   const [round2Official, setRound2Official] = React.useState({});
@@ -23280,7 +23290,7 @@ function AppInner() {
                     ["home", "📋 Все прогнозы"],
                     ["table", "🏆 Таблица сеяных"],
                     ["nextRound", "➡️ Следующий тур"],
-                    ["current2", "🗓️ Группы и календарь"],
+                    ["current2", "🗓️ Таблицы"],
                     ["info", "ℹ️ Инфо"],
                   ].map(([key, label]) => (
                     <button
