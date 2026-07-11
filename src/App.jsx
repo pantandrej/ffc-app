@@ -7,7 +7,18 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-06-admin-qf-pair-hits";
+const FFC_APP_BUILD = "2026-07-06-friendly-stale-session-error";
+
+// Если запись в bonus_official_answers упала с 42501 и в подсказке видно
+// "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
+// (сессия протухла). Вместо сырого JSON показываем понятную причину.
+function friendlySaveErrorText(raw) {
+  const s = String(raw || "");
+  if (/42501/.test(s) && /to anon/i.test(s)) {
+    return "Сессия истекла — запрос ушёл анонимно вместо твоего аккаунта. Выйди из аккаунта и зайди заново, потом повтори.";
+  }
+  return "Ошибка сохранения: " + s.slice(0, 220);
+}
 
 // ── Флаг блокировки прогнозов после дедлайна ──
 // true  → форма скрыта, показывается публичная таблица
@@ -7257,7 +7268,7 @@ function AdminRound4AnswersPanel({ session, showToast }) {
     });
     writeClubRound4OfficialLocal(next);
     window.dispatchEvent(new CustomEvent("ffc-round4-official-updated"));
-    showToast?.(saved ? "✓ Ответ 4-го тура сохранён" : "Сохранено локально. Проверь RLS: " + errors.join(" | ").slice(0, 180));
+    showToast?.(saved ? "✓ Ответ 4-го тура сохранён" : friendlySaveErrorText(errors.join(" | ")));
     setSaving(p => ({ ...p, [key]: false }));
   }
 
@@ -7714,7 +7725,7 @@ function AdminRound5AnswersPanel({ session, showToast }) {
     });
     writeClubRound5OfficialLocal(next);
     window.dispatchEvent(new CustomEvent("ffc-round5-official-updated"));
-    showToast?.(saved ? "✓ Ответ 5-го тура сохранён" : "Сохранено локально. Проверь RLS: " + errors.join(" | ").slice(0, 180));
+    showToast?.(saved ? "✓ Ответ 5-го тура сохранён" : friendlySaveErrorText(errors.join(" | ")));
     setSaving(p => ({ ...p, [key]: false }));
   }
 
@@ -8170,7 +8181,7 @@ function AdminRound6AnswersPanel({ session, showToast }) {
     });
     writeClubRound6OfficialLocal(next);
     window.dispatchEvent(new CustomEvent("ffc-round6-official-updated"));
-    showToast?.(saved ? "✓ Ответ 6-го тура сохранён" : "Сохранено локально. Проверь RLS: " + errors.join(" | ").slice(0, 180));
+    showToast?.(saved ? "✓ Ответ 6-го тура сохранён" : friendlySaveErrorText(errors.join(" | ")));
     setSaving(p => ({ ...p, [key]: false }));
   }
 
@@ -13489,7 +13500,7 @@ function AdminBonusPanel({ session, showToast }) {
     } else {
       const txt = await r.clone().text().catch(() => "");
       if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка сохранения: " + txt.slice(0, 300));
+      showToast(friendlySaveErrorText(txt));
     }
     setSaving(p => ({ ...p, [qid]: false }));
   }
@@ -13656,7 +13667,7 @@ function AdminBonusPanel({ session, showToast }) {
     } else {
       const txt = await r.clone().text().catch(() => "");
       if (txt.includes("does not exist")) setSqlMissing(true);
-      showToast("Ошибка сохранения: " + txt.slice(0, 300));
+      showToast(friendlySaveErrorText(txt));
     }
     setSaving(p => ({ ...p, [qid]: false }));
   }
