@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-12-tour7-sf-1on1";
+const FFC_APP_BUILD = "2026-07-14-sf-pair-hits";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -14406,6 +14406,8 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
   const [r8PairHitsLoading, setR8PairHitsLoading] = React.useState(false);
   const [qfPairHits, setQFPairHits] = React.useState([]);
   const [qfPairHitsLoading, setQFPairHitsLoading] = React.useState(false);
+  const [sfPairHits, setSFPairHits] = React.useState([]);
+  const [sfPairHitsLoading, setSFPairHitsLoading] = React.useState(false);
 
   // Локальные хелперы для этой вкладки. Раньше блок "Кто полностью угадал пары 1/16"
   // вызывал normalizeMatchId/participantKeys из другой области видимости и падал.
@@ -14529,7 +14531,7 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     return v;
   }
 
-  React.useEffect(() => { loadPairs(); loadR16PairHits(); loadR8PairHits(); loadQFPairHits(); }, []);
+  React.useEffect(() => { loadPairs(); loadR16PairHits(); loadR8PairHits(); loadQFPairHits(); loadSFPairHits(); }, []);
 
   async function loadPairs() {
     setLoading(true);
@@ -14727,6 +14729,23 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
   function adminQFTeamsFromPrediction(matchId, groupScores, playoffScores, playoffPens) {
     const mid = normalizeMatchId(matchId);
     const bracket = QF.find(m => normalizeMatchId(m.id) === mid);
+    if (!bracket) return null;
+    const tables = {};
+    ALL_GROUPS.forEach(g => { tables[g] = calcGroupTable(g, groupScores || {}, {}); });
+    const thirds = getThirdRanking(tables, {});
+    const hFrom = bracket.home_from.replace("_loser", "");
+    const aFrom = bracket.away_from.replace("_loser", "");
+    const hSide = bracket.home_from.includes("_loser") ? "loser" : "win";
+    const aSide = bracket.away_from.includes("_loser") ? "loser" : "win";
+    return {
+      home: adminResolveBracketTeam(hFrom, hSide, tables, thirds, playoffScores || {}, playoffPens || {}),
+      away: adminResolveBracketTeam(aFrom, aSide, tables, thirds, playoffScores || {}, playoffPens || {}),
+    };
+  }
+
+  function adminSFTeamsFromPrediction(matchId, groupScores, playoffScores, playoffPens) {
+    const mid = normalizeMatchId(matchId);
+    const bracket = SF.find(m => normalizeMatchId(m.id) === mid);
     if (!bracket) return null;
     const tables = {};
     ALL_GROUPS.forEach(g => { tables[g] = calcGroupTable(g, groupScores || {}, {}); });
@@ -15115,6 +15134,124 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     }
   }
 
+  async function loadSFPairHits() {
+    setSFPairHitsLoading(true);
+    try {
+      const sfIds = new Set(SF.map(m => normalizeMatchId(m.id)));
+
+      const [profiles, statuses, predRows, payments, officialRows] = await Promise.all([
+        fetchAllAdminRows("profiles?select=*"),
+        fetchAllAdminRows("participant_status?select=*").catch(() => []),
+        fetchAllAdminRows("predictions?select=*"),
+        fetchAllAdminRows("payment_requests?select=*").catch(() => []),
+        fetchAllAdminRows("playoff_official_pairs?select=match_id,home_team,away_team")
+      ]);
+
+      const profileMap = {};
+      (profiles || []).forEach(p => {
+        participantKeys(p).forEach(k => {
+          profileMap[String(k)] = publicDisplayNameOverride(adminProfileName(p) || String(k).slice(0, 8));
+        });
+      });
+
+      const pMap = {};
+      function putPredictionForUser(uid, midRaw, row) {
+        const mid = normalizeMatchId(midRaw);
+        if (!uid || !mid) return;
+        const parsed = adminScoreFromPredictionRow(row);
+        const h = parsed?.h ?? row?.h ?? row?.home ?? row?.home_score;
+        const a = parsed?.a ?? row?.a ?? row?.away ?? row?.away_score;
+        if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+        if (!pMap[uid]) pMap[uid] = {};
+        pMap[uid][mid] = {
+          h,
+          a,
+          pen: parsed?.pen || row?.penalty_winner || row?.penaltyWinner || row?.predicted_winner || row?.pen || null,
+        };
+      }
+
+      (predRows || []).forEach(pr => {
+        const midRaw = pr?.match_id ?? pr?.match ?? pr?.game_id ?? pr?.fixture_id ?? pr?.id;
+        rowUserKeys(pr).forEach(uid => putPredictionForUser(uid, midRaw, pr));
+      });
+
+      const dummyBonusMap = {};
+      (profiles || []).forEach(u => addLegacyScoresToMaps(u, participantKeys(u), pMap, dummyBonusMap));
+      (statuses || []).forEach(st => {
+        const uid = String(st?.user_id || st?.profile_id || st?.id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid };
+        addLegacyScoresToMaps(st, participantKeys(u), pMap, dummyBonusMap);
+      });
+      (payments || []).forEach(pay => {
+        const uid = String(pay?.user_id || pay?.profile_id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid, email: pay?.email };
+        addLegacyScoresToMaps(pay, participantKeys(u), pMap, dummyBonusMap);
+      });
+
+      Object.keys(pMap).forEach(uid => {
+        if (!profileMap[uid]) profileMap[uid] = `Участник ${String(uid).slice(0, 6)}`;
+      });
+
+      const official = (officialRows || [])
+        .filter(r => sfIds.has(normalizeMatchId(r.match_id)) && (r.home_team || r.away_team))
+        .map(r => ({
+          match_id: normalizeMatchId(r.match_id),
+          home: String(r.home_team || "").trim(),
+          away: String(r.away_team || "").trim()
+        }))
+        .filter(r => adminTeamKey(r.home) && adminTeamKey(r.away));
+
+      function mapsFromUserPrediction(uid) {
+        const rows = pMap[uid] || {};
+        const groupScores = {};
+        const playoffScores = {};
+        const playoffPens = {};
+        Object.entries(rows).forEach(([rawMid, val]) => {
+          const mid = normalizeMatchId(rawMid);
+          if (!mid || !val) return;
+          const h = val.h ?? val.home_score ?? val.home;
+          const a = val.a ?? val.away_score ?? val.away;
+          if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+          const row = { h, a, pen: val.pen || val.penalty_winner || val.predicted_winner || null };
+          if (ALL_GROUP_MATCH_IDS.has(mid)) {
+            groupScores[mid] = row;
+          } else {
+            playoffScores[mid] = row;
+            if (row.pen) playoffPens[mid] = String(row.pen);
+          }
+        });
+        return { groupScores, playoffScores, playoffPens };
+      }
+
+      function predictedSFPairForUser(uid, matchId) {
+        const maps = mapsFromUserPrediction(uid);
+        const teams = adminSFTeamsFromPrediction(matchId, maps.groupScores, maps.playoffScores, maps.playoffPens);
+        return { home: teams?.home?.team || "", away: teams?.away?.team || "" };
+      }
+
+      const out = official.map(off => {
+        const names = new Set();
+        Object.keys(pMap).forEach(uid => {
+          const pair = predictedSFPairForUser(uid, off.match_id);
+          if (adminSamePairUnordered(pair.home, pair.away, off.home, off.away)) {
+            names.add(profileMap[uid] || `Участник ${uid.slice(0, 6)}`);
+          }
+        });
+        return { ...off, players: Array.from(names).sort((a, b) => a.localeCompare(b, "ru")) };
+      }).sort((a, b) => Number(String(a.match_id).replace(/\D/g, "")) - Number(String(b.match_id).replace(/\D/g, "")));
+
+      setSFPairHits(out);
+      const total = out.reduce((sum, r) => sum + ((r.players || []).length), 0);
+      showToast(`✓ Проверка пар 1/2 обновлена: ${total} совпадений`);
+    } catch (e) {
+      console.error("loadSFPairHits failed", e);
+      showToast("Ошибка списка угаданных пар 1/2: " + String(e?.message || e).slice(0, 120));
+      setSFPairHits([]);
+    } finally {
+      setSFPairHitsLoading(false);
+    }
+  }
+
 
 
   function r16PairHitsPlayerRows() {
@@ -15246,6 +15383,50 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     const lines = [];
     lines.push('Кто полностью угадал пары 1/4');
     qfPairHitsPlayerRows().forEach(row => lines.push(`${row.name} — ${row.pairs.length} пар(ы)\n${row.pairs.join('; ')}`));
+    const txt = lines.join('\n\n');
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(txt).then(() => showToast('Список скопирован')).catch(() => showToast('Не удалось скопировать'));
+    } else {
+      showToast('Clipboard недоступен');
+    }
+  }
+
+  function sfPairHitsPlayerRows() {
+    const map = new Map();
+    (sfPairHits || []).forEach(row => {
+      const pairLabel = `${row.home} — ${row.away}`;
+      (row.players || []).forEach(name => {
+        const key = String(name || '').trim();
+        if (!key) return;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(pairLabel);
+      });
+    });
+    return Array.from(map.entries())
+      .map(([name, pairs]) => ({ name, pairs: pairs.sort((a, b) => a.localeCompare(b, 'ru')) }))
+      .sort((a, b) => b.pairs.length - a.pairs.length || a.name.localeCompare(b.name, 'ru'));
+  }
+
+  function downloadSFPairHitsCsvAdmin() {
+    const rows = [];
+    rows.push(['Матч', 'Реальная пара', 'Кто полностью угадал']);
+    (sfPairHits || []).forEach(row => rows.push([
+      row.match_id,
+      `${row.home} — ${row.away}`,
+      (row.players && row.players.length) ? row.players.join(', ') : '—'
+    ]));
+    rows.push([]);
+    rows.push(['Игрок', 'Кол-во угаданных пар', 'Какие пары']);
+    sfPairHitsPlayerRows().forEach(row => rows.push([row.name, row.pairs.length, row.pairs.join(' | ')]));
+    const csv = rows.map(row => row.map(csvCellAdmin).join(';')).join('\n');
+    downloadTextFileAdmin('admin_sf_full_pair_hits.csv', '﻿' + csv);
+    showToast('CSV по угаданным парам 1/2 готов');
+  }
+
+  function copySFPairHitsTextAdmin() {
+    const lines = [];
+    lines.push('Кто полностью угадал пары 1/2');
+    sfPairHitsPlayerRows().forEach(row => lines.push(`${row.name} — ${row.pairs.length} пар(ы)\n${row.pairs.join('; ')}`));
     const txt = lines.join('\n\n');
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(txt).then(() => showToast('Список скопирован')).catch(() => showToast('Не удалось скопировать'));
@@ -15435,6 +15616,39 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
           <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать по матчам</summary>
           <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
             {(qfPairHits || []).map(row => (
+              <div key={row.match_id} style={{ fontSize: 11, color: "rgba(240,237,230,.72)", background: "rgba(147,197,253,.05)", border: "1px solid rgba(147,197,253,.12)", borderRadius: 6, padding: 7 }}>
+                <b style={{ color: "#86EFAC" }}>{row.home} — {row.away}</b><br />
+                <span>{(row.players && row.players.length) ? row.players.join(", ") : "никто"}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(253,230,138,.22)", borderRadius: 8, padding: 12, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          <b style={{ color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 15 }}>🔎 Кто полностью угадал пары 1/2</b>
+          <span className="tag ty">{sfPairHits.reduce((sum, r) => sum + ((r.players || []).length), 0)} совпадений</span>
+          <button className="mini-btn" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadSFPairHits} disabled={sfPairHitsLoading}>{sfPairHitsLoading ? "…" : "обновить"}</button>
+          <button className="mini-btn green" style={{ fontSize: 11 }} onClick={copySFPairHitsTextAdmin}>копировать текст для поста</button>
+          <button className="mini-btn" style={{ fontSize: 11 }} onClick={downloadSFPairHitsCsvAdmin}>CSV</button>
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(240,237,230,.55)", marginBottom: 10 }}>
+          Пара участника в 1/2 определяется через победителя его же прогноза на соответствующий матч 1/4, а не напрямую из групп.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
+          {sfPairHitsPlayerRows().map(row => (
+            <div key={row.name} style={{ background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 6, padding: 8 }}>
+              <div style={{ color: "#FDE68A", fontWeight: 900, fontSize: 12 }}>{row.name} — {row.pairs.length} пар(ы)</div>
+              <div style={{ color: "#F0EDE6", fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>{row.pairs.join("; ")}</div>
+            </div>
+          ))}
+          {!sfPairHitsPlayerRows().length && <div style={{ color: "rgba(240,237,230,.4)", fontSize: 11 }}>Совпадений пока нет.</div>}
+        </div>
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать по матчам</summary>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
+            {(sfPairHits || []).map(row => (
               <div key={row.match_id} style={{ fontSize: 11, color: "rgba(240,237,230,.72)", background: "rgba(147,197,253,.05)", border: "1px solid rgba(147,197,253,.12)", borderRadius: 6, padding: 7 }}>
                 <b style={{ color: "#86EFAC" }}>{row.home} — {row.away}</b><br />
                 <span>{(row.players && row.players.length) ? row.players.join(", ") : "никто"}</span>
