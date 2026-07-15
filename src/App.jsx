@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-14-sf-pair-hits";
+const FFC_APP_BUILD = "2026-07-14-sf-pairs-stacked";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -10859,7 +10859,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
               return (
                 <div style={{ padding: "0 14px 14px" }}>
                   <div style={{ border: "1px solid rgba(245,158,11,.18)", background: "rgba(245,158,11,.045)", borderRadius: 12, overflow: "hidden" }}>
-                    <div style={{ padding: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
+                    <div style={{ padding: 10, display: "grid", gridTemplateColumns: key === "sf" ? "1fr" : "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
                       {pairs.map(([left, right], i) => {
                         const L = slotPlayer(left);
                         const R = slotPlayer(right);
