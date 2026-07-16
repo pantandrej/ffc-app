@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-14-sf-pairs-stacked";
+const FFC_APP_BUILD = "2026-07-14-tour8-final-3rdplace";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -4941,13 +4941,35 @@ const CLUB_TOUR7_YESNO_QUESTIONS = [
   "Финал будет Франция — Аргентина?",
 ];
 
-// Новый прогноз для режима 1 на 1. Логически это 7-й тур формы (стадия 1/2),
+// Новый 8-й тур / следующая форма 1 на 1 — стадия Финал + матч за 3-е место.
+// Важно: 7-й тур выше остаётся старым, потому что это уже сыгранная стадия 1/2
+// (её счёт транслируется в парах 1/2 в «Таблицы»). Фэнтези по тому же правилу,
+// что и в 7-м туре: не больше 2 игроков из одной сборной.
+const CLUB_TOUR8_SCORE_MATCHES = [
+  "Франция — Англия",
+  "Испания — Аргентина",
+];
+
+const CLUB_TOUR8_YESNO_QUESTIONS = [
+  "В матче за третье место будет больше голов, чем в финале?",
+  "Месси забьёт гол?",
+  "Мбаппе наберёт больше очков по системе Гол+Пас, чем Кейн?",
+  "Хотя бы в одном матче будет красная карточка?",
+  "Будет дополнительное время хотя бы в одном из матчей?",
+  "Будет незабитый пенальти в одном из матчей?",
+  "Ямаль будет заменён?",
+  "Общее количество замен в финале будет меньше 10?",
+  "В матче за бронзу сыграют и Меньян, и Пикфорд?",
+  "Месси будет лучшим игроком этого чемпионата мира?",
+];
+
+// Новый прогноз для режима 1 на 1. Логически это 8-й тур формы (стадия Финал),
 // но в таблице групп он не влияет на уже завершённый групповой этап (заморожен на 4-м туре).
-const CLUB_NEXT_FORM_TOUR_NO = 7;
-const CLUB_NEXT_FORM_QUERY_KEYS = ["ffc7", "club7", "ffc6", "club6"];
-const CLUB_NEXT_FORM_TABLE = "ffc_round7_answers";
-const CLUB_NEXT_FORM_SOURCE = "club_round_7_public_form";
-const CLUB_NEXT_OFFICIAL_PREFIX = "round7";
+const CLUB_NEXT_FORM_TOUR_NO = 8;
+const CLUB_NEXT_FORM_QUERY_KEYS = ["ffc8", "club8", "ffc7", "club7"];
+const CLUB_NEXT_FORM_TABLE = "ffc_round8_answers";
+const CLUB_NEXT_FORM_SOURCE = "club_round_8_public_form";
+const CLUB_NEXT_OFFICIAL_PREFIX = "round8";
 
 function clubNextFormQueryActive(q) {
   return CLUB_NEXT_FORM_QUERY_KEYS.some(k => q.get(k) === "1");
@@ -5904,12 +5926,12 @@ function guessFantasyTeamFromText(value) {
 }
 
 function ClubRound4Form({ showToast }) {
-  const STORAGE_NAME = "ffc_round7_name";
-  const STORAGE_FANTASY = "ffc_round7_fantasy";
-  const STORAGE_SCORES = "ffc_round7_scores";
-  const STORAGE_YESNO = "ffc_round7_yesno";
+  const STORAGE_NAME = "ffc_round8_name";
+  const STORAGE_FANTASY = "ffc_round8_fantasy";
+  const STORAGE_SCORES = "ffc_round8_scores";
+  const STORAGE_YESNO = "ffc_round8_yesno";
   // Новый ключ: у всех пользователей старая отметка ffc_round6_submitted больше не скрывает форму.
-  const STORAGE_SUBMITTED = "ffc_round7_submitted_v1";
+  const STORAGE_SUBMITTED = "ffc_round8_submitted_v1";
 
   const [name, setName] = React.useState(() => { try { return localStorage.getItem(STORAGE_NAME) || ""; } catch { return ""; } });
   const [fantasy, setFantasy] = React.useState(() => { try { return JSON.parse(localStorage.getItem(STORAGE_FANTASY) || "{}"); } catch { return {}; } });
@@ -5929,12 +5951,12 @@ function ClubRound4Form({ showToast }) {
   React.useEffect(() => { try { localStorage.setItem(STORAGE_YESNO, JSON.stringify(yesno || {})); } catch {} }, [yesno]);
 
   const fantasyCount = CLUB_TOUR4_FANTASY_FIELDS.filter(f => String(fantasy[f.key] || "").trim()).length;
-  const scoreCount = CLUB_TOUR7_SCORE_MATCHES.filter((_, i) => String(scores[String(i + 1)]?.home ?? "").trim() !== "" && String(scores[String(i + 1)]?.away ?? "").trim() !== "").length;
-  const yesnoCount = CLUB_TOUR7_YESNO_QUESTIONS.filter((_, i) => yesno[String(i + 1)]).length;
+  const scoreCount = CLUB_TOUR8_SCORE_MATCHES.filter((_, i) => String(scores[String(i + 1)]?.home ?? "").trim() !== "" && String(scores[String(i + 1)]?.away ?? "").trim() !== "").length;
+  const yesnoCount = CLUB_TOUR8_YESNO_QUESTIONS.filter((_, i) => yesno[String(i + 1)]).length;
   const totalCount = fantasyCount + scoreCount + yesnoCount;
-  const totalNeeded = CLUB_TOUR4_FANTASY_FIELDS.length + CLUB_TOUR7_SCORE_MATCHES.length + CLUB_TOUR7_YESNO_QUESTIONS.length;
+  const totalNeeded = CLUB_TOUR4_FANTASY_FIELDS.length + CLUB_TOUR8_SCORE_MATCHES.length + CLUB_TOUR8_YESNO_QUESTIONS.length;
 
-  const formUrl = (() => { try { return `${window.location.origin}${window.location.pathname}?ffc7=1`; } catch { return "?ffc7=1"; } })();
+  const formUrl = (() => { try { return `${window.location.origin}${window.location.pathname}?ffc8=1`; } catch { return "?ffc8=1"; } })();
 
   function setScorePart(idx, side, value) {
     const clean = String(value || "").replace(/[^0-9]/g, "").slice(0, 2);
@@ -5949,13 +5971,13 @@ function ClubRound4Form({ showToast }) {
       ...CLUB_TOUR4_FANTASY_FIELDS.map(f => `${f.label}: ${String(fantasy[f.key] || "—")}`),
       "",
       "Точные счета:",
-      ...CLUB_TOUR7_SCORE_MATCHES.map((m, i) => {
+      ...CLUB_TOUR8_SCORE_MATCHES.map((m, i) => {
         const sc = scores[String(i + 1)] || {};
         return `${i + 1}. ${m} — ${sc.home || "—"}:${sc.away || "—"}`;
       }),
       "",
       "Да/Нет:",
-      ...CLUB_TOUR7_YESNO_QUESTIONS.map((q, i) => `${i + 1}. ${q} — ${yesno[String(i + 1)] || "—"}`),
+      ...CLUB_TOUR8_YESNO_QUESTIONS.map((q, i) => `${i + 1}. ${q} — ${yesno[String(i + 1)] || "—"}`),
     ].join("\n");
   }
 
@@ -5969,8 +5991,8 @@ function ClubRound4Form({ showToast }) {
     fantasyTeams.forEach(tm => { teamCounts[tm] = (teamCounts[tm] || 0) + 1; });
     const overLimitTeam = Object.entries(teamCounts).find(([, count]) => count > 2);
     if (overLimitTeam) { setErr(`В фэнтези нельзя брать больше 2 игроков из одной сборной. Превышено: ${overLimitTeam[0]} (${overLimitTeam[1]}).`); return; }
-    if (scoreCount < CLUB_TOUR7_SCORE_MATCHES.length) { setErr(`Заполни все точные счета: ${scoreCount}/${CLUB_TOUR7_SCORE_MATCHES.length}.`); return; }
-    if (yesnoCount < CLUB_TOUR7_YESNO_QUESTIONS.length) { setErr(`Ответь на все вопросы Да/Нет: ${yesnoCount}/${CLUB_TOUR7_YESNO_QUESTIONS.length}.`); return; }
+    if (scoreCount < CLUB_TOUR8_SCORE_MATCHES.length) { setErr(`Заполни все точные счета: ${scoreCount}/${CLUB_TOUR8_SCORE_MATCHES.length}.`); return; }
+    if (yesnoCount < CLUB_TOUR8_YESNO_QUESTIONS.length) { setErr(`Ответь на все вопросы Да/Нет: ${yesnoCount}/${CLUB_TOUR8_YESNO_QUESTIONS.length}.`); return; }
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -5981,7 +6003,7 @@ function ClubRound4Form({ showToast }) {
         fantasy,
         scores,
         yesno,
-        questions: { fantasy: CLUB_TOUR4_FANTASY_FIELDS, scores: CLUB_TOUR7_SCORE_MATCHES, yesno: CLUB_TOUR7_YESNO_QUESTIONS },
+        questions: { fantasy: CLUB_TOUR4_FANTASY_FIELDS, scores: CLUB_TOUR8_SCORE_MATCHES, yesno: CLUB_TOUR8_YESNO_QUESTIONS },
         source: CLUB_NEXT_FORM_SOURCE,
         created_at: now,
       };
@@ -6010,7 +6032,7 @@ function ClubRound4Form({ showToast }) {
       showToast?.("✓ Прогноз следующего тура отправлен");
     } catch (e) {
       const msg = String(e?.message || e || "");
-      setErr("Не удалось сохранить в базу. Возможно, ещё не выполнен SQL для таблицы ffc_round7_answers. Ошибка Supabase: " + msg.slice(0, 220));
+      setErr("Не удалось сохранить в базу. Возможно, ещё не выполнен SQL для таблицы ffc_round8_answers. Ошибка Supabase: " + msg.slice(0, 220));
       console.error("[ClubRound4Form] save error", e);
     } finally {
       setSaving(false);
@@ -6064,8 +6086,8 @@ function ClubRound4Form({ showToast }) {
       </div>
 
       <div style={cardStyle}>
-        <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontWeight: 900, fontSize: 20, marginBottom: 8 }}>1) Фэнтези 1/2</div>
-        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 12 }}>Выберите по 1 представителю каждого амплуа, не больше 2 игроков из одной сборной: кто в 1/2 наберёт больше очков.</div>
+        <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontWeight: 900, fontSize: 20, marginBottom: 8 }}>1) Фэнтези Финал</div>
+        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 12 }}>Выберите по 1 представителю каждого амплуа, не больше 2 игроков из одной сборной: кто в финале или матче за 3-е место наберёт больше очков.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
           {CLUB_TOUR4_FANTASY_FIELDS.map(f => (
             <div key={f.key}>
@@ -6079,7 +6101,7 @@ function ClubRound4Form({ showToast }) {
       <div style={cardStyle}>
         <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontWeight: 900, fontSize: 20, marginBottom: 10 }}>2) Точные счета матчей</div>
         <div style={{ display: "grid", gap: 10 }}>
-          {CLUB_TOUR7_SCORE_MATCHES.map((m, i) => {
+          {CLUB_TOUR8_SCORE_MATCHES.map((m, i) => {
             const sc = scores[String(i + 1)] || {};
             return (
               <div key={m} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px 64px", gap: 8, alignItems: "center", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: "10px 12px" }}>
@@ -6095,7 +6117,7 @@ function ClubRound4Form({ showToast }) {
       <div style={cardStyle}>
         <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontWeight: 900, fontSize: 20, marginBottom: 10 }}>3) Вопросы Да/Нет</div>
         <div style={{ display: "grid", gap: 10 }}>
-          {CLUB_TOUR7_YESNO_QUESTIONS.map((q, i) => (
+          {CLUB_TOUR8_YESNO_QUESTIONS.map((q, i) => (
             <div key={i} style={{ display: "grid", gridTemplateColumns: "34px minmax(0,1fr) auto", gap: 10, alignItems: "center", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: "10px 12px" }}>
               <div style={{ fontFamily: "Oswald,sans-serif", color: "#F59E0B", fontWeight: 900, textAlign: "center" }}>{i + 1}</div>
               <div style={{ color: "#F0EDE6", fontSize: 14, lineHeight: 1.35 }}>{q}</div>
@@ -6117,7 +6139,7 @@ function ClubRound4Form({ showToast }) {
         <summary style={{ cursor: "pointer", color: "rgba(240,237,230,.38)", fontSize: 11 }}>SQL для этой формы, если не сохраняется</summary>
         <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", background: "rgba(0,0,0,.32)", color: "rgba(240,237,230,.62)", borderRadius: 8, padding: 12, fontSize: 10, marginTop: 8 }}>{`CREATE EXTENSION IF NOT EXISTS pgcrypto;
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
-CREATE TABLE IF NOT EXISTS public.ffc_round7_answers (
+CREATE TABLE IF NOT EXISTS public.ffc_round8_answers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   fantasy JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -6127,12 +6149,12 @@ CREATE TABLE IF NOT EXISTS public.ffc_round7_answers (
   source TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-ALTER TABLE public.ffc_round7_answers ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "ffc_round7_answers_public_insert" ON public.ffc_round7_answers;
-CREATE POLICY "ffc_round7_answers_public_insert" ON public.ffc_round7_answers FOR INSERT TO anon, authenticated WITH CHECK (true);
-DROP POLICY IF EXISTS "ffc_round7_answers_public_select" ON public.ffc_round7_answers;
-CREATE POLICY "ffc_round7_answers_public_select" ON public.ffc_round7_answers FOR SELECT TO anon, authenticated USING (true);
-GRANT SELECT, INSERT ON public.ffc_round7_answers TO anon, authenticated;
+ALTER TABLE public.ffc_round8_answers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ffc_round8_answers_public_insert" ON public.ffc_round8_answers;
+CREATE POLICY "ffc_round8_answers_public_insert" ON public.ffc_round8_answers FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "ffc_round8_answers_public_select" ON public.ffc_round8_answers;
+CREATE POLICY "ffc_round8_answers_public_select" ON public.ffc_round8_answers FOR SELECT TO anon, authenticated USING (true);
+GRANT SELECT, INSERT ON public.ffc_round8_answers TO anon, authenticated;
 NOTIFY pgrst, 'reload schema';`}</pre>
       </details>
     </div>
@@ -6236,6 +6258,16 @@ function readClubRound7OfficialLocal() {
 }
 function writeClubRound7OfficialLocal(map) {
   try { localStorage.setItem("ffc_round7_official_answers_local", JSON.stringify(map || { scores: {}, yesno: {}, fantasy: {} })); } catch {}
+}
+function readClubRound8OfficialLocal() {
+  try {
+    const raw = localStorage.getItem("ffc_round8_official_answers_local");
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === "object" ? obj : { scores: {}, yesno: {}, fantasy: {} };
+  } catch { return { scores: {}, yesno: {}, fantasy: {} }; }
+}
+function writeClubRound8OfficialLocal(map) {
+  try { localStorage.setItem("ffc_round8_official_answers_local", JSON.stringify(map || { scores: {}, yesno: {}, fantasy: {} })); } catch {}
 }
 function normalizeClubRound4OfficialMap(map) {
   const src = map && typeof map === "object" ? map : {};
@@ -6379,11 +6411,11 @@ function buildClubRound4OfficialMap(rows) {
     if (Array.isArray(ans)) ans = ans[0] || "";
     ans = String(ans).trim();
     const ms = Date.parse(r?.updated_at || r?.created_at || 0) || 0;
-    let m = qid.match(/round[4567][_-]?(?:score|match|m)[_-]?(\d+)/i);
+    let m = qid.match(/round[45678][_-]?(?:score|match|m)[_-]?(\d+)/i);
     if (m) put("scores", m[1], ans, ms);
-    m = qid.match(/round[4567][_-]?(?:yesno|q)[_-]?(\d+)/i);
+    m = qid.match(/round[45678][_-]?(?:yesno|q)[_-]?(\d+)/i);
     if (m) put("yesno", m[1], ans, ms);
-    m = qid.match(/round[4567][_-]?fantasy[_-](.+)$/i);
+    m = qid.match(/round[45678][_-]?fantasy[_-](.+)$/i);
     if (m) put("fantasy", m[1], ans, ms);
   });
   const out = { scores: {}, yesno: {}, fantasy: {} };
@@ -8920,11 +8952,468 @@ NOTIFY pgrst, 'reload schema';`;
   );
 }
 
+function AdminRound8AnswersPanel({ session, showToast }) {
+  const token = session?.access_token;
+  const [rows, setRows] = React.useState([]);
+  const [official, setOfficial] = React.useState({ scores: {}, yesno: {}, fantasy: {} });
+  const [draftScores, setDraftScores] = React.useState({});
+  const [fantasyDrafts, setFantasyDrafts] = React.useState({});
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState("");
+  const [officialErr, setOfficialErr] = React.useState("");
+  const [saving, setSaving] = React.useState({});
+
+  React.useEffect(() => { loadRows(); }, []);
+  React.useEffect(() => {
+    const d = {};
+    Object.entries(normalizeClubRound4OfficialMap(official).scores || {}).forEach(([k, v]) => {
+      const m = String(v || "").match(/^(\d+)\s*[:\-]\s*(\d+)$/);
+      if (m) d[k] = { home: m[1], away: m[2] };
+    });
+    setDraftScores(p => ({ ...d, ...p }));
+  }, [official]);
+  React.useEffect(() => {
+    const f = normalizeClubRound4OfficialMap(official).fantasy || {};
+    setFantasyDrafts(p => ({ ...f, ...p }));
+  }, [official]);
+
+  function created(row) {
+    try { return row?.created_at ? new Date(row.created_at).toLocaleString("ru-RU") : "—"; } catch { return row?.created_at || "—"; }
+  }
+  function getFantasy(row, key) {
+    const v = clubRound4FantasyPickValue(row, key);
+    return v || "—";
+  }
+  function getScore(row, idx) {
+    const v = clubRound4ScoreAnswerFor(row, idx);
+    return v || "—";
+  }
+  function getYesNo(row, idx) {
+    return clubRound4YesNoAnswerFor(row, idx) || "—";
+  }
+  function latestByName(list) {
+    const map = new Map();
+    (Array.isArray(list) ? list : []).forEach((r) => {
+      const key = normalizeName(r?.name || "");
+      const ms = Date.parse(r?.created_at || 0) || 0;
+      if (!key) return;
+      const prev = map.get(key);
+      if (!prev || ms >= (Date.parse(prev?.created_at || 0) || 0)) map.set(key, r);
+    });
+    return Array.from(map.values()).sort((a, b) => (Date.parse(b?.created_at || 0) || 0) - (Date.parse(a?.created_at || 0) || 0));
+  }
+  const uniqueRows = latestByName(rows);
+  const duplicateCount = Math.max(0, rows.length - uniqueRows.length);
+  const officialCount = clubRound4OfficialCount(official);
+
+  async function loadRows() {
+    setLoading(true);
+    setErr("");
+    setOfficialErr("");
+    try {
+      const r = await supa("ffc_round8_answers?select=*&order=created_at.desc&limit=1000", { token });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        throw new Error(t || `${r.status}`);
+      }
+      const data = await r.json().catch(() => []);
+      setRows(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setErr(String(e?.message || e));
+    }
+    try {
+      const fb = await supa("bonus_official_answers?select=*&question_id=like.round8_*&limit=300", { token }).catch(() => null);
+      const dbMap = fb?.ok ? buildClubRound4OfficialMap(await fb.json().catch(() => [])) : { scores: {}, yesno: {} };
+      const localMap = normalizeClubRound4OfficialMap(readClubRound8OfficialLocal());
+      const merged = normalizeClubRound4OfficialMap({
+        scores: { ...localMap.scores, ...(dbMap.scores || {}) },
+        yesno: { ...localMap.yesno, ...(dbMap.yesno || {}) },
+        fantasy: { ...localMap.fantasy, ...(dbMap.fantasy || {}) },
+      });
+      setOfficial(merged);
+      writeClubRound8OfficialLocal(merged);
+    } catch (e) {
+      const local = readClubRound8OfficialLocal();
+      if (clubRound4OfficialCount(local)) setOfficial(local);
+      setOfficialErr(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function buildCopyText(row) {
+    return [
+      `Имя: ${row?.name || "—"}`,
+      `Дата: ${created(row)}`,
+      `Очки 1 на 1: ${clubRound4Score(row, official)}`,
+      "",
+      "Фэнтези:",
+      ...CLUB_TOUR4_FANTASY_FIELDS.map(f => `${f.label}: ${getFantasy(row, f.key)}`),
+      "",
+      "Точные счета:",
+      ...CLUB_TOUR8_SCORE_MATCHES.map((m, i) => `${i + 1}. ${m} — ${getScore(row, i)}`),
+      "",
+      "Да/Нет:",
+      ...CLUB_TOUR8_YESNO_QUESTIONS.map((q, i) => `${i + 1}. ${q} — ${getYesNo(row, i)}`),
+    ].join("\n");
+  }
+  function copyRow(row) { navigator.clipboard?.writeText(buildCopyText(row)).then(() => showToast?.("Ответы 8-го тура скопированы")); }
+  function csvEscape(v) { return `"${String(v ?? "").replace(/"/g, '""')}"`; }
+  function downloadCsv() {
+    const header = ["Имя", "Дата", "Очки", "Фэнтези баллы", ...CLUB_TOUR4_FANTASY_FIELDS.map(f => `Фэнтези: ${f.label}`), ...CLUB_TOUR8_SCORE_MATCHES.map((m, i) => `Счёт ${i + 1}: ${m}`), ...CLUB_TOUR8_YESNO_QUESTIONS.map((q, i) => `Q${i + 1}: ${q}`)];
+    const lines = [header.map(csvEscape).join(";")];
+    uniqueRows.forEach(row => lines.push([row?.name || "—", created(row), clubRound4Score(row, official), clubRound4FantasyPointsFor(row, official), ...CLUB_TOUR4_FANTASY_FIELDS.map(f => getFantasy(row, f.key)), ...CLUB_TOUR8_SCORE_MATCHES.map((_, i) => getScore(row, i)), ...CLUB_TOUR8_YESNO_QUESTIONS.map((_, i) => getYesNo(row, i))].map(csvEscape).join(";")));
+    const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "ffc_round8_answers.csv"; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+  }
+
+  async function saveOfficial(kind, no, answer) {
+    const cleanAnswer = String(answer ?? "").trim();
+    if (cleanAnswer === "") { showToast?.("Введи ответ"); return; }
+    const key = `${kind}_${no}`;
+    setSaving(p => ({ ...p, [key]: true }));
+    setOfficialErr("");
+    const writeToken = await getFreshToken().catch(() => null) || token;
+    const now = new Date().toISOString();
+    const errors = [];
+
+    async function saveOneFantasyOrAnswer(qid, value) {
+      const payload = { question_id: qid, answer: String(value ?? "").trim(), points: 2, status: "final", updated_at: now };
+
+      // Сначала PATCH: если строка уже есть, обновляем именно её. Это важнее POST,
+      // потому что в Supabase у нас могли накопиться старые записи с тем же question_id.
+      try {
+        const patch = await supa(`bonus_official_answers?question_id=eq.${encodeURIComponent(qid)}`, {
+          method: "PATCH",
+          token: writeToken,
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify(payload),
+        });
+        if (patch.ok) {
+          const patched = await patch.clone().json().catch(() => null);
+          if (Array.isArray(patched) && patched.length > 0) return true;
+        } else {
+          errors.push(await patch.text().catch(() => `PATCH ${qid}: HTTP ${patch.status}`));
+        }
+      } catch (e) {
+        errors.push(`PATCH ${qid}: ${String(e?.message || e)}`);
+      }
+
+      // Если существующей строки не было — создаём.
+      try {
+        const post = await supa("bonus_official_answers", {
+          method: "POST",
+          token: writeToken,
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify(payload),
+        });
+        if (post.ok) return true;
+        errors.push(await post.text().catch(() => `POST ${qid}: HTTP ${post.status}`));
+      } catch (e) {
+        errors.push(`POST ${qid}: ${String(e?.message || e)}`);
+      }
+      return false;
+    }
+
+    const mainQid = kind === "score" ? `round8_score_${no}` : kind === "fantasy" ? `round8_fantasy_${no}` : `round8_yesno_${no}`;
+    let saved = await saveOneFantasyOrAnswer(mainQid, cleanAnswer);
+
+    const next = normalizeClubRound4OfficialMap(official);
+    if (kind === "score") next.scores[String(no)] = cleanAnswer;
+    else if (kind === "yesno") next.yesno[String(no)] = cleanAnswer;
+    else if (kind === "fantasy") {
+      next.fantasy[String(no)] = cleanAnswer;
+
+      // Если балл проставлен в общем списке игрока/тренера (например, Беллингем),
+      // принудительно обновляем все индивидуальные fallback-ключи участников, где выбран этот же игрок.
+      // Иначе старая ручная запись вроде Юрий__midfielder = 4 может перебивать новый общий балл = 3.
+      const globalKey = String(no || "").trim();
+      if (globalKey.startsWith("player__")) {
+        const individualKeys = new Set();
+        uniqueRows.forEach((row) => {
+          CLUB_TOUR4_FANTASY_FIELDS.forEach((f) => {
+            const picked = getFantasy(row, f.key);
+            if (clubRound4FantasyGlobalKey(picked, f.key) === globalKey) {
+              individualKeys.add(clubRound4FantasyPointKey(row?.name || "", f.key));
+              individualKeys.add(`${normalizeName(row?.name || "")}__${f.key}`);
+            }
+          });
+        });
+        for (const iKey of individualKeys) {
+          if (!iKey) continue;
+          next.fantasy[iKey] = cleanAnswer;
+          const ok = await saveOneFantasyOrAnswer(`round8_fantasy_${iKey}`, cleanAnswer);
+          if (ok) saved = true;
+        }
+      }
+    }
+
+    setOfficial(next);
+    setFantasyDrafts(p => {
+      const copy = { ...p };
+      delete copy[String(no)];
+      return copy;
+    });
+    writeClubRound8OfficialLocal(next);
+    window.dispatchEvent(new CustomEvent("ffc-round8-official-updated"));
+    showToast?.(saved ? "✓ Ответ 8-го тура сохранён" : friendlySaveErrorText(errors.join(" | ")));
+    setSaving(p => ({ ...p, [key]: false }));
+  }
+
+  const sqlBlock = `CREATE EXTENSION IF NOT EXISTS pgcrypto;
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+CREATE TABLE IF NOT EXISTS public.ffc_round8_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  fantasy JSONB NOT NULL DEFAULT '{}'::jsonb,
+  scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+  yesno JSONB NOT NULL DEFAULT '{}'::jsonb,
+  answers JSONB DEFAULT '{}'::jsonb,
+  questions JSONB,
+  source TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.ffc_round8_answers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ffc_round8_answers_public_insert" ON public.ffc_round8_answers;
+CREATE POLICY "ffc_round8_answers_public_insert" ON public.ffc_round8_answers FOR INSERT TO anon, authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "ffc_round8_answers_admin_select" ON public.ffc_round8_answers;
+CREATE POLICY "ffc_round8_answers_admin_select" ON public.ffc_round8_answers FOR SELECT TO authenticated USING (true);
+GRANT INSERT ON public.ffc_round8_answers TO anon, authenticated;
+GRANT SELECT ON public.ffc_round8_answers TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.bonus_official_answers TO authenticated;
+NOTIFY pgrst, 'reload schema';`;
+
+  const fantasyGlobalPicks = React.useMemo(() => {
+    const map = new Map();
+    uniqueRows.forEach((row) => {
+      CLUB_TOUR4_FANTASY_FIELDS.forEach((f) => {
+        const rawName = getFantasy(row, f.key);
+        if (!rawName || rawName === "—") return;
+        const canon = clubRound4FantasyCanonical(rawName, f.key);
+        const key = canon.key;
+        if (!key) return;
+        const prev = map.get(key) || { key, name: canon.name || rawName, roles: new Set(), roleKeys: new Set(), users: new Set(), variants: new Set() };
+        prev.name = canon.name || prev.name || rawName;
+        prev.roles.add(f.label);
+        prev.roleKeys.add(f.key);
+        prev.variants.add(rawName);
+        if (row?.name) prev.users.add(row.name);
+        map.set(key, prev);
+      });
+    });
+    return Array.from(map.values())
+      .map(x => ({ ...x, roles: Array.from(x.roles), roleKeys: Array.from(x.roleKeys), users: Array.from(x.users), variants: Array.from(x.variants) }))
+      .sort((a, b) => {
+        const ra = Math.min(...(a.roleKeys || []).map(clubRound4FantasyRoleRank));
+        const rb = Math.min(...(b.roleKeys || []).map(clubRound4FantasyRoleRank));
+        if (ra !== rb) return ra - rb;
+        return String(a.name).localeCompare(String(b.name), "ru");
+      });
+  }, [uniqueRows]);
+
+  const fantasyGlobalOpenPicks = React.useMemo(() => {
+    const fantasyOfficial = normalizeClubRound4OfficialMap(official).fantasy || {};
+    const expectedFix = {
+      player__def_laporte: "9",
+      player__def_grimaldo: "7",
+    };
+    return fantasyGlobalPicks.filter((pick) => {
+      const saved = String(fantasyOfficial[pick.key] ?? "").trim();
+      if (expectedFix[pick.key]) return saved === "" || saved !== expectedFix[pick.key];
+      return saved === "";
+    });
+  }, [fantasyGlobalPicks, official]);
+  const fantasyGlobalDonePicks = React.useMemo(() => {
+    const openKeys = new Set(fantasyGlobalOpenPicks.map(p => p.key));
+    return fantasyGlobalPicks.filter((pick) => !openKeys.has(pick.key));
+  }, [fantasyGlobalPicks, fantasyGlobalOpenPicks]);
+  const fantasyGlobalDoneCount = Math.max(0, fantasyGlobalPicks.filter((pick) => {
+    return String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key] ?? "").trim() !== "";
+  }).length);
+
+  function fantasyGlobalValue(key) {
+    const saved = normalizeClubRound4OfficialMap(official).fantasy?.[key] ?? "";
+    return fantasyDrafts[key] ?? saved;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(22px,2vw,34px)", fontWeight: 900, color: "#FDE68A", textTransform: "uppercase" }}>🧾 Ответы 8-го тура</div>
+        <span className="tag tg">{rows.length} отправлено</span>
+        <span className="tag tr">{uniqueRows.length} имён/ников</span>
+        <span className="tag ty">матчи+да/нет {officialCount}/{CLUB_TOUR8_SCORE_MATCHES.length + CLUB_TOUR8_YESNO_QUESTIONS.length}</span>
+        <span className="tag tg">фэнтези баллов: {clubRound4FantasyOfficialCount(official)}</span>
+        {duplicateCount > 0 && <span className="tag ty">дублей: {duplicateCount}</span>}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button className="mini-btn green" onClick={loadRows}>↻ Обновить</button>
+          <button className="mini-btn green" onClick={downloadCsv} disabled={!uniqueRows.length}>CSV</button>
+        </div>
+      </div>
+
+      <div style={{ background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.18)", borderRadius: 10, padding: 12, color: "rgba(240,237,230,.62)", fontSize: 12 }}>
+        Здесь протыкиваются официальные ответы 8-го тура (стадия Финал + матч за 3-е место). Эти ответы транслируются как живой счёт в паре «Финал за 3-е место» и в паре «Финал» в «Группы и календарь» и не влияют на уже завершённый групповой этап: Да/Нет = 2 балла, счёт = по схеме «Прогнозисты», фэнтези = баллы, которые ты вписываешь вручную.
+      </div>
+
+      <div style={{ border: "1px solid rgba(34,197,94,.22)", borderRadius: 14, background: "rgba(22,163,74,.055)", padding: 14 }}>
+        <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 22, fontWeight: 900, marginBottom: 8 }}>Фэнтези — ручные баллы</div>
+        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 10 }}>В общем списке показаны только ещё не проставленные варианты — как только вписал очки и нажал OK, игрок/тренер пропадает из списка. Если Кейн/Райс/любой игрок выбран у нескольких участников, его очки автоматически добавятся всем, у кого он есть в составе.</div>
+
+        <div style={{ border: "1px solid rgba(253,230,138,.22)", borderRadius: 12, padding: 12, background: "rgba(245,158,11,.045)", marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+            <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontWeight: 900, fontSize: 20 }}>Общий список игроков/тренеров</div>
+            <span className="tag ty">не проставлено: {fantasyGlobalOpenPicks.length}/{fantasyGlobalPicks.length}</span>{fantasyGlobalDoneCount > 0 && <span className="tag tg">проставлено: {fantasyGlobalDoneCount}</span>}
+            <span style={{ color: "rgba(240,237,230,.45)", fontSize: 11 }}>Показаны все ответы участников. Очки из этого списка применяются ко всем составам ниже.</span>
+          </div>
+          {fantasyGlobalPicks.length === 0 ? (
+            <div style={{ color: "rgba(240,237,230,.48)", fontSize: 12 }}>Составы пока не загружены.</div>
+          ) : fantasyGlobalOpenPicks.length === 0 ? (
+            <div style={{ color: "#86EFAC", fontSize: 12 }}>✓ Все игроки/тренеры проставлены.</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
+              {fantasyGlobalOpenPicks.map((pick) => {
+                const val = fantasyGlobalValue(pick.key);
+                return (
+                  <div key={pick.key} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px 44px", gap: 8, alignItems: "center", padding: 8, borderRadius: 9, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div title={`${pick.name}${pick.variants?.length ? " — варианты: " + pick.variants.join(", ") : ""}`} style={{ color: "#86EFAC", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.name}</div>
+                      <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.roles.join(", ")} · у {pick.users.length}{String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key] ?? "").trim() !== "" ? ` · сейчас: ${String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key])}` : " · ещё не проставлено"}</div>
+                    </div>
+                    <input type="number" value={val} onChange={e => setFantasyDrafts(p => ({ ...p, [pick.key]: e.target.value }))} placeholder="0" style={{ width: 64, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 7, color: "#F0EDE6", padding: "6px 7px", fontWeight: 900, textAlign: "center" }} />
+                    <button className="mini-btn green" style={{ fontSize: 10, padding: "6px 7px" }} disabled={saving[`fantasy_${pick.key}`]} onClick={() => saveOfficial("fantasy", pick.key, fantasyDrafts[pick.key] ?? val ?? 0)}>OK</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {fantasyGlobalDonePicks.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать проставленные ({fantasyGlobalDonePicks.length}) — если нужно исправить балл</summary>
+              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
+                {fantasyGlobalDonePicks.map((pick) => {
+                  const val = fantasyGlobalValue(pick.key);
+                  return (
+                    <div key={pick.key} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px 44px", gap: 8, alignItems: "center", padding: 8, borderRadius: 9, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div title={`${pick.name}${pick.variants?.length ? " — варианты: " + pick.variants.join(", ") : ""}`} style={{ color: "#86EFAC", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.name}</div>
+                        <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick.roles.join(", ")} · у {pick.users.length} · сейчас: {String((normalizeClubRound4OfficialMap(official).fantasy || {})[pick.key] ?? "")}</div>
+                      </div>
+                      <input type="number" value={val} onChange={e => setFantasyDrafts(p => ({ ...p, [pick.key]: e.target.value }))} placeholder="0" style={{ width: 64, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 7, color: "#F0EDE6", padding: "6px 7px", fontWeight: 900, textAlign: "center" }} />
+                      <button className="mini-btn green" style={{ fontSize: 10, padding: "6px 7px" }} disabled={saving[`fantasy_${pick.key}`]} onClick={() => saveOfficial("fantasy", pick.key, fantasyDrafts[pick.key] ?? val ?? 0)}>OK</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
+        </div>
+
+        <div style={{ color: "rgba(240,237,230,.55)", fontSize: 12, marginBottom: 10 }}>Ниже — все составы участников и итоговая сумма фэнтези. Индивидуальные поля оставлены как ручной fallback, если нужно точечно поправить одну позицию.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
+          {uniqueRows.map((row, i) => {
+            const totalFantasy = clubRound4FantasyPointsFor(row, official);
+            return (
+              <div key={row.id || `${row.name}_${i}_fantasy`} style={{ padding: 8, borderRadius: 9, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
+                <div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 7 }}>
+                  <div style={{ minWidth: 0, flex: 1, color: "#F0EDE6", fontWeight: 850, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{adminClubFullDisplayName(row?.name) || row?.name || "—"}</div>
+                  <div title="Сумма пяти фэнтези-позиций" style={{ color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontWeight: 900, fontSize: 18 }}>Σ {totalFantasy}</div>
+                </div>
+                <div style={{ display: "grid", gap: 5, fontSize: 10, lineHeight: 1.18 }}>
+                  {CLUB_TOUR4_FANTASY_FIELDS.map(f => {
+                    const pKey = clubRound4FantasyPointKey(row?.name || "", f.key);
+                    const saved = normalizeClubRound4OfficialMap(official).fantasy[pKey] ?? "";
+                    const player = getFantasy(row, f.key);
+                    const globalKey = clubRound4FantasyGlobalKey(player, f.key);
+                    const globalSaved = globalKey ? (normalizeClubRound4OfficialMap(official).fantasy?.[globalKey] ?? "") : "";
+                    // В карточке участника показываем те же очки, которые уже попали в сумму:
+                    // сначала ручная правка конкретной позиции, иначе общий балл игрока/тренера.
+                    const hasGlobal = String(globalSaved ?? "").trim() !== "";
+                    const val = fantasyDrafts[pKey] ?? (hasGlobal ? globalSaved : saved);
+                    const fieldPts = clubRound4FantasyFieldPointsFor(row, f.key, official);
+                    const ptsLabel = fieldPts > 0 ? `+${fieldPts}` : String(fieldPts || 0);
+                    return (
+                      <div key={f.key} title={`${f.label}: ${player}${fieldPts ? ` · принес: +${fieldPts}` : ""}${hasGlobal ? ` · общий балл: ${globalSaved}` : ""}`} style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr) 34px 54px 42px", gap: 6, alignItems: "center" }}>
+                        <span title={f.label} style={{ color: "rgba(240,237,230,.55)", fontWeight: 900, textAlign: "center", textTransform: "uppercase" }}>{clubRound4FantasyRoleShort(f.key)}</span>
+                        <span style={{ color: player === "—" ? "rgba(240,237,230,.32)" : "#86EFAC", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{player}</span>
+                        <span title="Сколько эта позиция принесла в сумму" style={{ color: fieldPts > 0 ? "#F59E0B" : "rgba(240,237,230,.35)", fontWeight: 900, textAlign: "center", fontSize: 12 }}>{ptsLabel}</span>
+                        <input type="number" value={val} onChange={e => setFantasyDrafts(p => ({ ...p, [pKey]: e.target.value }))} placeholder={hasGlobal ? String(globalSaved) : "0"} style={{ width: 54, background: hasGlobal ? "rgba(34,197,94,.10)" : "rgba(255,255,255,.07)", border: hasGlobal ? "1px solid rgba(34,197,94,.28)" : "1px solid rgba(255,255,255,.14)", borderRadius: 7, color: "#F0EDE6", padding: "5px 6px", fontWeight: 900, textAlign: "center" }} />
+                        <button className="mini-btn green" style={{ fontSize: 10, padding: "5px 7px" }} disabled={saving[`fantasy_${pKey}`]} onClick={() => saveOfficial("fantasy", pKey, fantasyDrafts[pKey] ?? val ?? 0)}>OK</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ border: "1px solid rgba(245,158,11,.22)", borderRadius: 14, background: "rgba(245,158,11,.05)", padding: 14 }}>
+        <div style={{ fontFamily: "Oswald,sans-serif", color: "#FDE68A", fontSize: 24, fontWeight: 900, marginBottom: 10 }}>Верные ответы 8-го тура: счета по схеме «Прогнозисты», Да/Нет — 2 балла</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 10, marginBottom: 14 }}>
+          {CLUB_TOUR8_SCORE_MATCHES.map((m, i) => {
+            const no = i + 1;
+            const d = draftScores[String(no)] || {};
+            const officialScore = normalizeClubRound4OfficialMap(official).scores[String(no)] || "";
+            return (
+              <div key={m} style={{ padding: 12, borderRadius: 10, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
+                <div style={{ color: "#F0EDE6", fontWeight: 900, marginBottom: 8 }}>{no}. {m}</div>
+                <div style={{ color: officialScore ? "#86EFAC" : "rgba(240,237,230,.38)", fontSize: 12, marginBottom: 8 }}>Ответ: {officialScore || "ещё не проставлен"}</div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="number" min="0" value={d.home ?? ""} onChange={e => setDraftScores(p => ({ ...p, [String(no)]: { ...(p[String(no)] || {}), home: e.target.value } }))} style={{ width: 70, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 7, color: "#F0EDE6", padding: "7px 8px", fontWeight: 900 }} />
+                  <span style={{ color: "rgba(240,237,230,.55)", fontWeight: 900 }}>:</span>
+                  <input type="number" min="0" value={d.away ?? ""} onChange={e => setDraftScores(p => ({ ...p, [String(no)]: { ...(p[String(no)] || {}), away: e.target.value } }))} style={{ width: 70, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 7, color: "#F0EDE6", padding: "7px 8px", fontWeight: 900 }} />
+                  <button className="mini-btn green" disabled={saving[`score_${no}`]} onClick={() => saveOfficial("score", no, `${d.home}:${d.away}`)}>✓ OK</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 10 }}>
+          {CLUB_TOUR8_YESNO_QUESTIONS.map((q, i) => {
+            const no = i + 1;
+            const cur = normalizeClubRound4OfficialMap(official).yesno[String(no)] || "";
+            return (
+              <div key={q} style={{ padding: 12, borderRadius: 10, background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)" }}>
+                <div style={{ color: "#F0EDE6", fontWeight: 900, marginBottom: 8 }}>{no}. {q}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {['Да','Нет'].map(ans => <button key={ans} className="mini-btn" disabled={saving[`yesno_${no}`]} onClick={() => saveOfficial("yesno", no, ans)} style={{ borderColor: cur === ans ? "rgba(34,197,94,.75)" : "rgba(255,255,255,.14)", color: cur === ans ? "#86EFAC" : "rgba(240,237,230,.65)", background: cur === ans ? "rgba(22,163,74,.18)" : "rgba(255,255,255,.04)" }}>{ans}</button>)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {officialErr && <div style={{ color: "#FCA5A5", fontSize: 12 }}>Ошибка загрузки официальных ответов: {officialErr}</div>}
+      {loading && <div style={{ padding: 20, color: "rgba(240,237,230,.4)", fontSize: 13 }}>Загружаю ответы 8-го тура…</div>}
+      {!loading && err && (<><div style={{ background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.28)", borderRadius: 10, padding: 14, color: "#FCA5A5", fontSize: 12 }}>Не удалось загрузить ответы 8-го тура: {err}</div><details><summary style={{ cursor: "pointer", color: "#FDE68A", fontSize: 12 }}>SQL для таблицы 8-го тура и прав</summary><pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", background: "rgba(0,0,0,.32)", color: "rgba(240,237,230,.62)", borderRadius: 8, padding: 12, fontSize: 10, marginTop: 8 }}>{sqlBlock}</pre></details></>)}
+      {!loading && !err && uniqueRows.length === 0 && <div style={{ padding: 22, color: "rgba(240,237,230,.45)", fontSize: 13, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 10 }}>Ответов пока нет. После отправки формы по ссылке <code>?ffc8=1</code> они появятся здесь.</div>}
+      {!loading && !err && uniqueRows.length > 0 && (<>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
+          {uniqueRows.slice(0, 12).map((row, i) => <div key={row.id || `${row.name}_${i}`} style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}><div style={{ color: "#F0EDE6", fontWeight: 900, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{adminClubFullDisplayName(row.name) || row.name || "—"}</div><span style={{ marginLeft: "auto", color: "#FDE68A", fontWeight: 900 }}>{clubRound4Score(row, official)}</span><span title="Фэнтези" style={{ color: "#86EFAC", fontWeight: 900, fontSize: 11 }}>Ф:{clubRound4FantasyPointsFor(row, official)}</span><button className="mini-btn" style={{ fontSize: 10 }} onClick={() => copyRow(row)}>копия</button></div>
+            <div style={{ color: "rgba(240,237,230,.42)", fontSize: 11, marginBottom: 8 }}>{created(row)}</div>
+            <div style={{ color: "#FDE68A", fontWeight: 900, fontSize: 12, marginBottom: 4 }}>Фэнтези</div><div style={{ display: "grid", gap: 3, marginBottom: 8 }}>{CLUB_TOUR4_FANTASY_FIELDS.map(f => <div key={f.key} style={{ color: "rgba(240,237,230,.72)", fontSize: 12 }}><b>{f.label}:</b> {getFantasy(row, f.key)}</div>)}</div>
+            <div style={{ color: "#FDE68A", fontWeight: 900, fontSize: 12, marginBottom: 4 }}>Счета</div><div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>{CLUB_TOUR8_SCORE_MATCHES.map((_, si) => { const ans=getScore(row, si); const pred=parseRound4ScoreString(ans); const cor=parseRound4ScoreString(normalizeClubRound4OfficialMap(official).scores[String(si+1)]); const pts=pred&&cor?(calculateMatchPredictionPoints(pred.h,pred.a,cor.h,cor.a)||0):null; return <span key={si} style={{ fontSize: 10, padding: "3px 5px", borderRadius: 5, background: pts ? "rgba(22,163,74,.16)" : "rgba(147,197,253,.10)", color: pts ? "#86EFAC" : "#93C5FD", fontWeight: 900 }}>M{si + 1}: {ans}{pts!==null ? ` +${pts}` : ""}</span>; })}</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{CLUB_TOUR8_YESNO_QUESTIONS.map((_, yi) => { const ans=getYesNo(row, yi); const ok=ans===normalizeClubRound4OfficialMap(official).yesno[String(yi+1)]; return <span key={yi} title={CLUB_TOUR8_YESNO_QUESTIONS[yi]} style={{ fontSize: 10, padding: "3px 5px", borderRadius: 5, background: ok ? "rgba(22,163,74,.16)" : "rgba(245,158,11,.10)", color: ok ? "#86EFAC" : "#FDE68A", fontWeight: 900 }}>Q{yi + 1}: {ans}</span>; })}</div>
+          </div>)}
+        </div>
+        <div style={{ overflowX: "auto", border: "1px solid rgba(245,158,11,.18)", borderRadius: 12, background: "rgba(255,255,255,.03)" }}><table style={{ borderCollapse: "collapse", minWidth: 2200, width: "100%" }}><thead><tr style={{ background: "rgba(245,158,11,.09)" }}><th style={{ position: "sticky", left: 0, zIndex: 3, background: "#102010", padding: "8px 10px", color: "#FDE68A", textAlign: "left", minWidth: 170 }}>Имя</th><th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", minWidth: 70 }}>Очки</th><th style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "left", minWidth: 130 }}>Дата</th><th style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", minWidth: 90 }}>Фэнтези</th>{CLUB_TOUR4_FANTASY_FIELDS.map(f => <th key={f.key} style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "left", minWidth: 130 }}>{f.label}</th>)}{CLUB_TOUR8_SCORE_MATCHES.map((m, i) => <th key={m} title={m} style={{ padding: "8px 10px", color: "#93C5FD", textAlign: "center", minWidth: 78 }}>M{i + 1}</th>)}{CLUB_TOUR8_YESNO_QUESTIONS.map((q, i) => <th key={q} title={q} style={{ padding: "8px 10px", color: "rgba(240,237,230,.62)", textAlign: "center", minWidth: 74, fontSize: 10 }}>Q{i + 1}</th>)}<th style={{ padding: "8px 10px", minWidth: 80 }}>Копия</th></tr></thead><tbody>{uniqueRows.map((row, ri) => <tr key={row.id || `${row.name}_${ri}`} style={{ borderTop: "1px solid rgba(255,255,255,.05)" }}><td style={{ position: "sticky", left: 0, zIndex: 2, background: ri % 2 ? "#071a07" : "#0b1d0b", padding: "8px 10px", color: "#F0EDE6", fontWeight: 800 }}>{adminClubFullDisplayName(row.name) || row.name || "—"}</td><td style={{ padding: "8px 10px", color: "#FDE68A", textAlign: "center", fontWeight: 900 }}>{clubRound4Score(row, official)}</td><td style={{ padding: "8px 10px", color: "rgba(240,237,230,.48)", fontSize: 11, whiteSpace: "nowrap" }}>{created(row)}</td><td style={{ padding: "8px 10px", color: "#86EFAC", textAlign: "center", fontWeight: 900 }}>{clubRound4FantasyPointsFor(row, official)}</td>{CLUB_TOUR4_FANTASY_FIELDS.map(f => { const fp = clubRound4FantasyFieldPointsFor(row, f.key, official); return <td key={f.key} style={{ padding: "8px 10px", color: "#F0EDE6", fontWeight: 800 }}>{getFantasy(row, f.key)}<div style={{ color: fp ? "#F59E0B" : "rgba(240,237,230,.30)", fontSize: 10 }}>+{fp}</div></td>; })}{CLUB_TOUR8_SCORE_MATCHES.map((_, i) => { const ans=getScore(row,i); const pred=parseRound4ScoreString(ans); const cor=parseRound4ScoreString(normalizeClubRound4OfficialMap(official).scores[String(i+1)]); const pts=pred&&cor?(calculateMatchPredictionPoints(pred.h,pred.a,cor.h,cor.a)||0):null; return <td key={i} style={{ padding: "8px 10px", color: pts ? "#86EFAC" : "#93C5FD", textAlign: "center", fontWeight: 900 }}>{ans}{pts!==null && <div style={{ color: pts ? "#F59E0B" : "rgba(240,237,230,.35)", fontSize: 10 }}>+{pts}</div>}</td>; })}{CLUB_TOUR8_YESNO_QUESTIONS.map((q, i) => { const ans=getYesNo(row,i); const ok=ans===normalizeClubRound4OfficialMap(official).yesno[String(i+1)]; return <td key={q} title={q} style={{ padding: "8px 10px", color: ok ? "#86EFAC" : ans === "Да" ? "#93C5FD" : ans === "Нет" ? "#FCA5A5" : "rgba(240,237,230,.35)", textAlign: "center", fontWeight: 900 }}>{ans}</td>; })}<td style={{ padding: "8px 10px", textAlign: "center" }}><button className="mini-btn" onClick={() => copyRow(row)}>копия</button></td></tr>)}</tbody></table><div style={{ padding: "10px 12px", color: "rgba(240,237,230,.42)", fontSize: 11 }}>Наведи на M1–M5 и Q1–Q10, чтобы увидеть текст матча/вопроса. В таблице показаны последние отправки по имени/нику.</div></div>
+      </>)}
+    </div>
+  );
+}
+
+
 function AdminOneOnOneHistoryPanel({ session, showToast }) {
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div style={{ background: "rgba(147,197,253,.06)", border: "1px solid rgba(147,197,253,.18)", borderRadius: 10, padding: 12, color: "rgba(240,237,230,.62)", fontSize: 12 }}>
-        Здесь история режима 1 на 1: составы, ответы 2-го тура и уже закрытый 3-й тур. Групповой этап навсегда заморожен на результатах 4-го тура (вкладка «🧾 4-й тур»). 5-й тур (1/8) закрыт и живёт во вкладке «🧾 5-й тур» — его счёт транслируется в парах 1/8. 6-й тур (1/4) закрыт и живёт во вкладке «🧾 6-й тур» — его счёт транслируется в парах 1/4. Новый 7-й тур (1/2) — отдельная форма, живёт во вкладке «🧾 7-й тур» и в «Все прогнозы», его счёт транслируется в парах 1/2.
+        Здесь история режима 1 на 1: составы, ответы 2-го тура и уже закрытый 3-й тур. Групповой этап навсегда заморожен на результатах 4-го тура (вкладка «🧾 4-й тур»). 5-й тур (1/8) закрыт и живёт во вкладке «🧾 5-й тур» — его счёт транслируется в парах 1/8. 6-й тур (1/4) закрыт и живёт во вкладке «🧾 6-й тур» — его счёт транслируется в парах 1/4. 7-й тур (1/2) закрыт и живёт во вкладке «🧾 7-й тур» — его счёт транслируется в парах 1/2. Новый 8-й тур (Финал + матч за 3-е место) — отдельная форма, живёт во вкладке «🧾 8-й тур» и в «Все прогнозы», его счёт транслируется в паре «Финал за 3-е место» и в паре «Финал».
       </div>
       <AdminFfcScoresPanel session={session} showToast={showToast} />
       <div style={{ height: 1, background: "rgba(255,255,255,.10)", margin: "2px 0" }} />
@@ -9449,7 +9938,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [round, setRound] = React.useState(() => mode === "current2" ? 3 : 1);
   const [roundGroup, setRoundGroup] = React.useState(() => mode === "current2" ? "R16" : "A");
   const [activeBracketAnchor, setActiveBracketAnchor] = React.useState("1/2");
-  const [predTourTab, setPredTourTab] = React.useState("7");
+  const [predTourTab, setPredTourTab] = React.useState("8");
 
   function goToBracketStage(stage) {
     setRoundGroup("R16");
@@ -9475,6 +9964,9 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
   const [round7Rows, setRound7Rows] = React.useState([]);
   const [round7Official, setRound7Official] = React.useState({ scores: {}, yesno: {} });
   const [round7Debug, setRound7Debug] = React.useState(null);
+  const [round8Rows, setRound8Rows] = React.useState([]);
+  const [round8Official, setRound8Official] = React.useState({ scores: {}, yesno: {} });
+  const [round8Debug, setRound8Debug] = React.useState(null);
 
   // Страховка от вечной загрузки: если Supabase/сеть подвисли у пользователя,
   // всё равно показываем вкладку с диагностикой, а не бесконечное "Загружаю группы…".
@@ -9513,15 +10005,16 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     return map;
   }, []);
 
-  React.useEffect(() => { loadCards(); loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); loadRound5PublicData(); loadRound6PublicData(); loadRound7PublicData(); }, [session?.access_token]);
+  React.useEffect(() => { loadCards(); loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); loadRound5PublicData(); loadRound6PublicData(); loadRound7PublicData(); loadRound8PublicData(); }, [session?.access_token]);
   React.useEffect(() => {
-    const h = () => { loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); loadRound5PublicData(); loadRound6PublicData(); loadRound7PublicData(); };
+    const h = () => { loadRound2PublicData(); loadRound3PublicData(); loadRound4PublicData(); loadRound5PublicData(); loadRound6PublicData(); loadRound7PublicData(); loadRound8PublicData(); };
     window.addEventListener("ffc-round2-official-updated", h);
     window.addEventListener("ffc-round3-official-updated", h);
     window.addEventListener("ffc-round4-official-updated", h);
     window.addEventListener("ffc-round5-official-updated", h);
     window.addEventListener("ffc-round6-official-updated", h);
     window.addEventListener("ffc-round7-official-updated", h);
+    window.addEventListener("ffc-round8-official-updated", h);
     return () => {
       window.removeEventListener("ffc-round2-official-updated", h);
       window.removeEventListener("ffc-round3-official-updated", h);
@@ -9529,6 +10022,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       window.removeEventListener("ffc-round5-official-updated", h);
       window.removeEventListener("ffc-round6-official-updated", h);
       window.removeEventListener("ffc-round7-official-updated", h);
+      window.removeEventListener("ffc-round8-official-updated", h);
     };
   }, [session?.access_token]);
 
@@ -9543,6 +10037,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       loadRound5PublicData();
       loadRound6PublicData();
       loadRound7PublicData();
+      loadRound8PublicData();
     };
     const onVisibility = () => { if (!document.hidden) refreshPublicTables(); };
     window.addEventListener("focus", refreshPublicTables);
@@ -9711,6 +10206,34 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     } catch (e) {
       setRound7Debug({ error: e?.message || String(e) });
       setRound7Official(readClubRound7OfficialLocal());
+    }
+  }
+
+  async function loadRound8PublicData() {
+    try {
+      const [answerRows, officialRowsFallback] = await Promise.all([
+        fetchAnon("ffc_round8_answers?select=id,name,fantasy,scores,yesno,answers,created_at,source&order=created_at.asc").catch(e => {
+          setRound8Debug({ answersError: e?.message || String(e) });
+          return [];
+        }),
+        fetchAnon("bonus_official_answers?select=*&question_id=like.round8_*&order=updated_at.desc.nullslast").catch(e => {
+          setRound8Debug({ fallbackError: e?.message || String(e) });
+          return [];
+        }),
+      ]);
+      setRound8Rows(Array.isArray(answerRows) ? answerRows : []);
+      const localMap = normalizeClubRound4OfficialMap(readClubRound8OfficialLocal());
+      const dbMap = buildClubRound4OfficialMap(Array.isArray(officialRowsFallback) ? officialRowsFallback : []);
+      const merged = normalizeClubRound4OfficialMap({
+        scores: { ...localMap.scores, ...(dbMap.scores || {}) },
+        yesno: { ...localMap.yesno, ...(dbMap.yesno || {}) },
+        fantasy: { ...localMap.fantasy, ...(dbMap.fantasy || {}) },
+      });
+      setRound8Official(merged);
+      writeClubRound8OfficialLocal(merged);
+    } catch (e) {
+      setRound8Debug({ error: e?.message || String(e) });
+      setRound8Official(readClubRound8OfficialLocal());
     }
   }
 
@@ -10262,8 +10785,9 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       "5": { official: round5Official, rows: round5Rows, scoreMatches: CLUB_TOUR5_SCORE_MATCHES, yesnoQuestions: CLUB_TOUR5_YESNO_QUESTIONS, stage: "1/8", desc: "Фэнтези, 5 точных счетов и 10 вопросов Да/Нет." },
       "6": { official: round6Official, rows: round6Rows, scoreMatches: CLUB_TOUR6_SCORE_MATCHES, yesnoQuestions: CLUB_TOUR6_YESNO_QUESTIONS, stage: "1/4", desc: "Фэнтези, 4 точных счёта и 10 вопросов Да/Нет." },
       "7": { official: round7Official, rows: round7Rows, scoreMatches: CLUB_TOUR7_SCORE_MATCHES, yesnoQuestions: CLUB_TOUR7_YESNO_QUESTIONS, stage: "1/2", desc: "Фэнтези (не больше 2 игроков из одной сборной), 2 точных счёта и 10 вопросов Да/Нет." },
+      "8": { official: round8Official, rows: round8Rows, scoreMatches: CLUB_TOUR8_SCORE_MATCHES, yesnoQuestions: CLUB_TOUR8_YESNO_QUESTIONS, stage: "Финал", desc: "Фэнтези (не больше 2 игроков из одной сборной), 2 точных счёта и 10 вопросов Да/Нет." },
     };
-    const tourNo = predTourData[predTourTab] ? predTourTab : "7";
+    const tourNo = predTourData[predTourTab] ? predTourTab : "8";
     const activeTour = predTourData[tourNo];
     const activeOfficial = activeTour.official;
     const activeRows = activeTour.rows;
@@ -10292,7 +10816,7 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
     return (
       <div>
         <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 14 }}>
-          {["7", "6", "5"].map(t => (
+          {["8", "7", "6", "5"].map(t => (
             <button key={t} onClick={() => setPredTourTab(t)} style={{
               padding: "8px 14px", borderRadius: 7, cursor: "pointer",
               border: tourNo === t ? "1px solid rgba(245,158,11,.75)" : "1px solid rgba(255,255,255,.12)",
@@ -10603,6 +11127,27 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       return 0;
     }
 
+    // То же самое, но для финала и матча за 3-е место — счёт 8-го тура.
+    const latestRound8ForFin = buildLatestClubRound4Rows(round8Rows);
+    const latestRound8ByFirstWord = {};
+    Object.entries(latestRound8ForFin).forEach(([key, row]) => {
+      const firstWord = key.split(" ")[0];
+      if (firstWord && !latestRound8ByFirstWord[firstWord]) latestRound8ByFirstWord[firstWord] = row;
+    });
+    function round8ScoreFor(member) {
+      if (!member) return null;
+      const nameCandidates = [member.name, member.round2Row?.name].filter(Boolean);
+      for (const c of nameCandidates) {
+        const key = clubRound2NameKey(c);
+        if (latestRound8ForFin[key]) return clubRound4Score(latestRound8ForFin[key], round8Official);
+      }
+      for (const c of nameCandidates) {
+        const firstWord = clubRound2NameKey(c).split(" ")[0];
+        if (firstWord && latestRound8ByFirstWord[firstWord]) return clubRound4Score(latestRound8ByFirstWord[firstWord], round8Official);
+      }
+      return 0;
+    }
+
     function scoreForMemberRound(member, roundNo) {
       if (!member) return { score: 0, active: false };
       if (Number(roundNo) === 1) return { score: clubRound2Score(member.round2Row, round2Official), active: officialCountR1 > 0 };
@@ -10691,7 +11236,6 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       const winner = r16MatchWinners[n - 1];
       return { label: `Победитель 1/8 М${n}`, row: winner || null, future: !winner };
     };
-    const w12 = (n) => futureSlot(`Победитель 1/2 М${n}`);
     // Важно: победители матчей 7 и 8 НЕ сводятся между собой в 1/4.
     // Матч 7 — это 2A–2B, матч 8 — это 2C–2D; разводим их в разные четверти сетки.
     const liveQFPairs = [[w18(1), w18(8)], [w18(2), w18(7)], [w18(3), w18(6)], [w18(4), w18(5)]];
@@ -10710,7 +11254,34 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
       return { label: `Победитель 1/4 М${n}`, row: winner || null, future: !winner };
     };
     const liveSFPairs = [[w14(1), w14(4)], [w14(2), w14(3)]];
+
+    // Победитель/проигравший каждого матча 1/2 — по счёту 7-го тура (см. round7ScoreFor выше).
+    // Победители идут в финал, проигравшие — в матч за 3-е место.
+    const sfMatchWinners = liveSFPairs.map(([left, right]) => {
+      const L = slotPlayer(left);
+      const R = slotPlayer(right);
+      const Ls7 = round7ScoreFor(L);
+      const Rs7 = round7ScoreFor(R);
+      if (Ls7 === null || Rs7 === null || Ls7 === Rs7) return null;
+      return Ls7 > Rs7 ? L : R;
+    });
+    const sfMatchLosers = liveSFPairs.map(([left, right], i) => {
+      const L = slotPlayer(left);
+      const R = slotPlayer(right);
+      const winner = sfMatchWinners[i];
+      if (!winner) return null;
+      return winner === L ? R : L;
+    });
+    const w12 = (n) => {
+      const winner = sfMatchWinners[n - 1];
+      return { label: `Победитель 1/2 М${n}`, row: winner || null, future: !winner };
+    };
+    const w3rd = (n) => {
+      const loser = sfMatchLosers[n - 1];
+      return { label: `Проигравший 1/2 М${n}`, row: loser || null, future: !loser };
+    };
     const liveFinalPairs = [[w12(1), w12(2)]];
+    const liveThirdPairs = [[w3rd(1), w3rd(2)]];
 
     const MatchRow = ({ A, B, small = false }) => {
       if (!A || !B) return null;
@@ -10853,23 +11424,24 @@ function PublicClubGroupsBlock({ mode = "groups", session = null, showToast = ()
               const stageMap = {
                 "1/4": ["1/4 финала", liveQFPairs, "qf"],
                 "1/2": ["1/2 финала", liveSFPairs, "sf"],
-                "Финал": ["Финал", liveFinalPairs, "fin"],
+                "Финал": ["Финал", [...liveThirdPairs, ...liveFinalPairs], "fin"],
               };
               const [stageTitle, pairs, key] = stageMap[activeBracketAnchor] || stageMap["1/4"];
+              const finPairTitles = ["Финал за 3-е место", "Финал"];
               return (
                 <div style={{ padding: "0 14px 14px" }}>
                   <div style={{ border: "1px solid rgba(245,158,11,.18)", background: "rgba(245,158,11,.045)", borderRadius: 12, overflow: "hidden" }}>
-                    <div style={{ padding: 10, display: "grid", gridTemplateColumns: key === "sf" ? "1fr" : "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
+                    <div style={{ padding: 10, display: "grid", gridTemplateColumns: (key === "sf" || key === "fin") ? "1fr" : "repeat(auto-fit, minmax(260px, 1fr))", gap: 8 }}>
                       {pairs.map(([left, right], i) => {
                         const L = slotPlayer(left);
                         const R = slotPlayer(right);
-                        const L6 = key === "qf" ? round6ScoreFor(L) : key === "sf" ? round7ScoreFor(L) : null;
-                        const R6 = key === "qf" ? round6ScoreFor(R) : key === "sf" ? round7ScoreFor(R) : null;
-                        const hasQfScore = (key === "qf" || key === "sf") && (L6 !== null || R6 !== null);
-                        const scoreTourLabel = key === "qf" ? "6-го" : key === "sf" ? "7-го" : "";
+                        const L6 = key === "qf" ? round6ScoreFor(L) : key === "sf" ? round7ScoreFor(L) : key === "fin" ? round8ScoreFor(L) : null;
+                        const R6 = key === "qf" ? round6ScoreFor(R) : key === "sf" ? round7ScoreFor(R) : key === "fin" ? round8ScoreFor(R) : null;
+                        const hasQfScore = (key === "qf" || key === "sf" || key === "fin") && (L6 !== null || R6 !== null);
+                        const scoreTourLabel = key === "qf" ? "6-го" : key === "sf" ? "7-го" : key === "fin" ? "8-го" : "";
                         return (
                         <div key={`${key}_${i}`} style={{ padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.14)", border: "1px solid rgba(255,255,255,.07)" }}>
-                          <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, fontWeight: 900, marginBottom: 5 }}>Матч {stageTitle.replace(' финала','')} №{i + 1}</div>
+                          <div style={{ color: "rgba(240,237,230,.42)", fontSize: 10, fontWeight: 900, marginBottom: 5 }}>{key === "fin" ? finPairTitles[i] : `Матч ${stageTitle.replace(' финала','')} №${i + 1}`}</div>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "center" }}>
                             <div style={{ textAlign: "right" }}>
                               <div style={{ color: "#FDE68A", fontSize: 10, fontWeight: 900 }}>{slotLabel(left)}</div>
@@ -14408,6 +14980,10 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
   const [qfPairHitsLoading, setQFPairHitsLoading] = React.useState(false);
   const [sfPairHits, setSFPairHits] = React.useState([]);
   const [sfPairHitsLoading, setSFPairHitsLoading] = React.useState(false);
+  const [thirdPairHits, setThirdPairHits] = React.useState([]);
+  const [thirdPairHitsLoading, setThirdPairHitsLoading] = React.useState(false);
+  const [finalPairHits, setFinalPairHits] = React.useState([]);
+  const [finalPairHitsLoading, setFinalPairHitsLoading] = React.useState(false);
 
   // Локальные хелперы для этой вкладки. Раньше блок "Кто полностью угадал пары 1/16"
   // вызывал normalizeMatchId/participantKeys из другой области видимости и падал.
@@ -14531,7 +15107,7 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     return v;
   }
 
-  React.useEffect(() => { loadPairs(); loadR16PairHits(); loadR8PairHits(); loadQFPairHits(); loadSFPairHits(); }, []);
+  React.useEffect(() => { loadPairs(); loadR16PairHits(); loadR8PairHits(); loadQFPairHits(); loadSFPairHits(); loadThirdPairHits(); loadFinalPairHits(); }, []);
 
   async function loadPairs() {
     setLoading(true);
@@ -14758,6 +15334,29 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
       home: adminResolveBracketTeam(hFrom, hSide, tables, thirds, playoffScores || {}, playoffPens || {}),
       away: adminResolveBracketTeam(aFrom, aSide, tables, thirds, playoffScores || {}, playoffPens || {}),
     };
+  }
+
+  function adminBracketMatchTeamsFromPrediction(bracket, groupScores, playoffScores, playoffPens) {
+    if (!bracket) return null;
+    const tables = {};
+    ALL_GROUPS.forEach(g => { tables[g] = calcGroupTable(g, groupScores || {}, {}); });
+    const thirds = getThirdRanking(tables, {});
+    const hFrom = bracket.home_from.replace("_loser", "");
+    const aFrom = bracket.away_from.replace("_loser", "");
+    const hSide = bracket.home_from.includes("_loser") ? "loser" : "win";
+    const aSide = bracket.away_from.includes("_loser") ? "loser" : "win";
+    return {
+      home: adminResolveBracketTeam(hFrom, hSide, tables, thirds, playoffScores || {}, playoffPens || {}),
+      away: adminResolveBracketTeam(aFrom, aSide, tables, thirds, playoffScores || {}, playoffPens || {}),
+    };
+  }
+
+  function adminFinalTeamsFromPrediction(groupScores, playoffScores, playoffPens) {
+    return adminBracketMatchTeamsFromPrediction(FINAL_MATCH, groupScores, playoffScores, playoffPens);
+  }
+
+  function adminThirdTeamsFromPrediction(groupScores, playoffScores, playoffPens) {
+    return adminBracketMatchTeamsFromPrediction(THIRD_MATCH, groupScores, playoffScores, playoffPens);
   }
 
   async function loadR16PairHits() {
@@ -15252,6 +15851,134 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     }
   }
 
+  // Тот же расчёт, но для одиночного матча (Финал/За 3-е место) — им не нужен
+  // поиск матча по id в массиве стадии, поэтому teamsFn уже сам знает про свой матч.
+  async function loadSingleBracketMatchPairHits(matchId, teamsFn, setHits, setLoadingFn, stageLabel) {
+    setLoadingFn(true);
+    try {
+      const mid = normalizeMatchId(matchId);
+
+      const [profiles, statuses, predRows, payments, officialRows] = await Promise.all([
+        fetchAllAdminRows("profiles?select=*"),
+        fetchAllAdminRows("participant_status?select=*").catch(() => []),
+        fetchAllAdminRows("predictions?select=*"),
+        fetchAllAdminRows("payment_requests?select=*").catch(() => []),
+        fetchAllAdminRows("playoff_official_pairs?select=match_id,home_team,away_team")
+      ]);
+
+      const profileMap = {};
+      (profiles || []).forEach(p => {
+        participantKeys(p).forEach(k => {
+          profileMap[String(k)] = publicDisplayNameOverride(adminProfileName(p) || String(k).slice(0, 8));
+        });
+      });
+
+      const pMap = {};
+      function putPredictionForUser(uid, midRaw, row) {
+        const mid2 = normalizeMatchId(midRaw);
+        if (!uid || !mid2) return;
+        const parsed = adminScoreFromPredictionRow(row);
+        const h = parsed?.h ?? row?.h ?? row?.home ?? row?.home_score;
+        const a = parsed?.a ?? row?.a ?? row?.away ?? row?.away_score;
+        if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+        if (!pMap[uid]) pMap[uid] = {};
+        pMap[uid][mid2] = {
+          h,
+          a,
+          pen: parsed?.pen || row?.penalty_winner || row?.penaltyWinner || row?.predicted_winner || row?.pen || null,
+        };
+      }
+
+      (predRows || []).forEach(pr => {
+        const midRaw = pr?.match_id ?? pr?.match ?? pr?.game_id ?? pr?.fixture_id ?? pr?.id;
+        rowUserKeys(pr).forEach(uid => putPredictionForUser(uid, midRaw, pr));
+      });
+
+      const dummyBonusMap = {};
+      (profiles || []).forEach(u => addLegacyScoresToMaps(u, participantKeys(u), pMap, dummyBonusMap));
+      (statuses || []).forEach(st => {
+        const uid = String(st?.user_id || st?.profile_id || st?.id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid };
+        addLegacyScoresToMaps(st, participantKeys(u), pMap, dummyBonusMap);
+      });
+      (payments || []).forEach(pay => {
+        const uid = String(pay?.user_id || pay?.profile_id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid, email: pay?.email };
+        addLegacyScoresToMaps(pay, participantKeys(u), pMap, dummyBonusMap);
+      });
+
+      Object.keys(pMap).forEach(uid => {
+        if (!profileMap[uid]) profileMap[uid] = `Участник ${String(uid).slice(0, 6)}`;
+      });
+
+      const official = (officialRows || [])
+        .filter(r => normalizeMatchId(r.match_id) === mid && (r.home_team || r.away_team))
+        .map(r => ({
+          match_id: normalizeMatchId(r.match_id),
+          home: String(r.home_team || "").trim(),
+          away: String(r.away_team || "").trim()
+        }))
+        .filter(r => adminTeamKey(r.home) && adminTeamKey(r.away));
+
+      function mapsFromUserPrediction(uid) {
+        const rows = pMap[uid] || {};
+        const groupScores = {};
+        const playoffScores = {};
+        const playoffPens = {};
+        Object.entries(rows).forEach(([rawMid, val]) => {
+          const mid2 = normalizeMatchId(rawMid);
+          if (!mid2 || !val) return;
+          const h = val.h ?? val.home_score ?? val.home;
+          const a = val.a ?? val.away_score ?? val.away;
+          if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+          const row = { h, a, pen: val.pen || val.penalty_winner || val.predicted_winner || null };
+          if (ALL_GROUP_MATCH_IDS.has(mid2)) {
+            groupScores[mid2] = row;
+          } else {
+            playoffScores[mid2] = row;
+            if (row.pen) playoffPens[mid2] = String(row.pen);
+          }
+        });
+        return { groupScores, playoffScores, playoffPens };
+      }
+
+      function predictedPairForUser(uid) {
+        const maps = mapsFromUserPrediction(uid);
+        const teams = teamsFn(maps.groupScores, maps.playoffScores, maps.playoffPens);
+        return { home: teams?.home?.team || "", away: teams?.away?.team || "" };
+      }
+
+      const out = official.map(off => {
+        const names = new Set();
+        Object.keys(pMap).forEach(uid => {
+          const pair = predictedPairForUser(uid);
+          if (adminSamePairUnordered(pair.home, pair.away, off.home, off.away)) {
+            names.add(profileMap[uid] || `Участник ${uid.slice(0, 6)}`);
+          }
+        });
+        return { ...off, players: Array.from(names).sort((a, b) => a.localeCompare(b, "ru")) };
+      });
+
+      setHits(out);
+      const total = out.reduce((sum, r) => sum + ((r.players || []).length), 0);
+      showToast(`✓ Проверка пары "${stageLabel}" обновлена: ${total} совпадений`);
+    } catch (e) {
+      console.error(`loadSingleBracketMatchPairHits (${stageLabel}) failed`, e);
+      showToast(`Ошибка списка угаданных пар "${stageLabel}": ` + String(e?.message || e).slice(0, 120));
+      setHits([]);
+    } finally {
+      setLoadingFn(false);
+    }
+  }
+
+  async function loadThirdPairHits() {
+    await loadSingleBracketMatchPairHits(THIRD_MATCH.id, adminThirdTeamsFromPrediction, setThirdPairHits, setThirdPairHitsLoading, "за 3-е место");
+  }
+
+  async function loadFinalPairHits() {
+    await loadSingleBracketMatchPairHits(FINAL_MATCH.id, adminFinalTeamsFromPrediction, setFinalPairHits, setFinalPairHitsLoading, "финал");
+  }
+
 
 
   function r16PairHitsPlayerRows() {
@@ -15427,6 +16154,52 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     const lines = [];
     lines.push('Кто полностью угадал пары 1/2');
     sfPairHitsPlayerRows().forEach(row => lines.push(`${row.name} — ${row.pairs.length} пар(ы)\n${row.pairs.join('; ')}`));
+    const txt = lines.join('\n\n');
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(txt).then(() => showToast('Список скопирован')).catch(() => showToast('Не удалось скопировать'));
+    } else {
+      showToast('Clipboard недоступен');
+    }
+  }
+
+  // Общие хелперы для одиночных матчей (Финал / За 3-е место) — там всегда одна пара,
+  // поэтому не нужно дублировать r16/r8/qf/sf-style функции под каждую стадию отдельно.
+  function bracketPairHitsPlayerRows(hits) {
+    const map = new Map();
+    (hits || []).forEach(row => {
+      const pairLabel = `${row.home} — ${row.away}`;
+      (row.players || []).forEach(name => {
+        const key = String(name || '').trim();
+        if (!key) return;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(pairLabel);
+      });
+    });
+    return Array.from(map.entries())
+      .map(([name, pairs]) => ({ name, pairs: pairs.sort((a, b) => a.localeCompare(b, 'ru')) }))
+      .sort((a, b) => b.pairs.length - a.pairs.length || a.name.localeCompare(b.name, 'ru'));
+  }
+
+  function downloadBracketPairHitsCsvAdmin(hits, filename, stageLabel) {
+    const rows = [];
+    rows.push(['Матч', 'Реальная пара', 'Кто полностью угадал']);
+    (hits || []).forEach(row => rows.push([
+      row.match_id,
+      `${row.home} — ${row.away}`,
+      (row.players && row.players.length) ? row.players.join(', ') : '—'
+    ]));
+    rows.push([]);
+    rows.push(['Игрок', 'Кол-во угаданных пар', 'Какие пары']);
+    bracketPairHitsPlayerRows(hits).forEach(row => rows.push([row.name, row.pairs.length, row.pairs.join(' | ')]));
+    const csv = rows.map(row => row.map(csvCellAdmin).join(';')).join('\n');
+    downloadTextFileAdmin(filename, '﻿' + csv);
+    showToast(`CSV по угаданной паре "${stageLabel}" готов`);
+  }
+
+  function copyBracketPairHitsTextAdmin(hits, headerText) {
+    const lines = [];
+    lines.push(headerText);
+    bracketPairHitsPlayerRows(hits).forEach(row => lines.push(`${row.name} — ${row.pairs.length} пар(ы)\n${row.pairs.join('; ')}`));
     const txt = lines.join('\n\n');
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(txt).then(() => showToast('Список скопирован')).catch(() => showToast('Не удалось скопировать'));
@@ -15649,6 +16422,72 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
           <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать по матчам</summary>
           <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
             {(sfPairHits || []).map(row => (
+              <div key={row.match_id} style={{ fontSize: 11, color: "rgba(240,237,230,.72)", background: "rgba(147,197,253,.05)", border: "1px solid rgba(147,197,253,.12)", borderRadius: 6, padding: 7 }}>
+                <b style={{ color: "#86EFAC" }}>{row.home} — {row.away}</b><br />
+                <span>{(row.players && row.players.length) ? row.players.join(", ") : "никто"}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(253,230,138,.22)", borderRadius: 8, padding: 12, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          <b style={{ color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 15 }}>🔎 Кто угадал матч за 3-е место</b>
+          <span className="tag ty">{thirdPairHits.reduce((sum, r) => sum + ((r.players || []).length), 0)} совпадений</span>
+          <button className="mini-btn" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadThirdPairHits} disabled={thirdPairHitsLoading}>{thirdPairHitsLoading ? "…" : "обновить"}</button>
+          <button className="mini-btn green" style={{ fontSize: 11 }} onClick={() => copyBracketPairHitsTextAdmin(thirdPairHits, "Кто угадал пару за 3-е место")}>копировать текст для поста</button>
+          <button className="mini-btn" style={{ fontSize: 11 }} onClick={() => downloadBracketPairHitsCsvAdmin(thirdPairHits, "admin_third_full_pair_hits.csv", "за 3-е место")}>CSV</button>
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(240,237,230,.55)", marginBottom: 10 }}>
+          Пара в матче за 3-е место определяется через победителей его же прогноза на оба матча 1/2 (проигравшие выходят на матч за 3-е место).
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
+          {bracketPairHitsPlayerRows(thirdPairHits).map(row => (
+            <div key={row.name} style={{ background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 6, padding: 8 }}>
+              <div style={{ color: "#FDE68A", fontWeight: 900, fontSize: 12 }}>{row.name} — {row.pairs.length} пар(ы)</div>
+              <div style={{ color: "#F0EDE6", fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>{row.pairs.join("; ")}</div>
+            </div>
+          ))}
+          {!bracketPairHitsPlayerRows(thirdPairHits).length && <div style={{ color: "rgba(240,237,230,.4)", fontSize: 11 }}>Совпадений пока нет.</div>}
+        </div>
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать по матчам</summary>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
+            {(thirdPairHits || []).map(row => (
+              <div key={row.match_id} style={{ fontSize: 11, color: "rgba(240,237,230,.72)", background: "rgba(147,197,253,.05)", border: "1px solid rgba(147,197,253,.12)", borderRadius: 6, padding: 7 }}>
+                <b style={{ color: "#86EFAC" }}>{row.home} — {row.away}</b><br />
+                <span>{(row.players && row.players.length) ? row.players.join(", ") : "никто"}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(253,230,138,.22)", borderRadius: 8, padding: 12, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          <b style={{ color: "#FDE68A", fontFamily: "Oswald,sans-serif", fontSize: 15 }}>🔎 Кто угадал финал</b>
+          <span className="tag ty">{finalPairHits.reduce((sum, r) => sum + ((r.players || []).length), 0)} совпадений</span>
+          <button className="mini-btn" style={{ marginLeft: "auto", fontSize: 11 }} onClick={loadFinalPairHits} disabled={finalPairHitsLoading}>{finalPairHitsLoading ? "…" : "обновить"}</button>
+          <button className="mini-btn green" style={{ fontSize: 11 }} onClick={() => copyBracketPairHitsTextAdmin(finalPairHits, "Кто угадал финал")}>копировать текст для поста</button>
+          <button className="mini-btn" style={{ fontSize: 11 }} onClick={() => downloadBracketPairHitsCsvAdmin(finalPairHits, "admin_final_full_pair_hits.csv", "финал")}>CSV</button>
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(240,237,230,.55)", marginBottom: 10 }}>
+          Пара в финале определяется через победителей его же прогноза на оба матча 1/2, а не напрямую из групп.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
+          {bracketPairHitsPlayerRows(finalPairHits).map(row => (
+            <div key={row.name} style={{ background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 6, padding: 8 }}>
+              <div style={{ color: "#FDE68A", fontWeight: 900, fontSize: 12 }}>{row.name} — {row.pairs.length} пар(ы)</div>
+              <div style={{ color: "#F0EDE6", fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>{row.pairs.join("; ")}</div>
+            </div>
+          ))}
+          {!bracketPairHitsPlayerRows(finalPairHits).length && <div style={{ color: "rgba(240,237,230,.4)", fontSize: 11 }}>Совпадений пока нет.</div>}
+        </div>
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", color: "#93C5FD", fontSize: 11 }}>Показать по матчам</summary>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
+            {(finalPairHits || []).map(row => (
               <div key={row.match_id} style={{ fontSize: 11, color: "rgba(240,237,230,.72)", background: "rgba(147,197,253,.05)", border: "1px solid rgba(147,197,253,.12)", borderRadius: 6, padding: 7 }}>
                 <b style={{ color: "#86EFAC" }}>{row.home} — {row.away}</b><br />
                 <span>{(row.players && row.players.length) ? row.players.join(", ") : "никто"}</span>
@@ -17112,7 +17951,7 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
         <span className="tag tr">Только для организатора</span>
       </div>
       <div className="tabs">
-        {[["admin_matches", "🏟 Матчи"], ["admin_bonus", "🧠 Бонусы"], ["admin_playoff_pairs", "⚔ Плей-офф пары"], ["admin_ffc_scores", "📚 История"], ["admin_round4_answers", "🧾 4-й тур"], ["admin_round5_answers", "🧾 5-й тур"], ["admin_round6_answers", "🧾 6-й тур"], ["admin_round7_answers", "🧾 7-й тур"]].map(([k, l]) => (
+        {[["admin_matches", "🏟 Матчи"], ["admin_bonus", "🧠 Бонусы"], ["admin_playoff_pairs", "⚔ Плей-офф пары"], ["admin_ffc_scores", "📚 История"], ["admin_round4_answers", "🧾 4-й тур"], ["admin_round5_answers", "🧾 5-й тур"], ["admin_round6_answers", "🧾 6-й тур"], ["admin_round7_answers", "🧾 7-й тур"], ["admin_round8_answers", "🧾 8-й тур"]].map(([k, l]) => (
           <button key={k} className={`tab${adminTab === k ? " on" : ""}`} style={{ minWidth: 100 }} onClick={() => setAdminTab(k)}>{l}</button>
         ))}
       </div>
@@ -17125,6 +17964,7 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
       {adminTab === "admin_round5_answers" && <AdminRound5AnswersPanel session={session} showToast={showToast} />}
       {adminTab === "admin_round6_answers" && <AdminRound6AnswersPanel session={session} showToast={showToast} />}
       {adminTab === "admin_round7_answers" && <AdminRound7AnswersPanel session={session} showToast={showToast} />}
+      {adminTab === "admin_round8_answers" && <AdminRound8AnswersPanel session={session} showToast={showToast} />}
 
       {/* ── СТАРЫЕ ВКЛАДКИ СКРЫТЫ — код сохранён но не рендерится ── */}
       {false && <>
