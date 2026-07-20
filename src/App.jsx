@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-top-scorer-official-answer-clean";
+const FFC_APP_BUILD = "2026-07-17-top-scorer-per-name-highlight";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -13214,22 +13214,47 @@ CREATE POLICY "official_results_admin_write"
         // Для «Топ-3 бомбардира» в correct копится куча старых алиасов/вариантов
         // написания (в т.ч. чужих игроков из ранних кликов «+ зачёт») — в официальном
         // ответе показываем только тех троих, кому реально назначено место (ranks).
-        function bonusOfficialDisplayStr(q, bom) {
-          if (!bom) return "—";
+        // Возвращает { ok, no } отдельно, чтобы «не случится» никогда не красили
+        // зелёным (только сам верный ответ) — раньше вся строка шла одним цветом.
+        function bonusOfficialDisplayParts(q, bom) {
+          if (!bom) return { ok: "—", no: "" };
           if (q.id === "top_scorers") {
             const ranks = (bom.answer && typeof bom.answer === "object" && !Array.isArray(bom.answer) && bom.answer.ranks) || null;
             if (ranks && Object.keys(ranks).length) {
               const correctList = bonusOfficialCorrectList(bom.answer);
-              return Object.entries(ranks)
+              const ok = Object.entries(ranks)
                 .sort((a, b) => b[1] - a[1])
                 .map(([key, pts]) => {
                   const displayName = correctList.find(n => normalizeBonusAnswer(n) === key) || key;
                   return `${displayName} (${pts})`;
                 })
                 .join(", ");
+              return { ok, no: "" };
             }
+            return { ok: "—", no: "" };
           }
-          return bonusOfficialDisplayAnswer(bom);
+          if (isBonusNoHappenRow(bom)) return { ok: "", no: "Не случится" };
+          const ok = bonusOfficialCorrectList(bom.answer).join(", ");
+          const no = bonusOfficialImpossibleList(bom.answer).join(", ");
+          return { ok: ok || (no ? "" : "—"), no };
+        }
+        // Для «Топ-3 бомбардира» подсвечиваем зелёным только те имена в ответе
+        // участника, которые реально входят в число призовых троих (ranks) —
+        // остальные (даже если формально «сработавший вариант») остаются белыми.
+        function renderBonusAnswerNames(q, ans, bom, ansStr, baseColor) {
+          if (q.id !== "top_scorers") return ansStr;
+          const ranks = (bom?.answer && typeof bom.answer === "object" && !Array.isArray(bom.answer) && bom.answer.ranks) || null;
+          const names = Array.isArray(ans) ? ans.filter(Boolean) : bonusAnswerList(ans);
+          if (!ranks || !names.length) return ansStr;
+          return names.map((name, idx) => {
+            const isWinner = (ranks[normalizeBonusAnswer(name)] || 0) > 0;
+            return (
+              <React.Fragment key={idx}>
+                <span style={{ color: isWinner ? "#86EFAC" : baseColor, fontWeight: isWinner ? 800 : 400 }}>{name}</span>
+                {idx < names.length - 1 ? ", " : ""}
+              </React.Fragment>
+            );
+          });
         }
         const qStickyTh = (extra = {}) => ({
           padding: isNarrowViewport ? "7px 5px" : "8px 6px",
@@ -13306,7 +13331,7 @@ CREATE POLICY "official_results_admin_write"
                   {BONUS_QS.map((q, ri) => {
                     const bom = bonusOfficialMap[String(q.id)];
                     const offAns = bom?.answer;
-                    const offStr = bom ? bonusOfficialDisplayStr(q, bom) : "—";
+                    const offParts = bonusOfficialDisplayParts(q, bom);
                     const rowBg = ri % 2 === 0 ? "#0c1f0c" : "#071a07";
                     return (
                       <tr key={q.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
@@ -13324,17 +13349,22 @@ CREATE POLICY "official_results_admin_write"
                         }}>
                           <div style={{ fontSize: 10, color: "rgba(240,237,230,.42)", marginBottom: 4 }}>#{ri + 1}</div>
                           <div style={{ fontSize: 12, color: "#F0EDE6", fontWeight: 800, lineHeight: 1.25, whiteSpace: "normal", overflowWrap: "anywhere" }}>{q.text}</div>
-                          <div style={{ marginTop: 6, fontSize: 11, color: "#86EFAC", fontWeight: 900, lineHeight: 1.2, whiteSpace: "normal", overflowWrap: "anywhere" }}>Ответ: {offStr}</div>
+                          <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.2, whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                            {offParts.ok && <span style={{ color: "#86EFAC", fontWeight: 900 }}>Ответ: {offParts.ok}</span>}
+                            {offParts.ok && offParts.no && " · "}
+                            {offParts.no && <span style={{ color: "rgba(240,237,230,.35)" }}>не случится: {offParts.no}</span>}
+                          </div>
                         </td>
                         {participants.map(u => {
                           const ans = bonusByUser[String(u.id || "")]?.[String(q.id)];
                           if (ans === undefined || ans === null) return <td key={u.id} style={{ padding: "5px 4px", textAlign: "center", color: "rgba(240,237,230,.2)", minWidth: mobileParticipantW, width: mobileParticipantW }}>—</td>;
                           const ansStr = Array.isArray(ans) ? ans.join(", ") : String(ans);
                           const { correct, pts: cellPts } = bonusCellInfo(q, ans, bom);
+                          const baseColor = correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6";
                           return (
                             <td key={u.id} style={{ padding: "5px 4px", textAlign: "center", minWidth: mobileParticipantW, width: mobileParticipantW, background: rowBg }}>
-                              <span style={{ fontSize: 11, color: correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6", fontWeight: correct ? 800 : 500, overflowWrap: "anywhere", wordBreak: "break-word", lineHeight: 1.15 }}>
-                                {ansStr}
+                              <span style={{ fontSize: 11, color: baseColor, fontWeight: correct ? 800 : 500, overflowWrap: "anywhere", wordBreak: "break-word", lineHeight: 1.15 }}>
+                                {renderBonusAnswerNames(q, ans, bom, ansStr, baseColor)}
                               </span>
                               {correct !== null && (
                                 <div style={{ fontSize: 10, color: correct ? "#86EFAC" : "#FCA5A5", marginTop: 2 }}>{correct ? `+${cellPts}` : "0"}</div>
@@ -13369,13 +13399,17 @@ CREATE POLICY "official_results_admin_write"
               {BONUS_QS.map((q, ri) => {
                 const bom = bonusOfficialMap[String(q.id)];
                 const offAns = bom?.answer;
-                const offStr = bom ? bonusOfficialDisplayStr(q, bom) : "—";
+                const offParts = bonusOfficialDisplayParts(q, bom);
                 const rowBg = ri % 2 === 0 ? "#0c1f0c" : "#071a07";
                 return (
                   <tr key={q.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
                     <td style={{ padding: "6px", fontSize: 11, color: "rgba(240,237,230,.4)", position: isNarrowViewport ? "static" : "sticky", left: isNarrowViewport ? "auto" : 0, background: rowBg, zIndex: isNarrowViewport ? 1 : 2, whiteSpace: "nowrap", minWidth: qNumW, width: qNumW }}>{ri+1}</td>
                     <td style={{ padding: "6px", fontSize: 12, color: "#F0EDE6", position: isNarrowViewport ? "static" : "sticky", left: isNarrowViewport ? "auto" : qNumW, background: rowBg, zIndex: isNarrowViewport ? 1 : 2, maxWidth: qTextW, whiteSpace: "normal", lineHeight: 1.35, minWidth: qTextW, width: qTextW }}>{q.text}</td>
-                    <td style={{ padding: "6px", fontSize: 12, color: "#86EFAC", position: isNarrowViewport ? "static" : "sticky", left: isNarrowViewport ? "auto" : qNumW + qTextW, background: rowBg, zIndex: isNarrowViewport ? 1 : 2, textAlign: "center", fontWeight: 700, boxShadow: isNarrowViewport ? "none" : "2px 0 4px rgba(0,0,0,.3)", whiteSpace: "normal", overflowWrap: "anywhere", minWidth: qAnswerW, width: qAnswerW }}>{offStr}</td>
+                    <td style={{ padding: "6px", fontSize: 12, position: isNarrowViewport ? "static" : "sticky", left: isNarrowViewport ? "auto" : qNumW + qTextW, background: rowBg, zIndex: isNarrowViewport ? 1 : 2, textAlign: "center", fontWeight: 700, boxShadow: isNarrowViewport ? "none" : "2px 0 4px rgba(0,0,0,.3)", whiteSpace: "normal", overflowWrap: "anywhere", minWidth: qAnswerW, width: qAnswerW }}>
+                      {offParts.ok && <span style={{ color: "#86EFAC" }}>{offParts.ok}</span>}
+                      {offParts.ok && offParts.no && " · "}
+                      {offParts.no && <span style={{ color: "rgba(240,237,230,.4)", fontWeight: 400 }}>не случится: {offParts.no}</span>}
+                    </td>
                     {participants.map(u => {
                       const ans = bonusByUser[String(u.id || "")]?.[String(q.id)];
                       if (ans === undefined || ans === null) return <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", color: "rgba(240,237,230,.2)", minWidth: qParticipantW, width: qParticipantW }}>—</td>;
@@ -13383,10 +13417,11 @@ CREATE POLICY "official_results_admin_write"
                       // Во всех бонусных вопросах «+ зачёт» фиксирует уже случившийся исход,
                       // но остальные варианты до финального закрытия остаются в ожидании.
                       const { correct, pts: cellPts } = bonusCellInfo(q, ans, bom);
+                      const baseColor = correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6";
                       return (
                         <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", minWidth: qParticipantW, width: qParticipantW }}>
-                          <span style={{ fontSize: 12, color: correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6", fontWeight: correct ? 700 : 400, overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                            {ansStr}
+                          <span style={{ fontSize: 12, color: baseColor, fontWeight: correct ? 700 : 400, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                            {renderBonusAnswerNames(q, ans, bom, ansStr, baseColor)}
                           </span>
                           {correct !== null && (
                             <div style={{ fontSize: 10, color: correct ? "#86EFAC" : "#FCA5A5" }}>{correct ? `+${cellPts}` : "0"}</div>
