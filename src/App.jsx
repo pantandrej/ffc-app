@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-medals-fold-into-playoff";
+const FFC_APP_BUILD = "2026-07-17-top-scorer-rank-in-questions-table";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -9971,7 +9971,9 @@ function bonusOfficialCorrectList(officialAnswer) {
     if (Array.isArray(officialAnswer.correct)) return officialAnswer.correct;
     if (Array.isArray(officialAnswer.ok)) return officialAnswer.ok;
     if (Array.isArray(officialAnswer.hit)) return officialAnswer.hit;
-    if (officialAnswer.answer !== undefined) return bonusAnswerList(officialAnswer.answer);
+    // officialAnswer может быть целой строкой (row.answer вложен) — рекурсия,
+    // а не bonusAnswerList, иначе объекты вида {correct,impossible,ranks} теряются.
+    if (officialAnswer.answer !== undefined) return bonusOfficialCorrectList(officialAnswer.answer);
   }
   return bonusAnswerList(officialAnswer);
 }
@@ -9982,6 +9984,7 @@ function bonusOfficialImpossibleList(officialAnswer) {
     if (Array.isArray(officialAnswer.no)) return officialAnswer.no;
     if (Array.isArray(officialAnswer.miss)) return officialAnswer.miss;
     if (Array.isArray(officialAnswer.not_happened)) return officialAnswer.not_happened;
+    if (officialAnswer.answer !== undefined) return bonusOfficialImpossibleList(officialAnswer.answer);
   }
   return [];
 }
@@ -13177,6 +13180,37 @@ CREATE POLICY "official_results_admin_write"
       {/* БОНУСНЫЕ ВОПРОСЫ */}
       {tableSection === "questions" && (() => {
         const BG = "#071a07";
+        // Топ-3 бомбардира: очки зависят от места (8/5/3 за каждого угаданного,
+        // независимо друг от друга), а не от простого факта совпадения любого варианта.
+        function bonusCellInfo(q, ans, bom) {
+          if (q.id === "top_scorers") {
+            if (bom?.answer === undefined) return { correct: null, pts: 0 };
+            const offRanks = (bom.answer && typeof bom.answer === "object" && !Array.isArray(bom.answer) && bom.answer.ranks) || null;
+            const userArr = Array.isArray(ans) ? ans.filter(Boolean) : bonusAnswerList(ans);
+            let pts = 0;
+            if (offRanks) {
+              userArr.forEach(name => { pts += offRanks[normalizeBonusAnswer(name)] || 0; });
+            } else {
+              const offArr = bonusOfficialCorrectList(bom.answer);
+              const rankPts = [q.pts, 5, 3];
+              offArr.forEach((name, idx) => {
+                if (userArr.some(a => String(a).toLowerCase().trim() === String(name).toLowerCase().trim())) pts += rankPts[idx] || 0;
+              });
+            }
+            const correct = pts > 0 ? true : isFinalBonusOfficialRow(q.id, bom) ? false : null;
+            return { correct, pts };
+          }
+          const impossible = bom?.answer !== undefined && !bonusIgnoreImpossibleMarks(q.id) ? bonusAnswerMarkedImpossible(ans, bom.answer) : false;
+          const matched = bom?.answer !== undefined ? bonusAnswerMatches(ans, bom.answer) : null;
+          const correct = impossible
+            ? false
+            : matched === true
+              ? true
+              : matched === false && isFinalBonusOfficialRow(q.id, bom)
+                ? false
+                : null;
+          return { correct, pts: bom?.points || q.pts };
+        }
         const qStickyTh = (extra = {}) => ({
           padding: isNarrowViewport ? "7px 5px" : "8px 6px",
           textAlign: "left",
@@ -13276,22 +13310,14 @@ CREATE POLICY "official_results_admin_write"
                           const ans = bonusByUser[String(u.id || "")]?.[String(q.id)];
                           if (ans === undefined || ans === null) return <td key={u.id} style={{ padding: "5px 4px", textAlign: "center", color: "rgba(240,237,230,.2)", minWidth: mobileParticipantW, width: mobileParticipantW }}>—</td>;
                           const ansStr = Array.isArray(ans) ? ans.join(", ") : String(ans);
-                          const impossible = bom?.answer !== undefined && !bonusIgnoreImpossibleMarks(q.id) ? bonusAnswerMarkedImpossible(ans, bom.answer) : false;
-                          const matched = bom?.answer !== undefined ? bonusAnswerMatches(ans, bom.answer) : null;
-                          const correct = impossible
-                            ? false
-                            : matched === true
-                              ? true
-                              : matched === false && isFinalBonusOfficialRow(q.id, bom)
-                                ? false
-                                : null;
+                          const { correct, pts: cellPts } = bonusCellInfo(q, ans, bom);
                           return (
                             <td key={u.id} style={{ padding: "5px 4px", textAlign: "center", minWidth: mobileParticipantW, width: mobileParticipantW, background: rowBg }}>
                               <span style={{ fontSize: 11, color: correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6", fontWeight: correct ? 800 : 500, overflowWrap: "anywhere", wordBreak: "break-word", lineHeight: 1.15 }}>
                                 {ansStr}
                               </span>
                               {correct !== null && (
-                                <div style={{ fontSize: 10, color: correct ? "#86EFAC" : "#FCA5A5", marginTop: 2 }}>{correct ? `+${bom.points || q.pts}` : "0"}</div>
+                                <div style={{ fontSize: 10, color: correct ? "#86EFAC" : "#FCA5A5", marginTop: 2 }}>{correct ? `+${cellPts}` : "0"}</div>
                               )}
                             </td>
                           );
@@ -13334,26 +13360,16 @@ CREATE POLICY "official_results_admin_write"
                       const ans = bonusByUser[String(u.id || "")]?.[String(q.id)];
                       if (ans === undefined || ans === null) return <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", color: "rgba(240,237,230,.2)", minWidth: qParticipantW, width: qParticipantW }}>—</td>;
                       const ansStr = Array.isArray(ans) ? ans.join(", ") : String(ans);
-                      const impossible = bom?.answer !== undefined && !bonusIgnoreImpossibleMarks(q.id) ? bonusAnswerMarkedImpossible(ans, bom.answer) : false;
-                      const matched = bom?.answer !== undefined
-                        ? bonusAnswerMatches(ans, bom.answer)
-                        : null;
                       // Во всех бонусных вопросах «+ зачёт» фиксирует уже случившийся исход,
                       // но остальные варианты до финального закрытия остаются в ожидании.
-                      const correct = impossible
-                        ? false
-                        : matched === true
-                          ? true
-                          : matched === false && isFinalBonusOfficialRow(q.id, bom)
-                            ? false
-                            : null;
+                      const { correct, pts: cellPts } = bonusCellInfo(q, ans, bom);
                       return (
                         <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", minWidth: qParticipantW, width: qParticipantW }}>
                           <span style={{ fontSize: 12, color: correct === true ? "#86EFAC" : correct === false ? "#FCA5A5" : "#F0EDE6", fontWeight: correct ? 700 : 400, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                             {ansStr}
                           </span>
                           {correct !== null && (
-                            <div style={{ fontSize: 10, color: correct ? "#86EFAC" : "#FCA5A5" }}>{correct ? `+${bom.points || q.pts}` : "0"}</div>
+                            <div style={{ fontSize: 10, color: correct ? "#86EFAC" : "#FCA5A5" }}>{correct ? `+${cellPts}` : "0"}</div>
                           )}
                         </td>
                       );
