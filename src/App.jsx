@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-top-scorer-rank-points";
+const FFC_APP_BUILD = "2026-07-17-medal-standings";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -1313,6 +1313,117 @@ function getWinner(matchId, pScores, pPens) {
   if (pen === "1") return "home";
   if (pen === "2") return "away";
   return null;
+}
+
+// ── МЕДАЛЬНЫЙ ЗАЧЁТ (золото/серебро/бронза) ──
+// Отдельного вопроса «кто станет чемпионом» в анкете нет — прогноз участника
+// на призёров вычисляется из его же обычных прогнозов счёта на Финал (m104)
+// и матч за 3-е место (m103), с учётом того, что сами команды в этих матчах
+// тоже определяются его прогнозами на предыдущие стадии сетки.
+function normalizeTeamNameKey(v) {
+  const raw = String(v || "").trim();
+  const s = raw
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[’'`´""«»]/g, "")
+    .replace(/[^a-zа-я0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s || s === "?" || /не выбран|команда хозяев|команда гостей/i.test(s)) return "";
+  if (/^(сша|usa|united states|соединенные штаты)/.test(s)) return "сша";
+  if (/южн.*кор|south korea|корея/.test(s)) return "южная корея";
+  if (/юар|южн.*африк|south africa/.test(s)) return "юар";
+  if (/кот.*иву|котдивуар|ivory coast|cote d ivoire/.test(s)) return "котдивуар";
+  if (/кюрасао|curacao|curaçao/.test(s)) return "кюрасао";
+  if (/кабо.*верде|cape verde/.test(s)) return "кабо верде";
+  if (/босни/.test(s)) return "босния и герцеговина";
+  if (/нов.*зел|new zealand|н зел/.test(s)) return "новая зеландия";
+  if (/др.*конго|конго|d r congo|dr congo/.test(s)) return "др конго";
+  if (/сауд/.test(s)) return "саудовская аравия";
+  if (/чех/.test(s)) return "чехия";
+  if (/нидерланд|голланд/.test(s)) return "нидерланды";
+  if (/швейцар/.test(s)) return "швейцария";
+  if (/шотланд/.test(s)) return "шотландия";
+  return s;
+}
+
+const ALL_PLAYOFF_BRACKET_MATCHES = [
+  ...R16.map(m => ({ ...m, stage: "1/16" })),
+  ...R8.map(m => ({ ...m, stage: "1/8" })),
+  ...QF.map(m => ({ ...m, stage: "1/4" })),
+  ...SF.map(m => ({ ...m, stage: "1/2" })),
+  { ...THIRD_MATCH, stage: "За 3-е место" },
+  { ...FINAL_MATCH, stage: "Финал" },
+];
+
+function resolveBracketTeamGeneric(fromId, side, tables, thirds, playoffScores, playoffPens) {
+  const bracket = ALL_PLAYOFF_BRACKET_MATCHES.find(b => b.id === fromId);
+  if (!bracket) return { team: "?", tbd: true };
+  let home, away;
+  if (bracket.home_key) {
+    home = resolveKey(bracket.home_key, tables, thirds, bracket.id);
+    away = resolveKey(bracket.away_key, tables, thirds, bracket.id);
+  } else {
+    home = resolveBracketTeamGeneric(bracket.home_from.replace("_loser", ""), bracket.home_from.includes("_loser") ? "loser" : "win", tables, thirds, playoffScores, playoffPens);
+    away = resolveBracketTeamGeneric(bracket.away_from.replace("_loser", ""), bracket.away_from.includes("_loser") ? "loser" : "win", tables, thirds, playoffScores, playoffPens);
+  }
+  const winner = getWinner(bracket.id, playoffScores, playoffPens);
+  if (!winner) return { team: `Пр.${fromId}`, tbd: true };
+  if (side === "loser") return winner === "home" ? away : home;
+  return winner === "home" ? home : away;
+}
+
+function bracketMatchTeamsGeneric(bracket, tables, thirds, playoffScores, playoffPens) {
+  const hFrom = bracket.home_from.replace("_loser", "");
+  const aFrom = bracket.away_from.replace("_loser", "");
+  const hSide = bracket.home_from.includes("_loser") ? "loser" : "win";
+  const aSide = bracket.away_from.includes("_loser") ? "loser" : "win";
+  return {
+    home: resolveBracketTeamGeneric(hFrom, hSide, tables, thirds, playoffScores, playoffPens),
+    away: resolveBracketTeamGeneric(aFrom, aSide, tables, thirds, playoffScores, playoffPens),
+  };
+}
+
+// Прогноз участника на золото/серебро/бронзу — по его же счетам на Финал и матч за 3-е место.
+function predictedMedalTeamsForUser(groupScores, playoffScores, playoffPens) {
+  const tables = {};
+  ALL_GROUPS.forEach(g => { tables[g] = calcGroupTable(g, groupScores || {}, {}); });
+  const thirds = getThirdRanking(tables, {});
+
+  const finalTeams = bracketMatchTeamsGeneric(FINAL_MATCH, tables, thirds, playoffScores, playoffPens);
+  const finalWinnerSide = getWinner(FINAL_MATCH.id, playoffScores, playoffPens);
+  const gold = finalWinnerSide === "home" ? finalTeams.home?.team : finalWinnerSide === "away" ? finalTeams.away?.team : null;
+  const silver = !finalWinnerSide ? null : (finalWinnerSide === "home" ? finalTeams.away?.team : finalTeams.home?.team);
+
+  const thirdTeams = bracketMatchTeamsGeneric(THIRD_MATCH, tables, thirds, playoffScores, playoffPens);
+  const thirdWinnerSide = getWinner(THIRD_MATCH.id, playoffScores, playoffPens);
+  const bronze = thirdWinnerSide === "home" ? thirdTeams.home?.team : thirdWinnerSide === "away" ? thirdTeams.away?.team : null;
+
+  return { gold, silver, bronze };
+}
+
+const MEDAL_POINTS = { gold: 15, silver: 12, bronze: 8 };
+
+// Очки за медальный зачёт: сравниваем прогноз участника (predictedMedalTeamsForUser)
+// с реальными призёрами, которые вручную вписывает админ (см. AdminPlayoffPairsPanel).
+function calculateMedalPoints(predictedMedals, officialMedals) {
+  if (!officialMedals) return { total: 0, breakdown: {} };
+  const sameTeam = (a, b) => {
+    const ka = normalizeTeamNameKey(a);
+    const kb = normalizeTeamNameKey(b);
+    return !!ka && ka === kb;
+  };
+  const breakdown = {};
+  let total = 0;
+  ["gold", "silver", "bronze"].forEach(tier => {
+    const official = officialMedals[tier];
+    if (!official) return;
+    if (sameTeam(predictedMedals?.[tier], official)) {
+      breakdown[tier] = MEDAL_POINTS[tier];
+      total += MEDAL_POINTS[tier];
+    }
+  });
+  return { total, breakdown };
 }
 
 // ── ВАЛИДАЦИЯ СЕТКИ 1/16 ──
@@ -15032,6 +15143,11 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
   const [thirdPairHitsLoading, setThirdPairHitsLoading] = React.useState(false);
   const [finalPairHits, setFinalPairHits] = React.useState([]);
   const [finalPairHitsLoading, setFinalPairHitsLoading] = React.useState(false);
+  const [medalDraft, setMedalDraft] = React.useState({ gold: "", silver: "", bronze: "" });
+  const [medalOfficial, setMedalOfficial] = React.useState(null);
+  const [medalSaving, setMedalSaving] = React.useState(false);
+  const [medalHits, setMedalHits] = React.useState({ gold: [], silver: [], bronze: [] });
+  const [medalHitsLoading, setMedalHitsLoading] = React.useState(false);
 
   // Локальные хелперы для этой вкладки. Раньше блок "Кто полностью угадал пары 1/16"
   // вызывал normalizeMatchId/participantKeys из другой области видимости и падал.
@@ -15155,7 +15271,7 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     return v;
   }
 
-  React.useEffect(() => { loadPairs(); loadR16PairHits(); loadR8PairHits(); loadQFPairHits(); loadSFPairHits(); loadThirdPairHits(); loadFinalPairHits(); }, []);
+  React.useEffect(() => { loadPairs(); loadR16PairHits(); loadR8PairHits(); loadQFPairHits(); loadSFPairHits(); loadThirdPairHits(); loadFinalPairHits(); loadMedalOfficial(); }, []);
 
   async function loadPairs() {
     setLoading(true);
@@ -16027,6 +16143,158 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
     await loadSingleBracketMatchPairHits(FINAL_MATCH.id, adminFinalTeamsFromPrediction, setFinalPairHits, setFinalPairHitsLoading, "финал");
   }
 
+  // Медальный зачёт: золото/серебро/бронза вписывает админ вручную (не связано
+  // с playoff_official_pairs), а прогноз каждого участника считается из его же
+  // счетов на Финал/3-е место через predictedMedalTeamsForUser (см. верх файла).
+  async function loadMedalOfficial() {
+    try {
+      const rows = await fetchAllAdminRows("bonus_official_answers?select=*&question_id=eq.medal_standings");
+      const row = (Array.isArray(rows) ? rows : []).find(x => String(x.question_id) === "medal_standings");
+      const answer = row?.answer && typeof row.answer === "object" ? row.answer : null;
+      setMedalOfficial(answer);
+      setMedalDraft({ gold: answer?.gold || "", silver: answer?.silver || "", bronze: answer?.bronze || "" });
+      if (answer) await loadMedalHits(answer);
+    } catch (e) {
+      console.error("loadMedalOfficial failed", e);
+    }
+  }
+
+  async function saveMedalOfficial() {
+    setMedalSaving(true);
+    try {
+      const answer = { gold: medalDraft.gold.trim(), silver: medalDraft.silver.trim(), bronze: medalDraft.bronze.trim() };
+      const row = { question_id: "medal_standings", answer, status: "confirmed", updated_at: new Date().toISOString() };
+      const writeToken = await getFreshToken().catch(() => null) || token;
+      let r = await supa("bonus_official_answers?question_id=eq.medal_standings", {
+        method: "PATCH", token: writeToken,
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify(row),
+      });
+      let patchedEmpty = true;
+      if (r.ok) {
+        const patched = await r.clone().json().catch(() => []);
+        patchedEmpty = !(Array.isArray(patched) && patched.length > 0);
+      }
+      if (!r.ok || patchedEmpty) {
+        r = await supa("bonus_official_answers", {
+          method: "POST", token: writeToken,
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify(row),
+        });
+      }
+      if (r.ok) {
+        setMedalOfficial(answer);
+        showToast("✓ Призёры сохранены");
+        await loadMedalHits(answer);
+      } else {
+        const txt = await r.clone().text().catch(() => "");
+        showToast(friendlySaveErrorText(txt));
+      }
+    } catch (e) {
+      showToast("Ошибка: " + String(e?.message || e).slice(0, 150));
+    } finally {
+      setMedalSaving(false);
+    }
+  }
+
+  async function loadMedalHits(officialOverride) {
+    const official = officialOverride || medalOfficial;
+    if (!official) { setMedalHits({ gold: [], silver: [], bronze: [] }); return; }
+    setMedalHitsLoading(true);
+    try {
+      const [profiles, statuses, predRows, payments] = await Promise.all([
+        fetchAllAdminRows("profiles?select=*"),
+        fetchAllAdminRows("participant_status?select=*").catch(() => []),
+        fetchAllAdminRows("predictions?select=*"),
+        fetchAllAdminRows("payment_requests?select=*").catch(() => []),
+      ]);
+
+      const profileMap = {};
+      (profiles || []).forEach(p => {
+        participantKeys(p).forEach(k => {
+          profileMap[String(k)] = publicDisplayNameOverride(adminProfileName(p) || String(k).slice(0, 8));
+        });
+      });
+
+      const pMap = {};
+      function putPredictionForUser(uid, midRaw, row) {
+        const mid = normalizeMatchId(midRaw);
+        if (!uid || !mid) return;
+        const parsed = adminScoreFromPredictionRow(row);
+        const h = parsed?.h ?? row?.h ?? row?.home ?? row?.home_score;
+        const a = parsed?.a ?? row?.a ?? row?.away ?? row?.away_score;
+        if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+        if (!pMap[uid]) pMap[uid] = {};
+        pMap[uid][mid] = {
+          h, a,
+          pen: parsed?.pen || row?.penalty_winner || row?.penaltyWinner || row?.predicted_winner || row?.pen || null,
+        };
+      }
+      (predRows || []).forEach(pr => {
+        const midRaw = pr?.match_id ?? pr?.match ?? pr?.game_id ?? pr?.fixture_id ?? pr?.id;
+        rowUserKeys(pr).forEach(uid => putPredictionForUser(uid, midRaw, pr));
+      });
+
+      const dummyBonusMap = {};
+      (profiles || []).forEach(u => addLegacyScoresToMaps(u, participantKeys(u), pMap, dummyBonusMap));
+      (statuses || []).forEach(st => {
+        const uid = String(st?.user_id || st?.profile_id || st?.id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid };
+        addLegacyScoresToMaps(st, participantKeys(u), pMap, dummyBonusMap);
+      });
+      (payments || []).forEach(pay => {
+        const uid = String(pay?.user_id || pay?.profile_id || "");
+        const u = (profiles || []).find(p => String(p?.id || "") === uid) || { id: uid, email: pay?.email };
+        addLegacyScoresToMaps(pay, participantKeys(u), pMap, dummyBonusMap);
+      });
+
+      Object.keys(pMap).forEach(uid => {
+        if (!profileMap[uid]) profileMap[uid] = `Участник ${String(uid).slice(0, 6)}`;
+      });
+
+      function mapsFromUserPrediction(uid) {
+        const rows = pMap[uid] || {};
+        const groupScores = {};
+        const playoffScores = {};
+        const playoffPens = {};
+        Object.entries(rows).forEach(([rawMid, val]) => {
+          const mid = normalizeMatchId(rawMid);
+          if (!mid || !val) return;
+          const h = val.h ?? val.home_score ?? val.home;
+          const a = val.a ?? val.away_score ?? val.away;
+          if (h === null || h === undefined || h === "" || a === null || a === undefined || a === "") return;
+          const row = { h, a, pen: val.pen || val.penalty_winner || val.predicted_winner || null };
+          if (ALL_GROUP_MATCH_IDS.has(mid)) groupScores[mid] = row;
+          else { playoffScores[mid] = row; if (row.pen) playoffPens[mid] = String(row.pen); }
+        });
+        return { groupScores, playoffScores, playoffPens };
+      }
+
+      const gold = [], silver = [], bronze = [];
+      Object.keys(pMap).forEach(uid => {
+        const { groupScores, playoffScores, playoffPens } = mapsFromUserPrediction(uid);
+        const predicted = predictedMedalTeamsForUser(groupScores, playoffScores, playoffPens);
+        const name = profileMap[uid] || `Участник ${uid.slice(0, 6)}`;
+        const goldKey = normalizeTeamNameKey(official.gold);
+        const silverKey = normalizeTeamNameKey(official.silver);
+        const bronzeKey = normalizeTeamNameKey(official.bronze);
+        if (goldKey && normalizeTeamNameKey(predicted.gold) === goldKey) gold.push(name);
+        if (silverKey && normalizeTeamNameKey(predicted.silver) === silverKey) silver.push(name);
+        if (bronzeKey && normalizeTeamNameKey(predicted.bronze) === bronzeKey) bronze.push(name);
+      });
+      setMedalHits({
+        gold: gold.sort((a, b) => a.localeCompare(b, "ru")),
+        silver: silver.sort((a, b) => a.localeCompare(b, "ru")),
+        bronze: bronze.sort((a, b) => a.localeCompare(b, "ru")),
+      });
+    } catch (e) {
+      console.error("loadMedalHits failed", e);
+      setMedalHits({ gold: [], silver: [], bronze: [] });
+    } finally {
+      setMedalHitsLoading(false);
+    }
+  }
+
 
 
   function r16PairHitsPlayerRows() {
@@ -16603,6 +16871,33 @@ CREATE POLICY "pop_delete" ON public.playoff_official_pairs FOR DELETE TO authen
 NOTIFY pgrst, 'reload schema';`}</pre>
         </details>
       )}
+
+      <div style={{ marginTop: 24, background: "rgba(255,255,255,.035)", border: "1px solid rgba(253,230,138,.22)", borderRadius: 10, padding: 14 }}>
+        <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 800, color: "#FDE68A", marginBottom: 6 }}>🏅 Медальный зачёт</div>
+        <div style={{ fontSize: 12, color: "rgba(240,237,230,.55)", marginBottom: 12 }}>
+          Дополнительные баллы за угаданных призёров чемпионата: золото — 15 баллов, серебро — 12, бронза — 8. Прогноз участника берётся из его же счёта на Финал и матч за 3-е место — отдельно угадывать призёров не нужно. Баллы попадают в общую таблицу прогнозистов после нажатия «Пересчитать лидерборд».
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 12 }}>
+          {[["gold", "🥇 Золото (чемпион) — 15 бал."], ["silver", "🥈 Серебро — 12 бал."], ["bronze", "🥉 Бронза — 8 бал."]].map(([key, label]) => (
+            <div key={key}>
+              <label style={{ display: "block", color: "rgba(240,237,230,.6)", fontSize: 11, fontWeight: 800, marginBottom: 4 }}>{label}</label>
+              <input value={medalDraft[key]} onChange={e => setMedalDraft(p => ({ ...p, [key]: e.target.value }))} placeholder="Название сборной" style={{ width: "100%", height: 34, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 6, color: "#F0EDE6", fontSize: 13, padding: "0 10px" }} />
+            </div>
+          ))}
+        </div>
+        <button className="mini-btn green" disabled={medalSaving} onClick={saveMedalOfficial}>{medalSaving ? "Сохраняю…" : "✓ Сохранить призёров"}</button>
+
+        {medalOfficial && (medalOfficial.gold || medalOfficial.silver || medalOfficial.bronze) && (
+          <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
+            {[["gold", "🥇 Золото", medalOfficial.gold, 15], ["silver", "🥈 Серебро", medalOfficial.silver, 12], ["bronze", "🥉 Бронза", medalOfficial.bronze, 8]].map(([key, label, team, pts]) => (
+              <div key={key} style={{ background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, padding: 10 }}>
+                <div style={{ color: "#FDE68A", fontWeight: 900, fontSize: 13 }}>{label}: {team || "—"} <span style={{ color: "#F59E0B" }}>({pts} бал.)</span></div>
+                <div style={{ color: "rgba(240,237,230,.45)", fontSize: 11, marginTop: 4 }}>{medalHitsLoading ? "Считаю…" : (medalHits[key] && medalHits[key].length) ? `Угадали (${medalHits[key].length}): ${medalHits[key].join(", ")}` : "Пока никто не угадал"}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -17686,11 +17981,30 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
     const userProfiles = usersResp.ok ? await usersResp.json() : [];
     const profileMap = Object.fromEntries(userProfiles.map(u => [u.id, u]));
 
-    // Группируем predictions по user_id
+    // Группируем predictions по user_id (плюс раздельные group/playoff/pens —
+    // нужны для медального зачёта, см. predictedMedalTeamsForUser).
     const byUser = {};
+    const groupScoresByUser = {};
+    const playoffScoresByUser = {};
+    const playoffPensByUser = {};
     allPredictions.forEach(p => {
       if (!byUser[p.user_id]) byUser[p.user_id] = {};
       byUser[p.user_id][p.match_id] = { h: p.home_score, a: p.away_score };
+      const h = p.home_score, a = p.away_score;
+      if (h === "" || h === null || h === undefined || a === "" || a === null || a === undefined) return;
+      const row = { h, a };
+      if (ALL_GROUP_MATCH_IDS.has(p.match_id)) {
+        if (!groupScoresByUser[p.user_id]) groupScoresByUser[p.user_id] = {};
+        groupScoresByUser[p.user_id][p.match_id] = row;
+      } else {
+        if (!playoffScoresByUser[p.user_id]) playoffScoresByUser[p.user_id] = {};
+        playoffScoresByUser[p.user_id][p.match_id] = row;
+        const pen = p.penalty_winner ?? p.predicted_winner ?? p.pen ?? null;
+        if (pen) {
+          if (!playoffPensByUser[p.user_id]) playoffPensByUser[p.user_id] = {};
+          playoffPensByUser[p.user_id][p.match_id] = String(pen);
+        }
+      }
     });
 
     // Группируем bonus_answers по user_id
@@ -17701,6 +18015,10 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
         bonusByUser[b.user_id][b.question_id] = typeof b.answer === "string" ? JSON.parse(b.answer) : b.answer;
       } catch { bonusByUser[b.user_id][b.question_id] = b.answer; }
     });
+
+    // Официальные призёры (золото/серебро/бронза) — вписываются вручную в
+    // «⚔ Плей-офф пары», хранятся тем же способом, что и остальные бонусы.
+    const officialMedals = officialBonusAnswersMap["medal_standings"]?.answer || null;
 
     // Считаем очки для submitted пользователей
     const newLeaderboard = Object.entries(byUser)
@@ -17714,7 +18032,9 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
           if (p !== null) matchPts += p;
         });
         const bonusResult = calculateBonusPoints(bonusByUser[uid] || {}, officialBonusAnswersMap);
-        const total = matchPts + bonusResult.total;
+        const predictedMedals = predictedMedalTeamsForUser(groupScoresByUser[uid] || {}, playoffScoresByUser[uid] || {}, playoffPensByUser[uid] || {});
+        const medalResult = calculateMedalPoints(predictedMedals, officialMedals);
+        const total = matchPts + bonusResult.total + medalResult.total;
         return {
           id: uid,
           name: profileMap[uid]?.name || uid.slice(0, 8),
@@ -17722,6 +18042,7 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
           match_points: matchPts,
           group_match_points: matchPts, // TODO: разделить если нужно
           bonus_points: bonusResult.total,
+          medal_points: medalResult.total,
         };
       })
       .sort((a, b) => b.total_points - a.total_points);
@@ -17735,13 +18056,25 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
       match_points: row.match_points,
       group_match_points: row.group_match_points,
       bonus_points: row.bonus_points,
+      medal_points: row.medal_points,
     }));
     if (lbRows.length) {
-      await supa("leaderboard", {
+      let r = await supa("leaderboard", {
         method: "POST", token,
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify(lbRows),
       });
+      if (!r.ok) {
+        const txt = await r.clone().text().catch(() => "");
+        if (/PGRST204|could not find.*medal_points|column.*medal_points/i.test(txt)) {
+          const stripped = lbRows.map(({ medal_points, ...rest }) => rest);
+          r = await supa("leaderboard", {
+            method: "POST", token,
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: JSON.stringify(stripped),
+          });
+        }
+      }
     }
     showToast(`✓ Лидерборд пересчитан: ${newLeaderboard.length} участников`);
   }
@@ -25535,7 +25868,7 @@ function AppInner() {
                     <div className="av" style={{ width: 32, height: 32, background: bg, color: fg }}>{ini(p.name || "?")}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}{isMe && <span style={{ fontSize: 10, color: "rgba(240,237,230,.3)", marginLeft: 5 }}>(ты)</span>}</div>
-                      <div style={{ fontSize: 10, color: "rgba(240,237,230,.3)" }}>Матчи: {p.match_points} · Бонусы: {p.bonus_points}</div>
+                      <div style={{ fontSize: 10, color: "rgba(240,237,230,.3)" }}>Матчи: {p.match_points} · Бонусы: {p.bonus_points}{p.medal_points ? ` · Медали: ${p.medal_points}` : ""}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <span className="pp" style={{ fontSize: 21 }}>{p.total_points}</span>
