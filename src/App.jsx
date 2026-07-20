@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-medal-rows-in-grid";
+const FFC_APP_BUILD = "2026-07-17-medals-fold-into-playoff";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -12565,12 +12565,14 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
     // Медальный зачёт: золото/серебро/бронза вписывает админ вручную
     // (см. «⚔ Плей-офф пары» → medal_standings), прогноз берётся из
     // предсказанного участником победителя Финала и матча за 3-е место.
+    // Плюсуется прямо в «Плей-офф», отдельной колонки в таблице нет.
     const medalOfficialRow = bonusOfficialMap["medal_standings"];
     if (medalOfficialRow?.answer) {
       medal = calculateMedalPoints(userMedalPrediction(u), medalOfficialRow.answer).total;
     }
+    playoff += medal;
 
-    return { group, playoff, bonus, medal, total: group + playoff + bonus + medal, exact, outcome };
+    return { group, playoff, bonus, total: group + playoff + bonus, exact, outcome };
   }
 
   const leaderboard = React.useMemo(() => {
@@ -13051,13 +13053,13 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: isNarrowViewport ? 720 : 560, tableLayout: "auto" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-                {["#", "Участник", "Итого", "Группы", "Плей-офф", "Бонусы", "Медали", "Точных", "Исходов"].map(h => (
+                {["#", "Участник", "Итого", "Группы", "Плей-офф", "Бонусы", "Точных", "Исходов"].map(h => (
                   <th key={h} style={{ padding: "6px 10px", fontSize: 11, color: "rgba(240,237,230,.45)", fontWeight: 700, textAlign: h === "Участник" ? "left" : "center", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {leaderboard.map(({ u, group, playoff, bonus, medal, total, exact, outcome }, i) => (
+              {leaderboard.map(({ u, group, playoff, bonus, total, exact, outcome }, i) => (
                 <tr key={u.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)", background: i === 0 ? "rgba(245,158,11,.06)" : i < 3 ? "rgba(255,255,255,.015)" : "transparent" }}>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, fontWeight: 800, color: i === 0 ? "#FDE68A" : i === 1 ? "#D1D5DB" : i === 2 ? "#F59E0B" : "rgba(240,237,230,.4)" }}>{i+1}</td>
                   <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, color: "#F0EDE6", minWidth: 150, maxWidth: 240, whiteSpace: "normal", overflowWrap: "anywhere", lineHeight: 1.15 }}>{uName(u)}</td>
@@ -13065,7 +13067,6 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#86EFAC", fontWeight: 700 }}>{group}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#93C5FD", fontWeight: 700 }}>{playoff}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#FDE68A", fontWeight: 700 }}>{bonus}</td>
-                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#F59E0B", fontWeight: 700 }}>{medal || 0}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(134,239,172,.8)" }}>{exact}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(240,237,230,.5)" }}>{outcome}</td>
                 </tr>
@@ -14123,7 +14124,8 @@ function AdminForecastTable({ session, showToast }) {
     if (medalOfficialRow?.answer) {
       medal = calculateMedalPoints(userMedalPrediction(user), medalOfficialRow.answer).total;
     }
-    return { group, playoff, bonus, medal, total: group + playoff + bonus + medal };
+    playoff += medal;
+    return { group, playoff, bonus, total: group + playoff + bonus };
   }
 
 
@@ -16369,7 +16371,6 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
       }
 
       const gold = [], silver = [], bronze = [];
-      const pointsByUser = {};
       Object.keys(pMap).forEach(uid => {
         const { groupScores, playoffScores, playoffPens } = mapsFromUserPrediction(uid);
         const predicted = predictedMedalTeamsForUser(groupScores, playoffScores, playoffPens);
@@ -16377,73 +16378,20 @@ function AdminPlayoffPairsPanel({ session, showToast }) {
         const goldKey = normalizeTeamNameKey(official.gold);
         const silverKey = normalizeTeamNameKey(official.silver);
         const bronzeKey = normalizeTeamNameKey(official.bronze);
-        let pts = 0;
-        if (goldKey && normalizeTeamNameKey(predicted.gold) === goldKey) { gold.push(name); pts += MEDAL_POINTS.gold; }
-        if (silverKey && normalizeTeamNameKey(predicted.silver) === silverKey) { silver.push(name); pts += MEDAL_POINTS.silver; }
-        if (bronzeKey && normalizeTeamNameKey(predicted.bronze) === bronzeKey) { bronze.push(name); pts += MEDAL_POINTS.bronze; }
-        if (pts > 0) pointsByUser[uid] = pts;
+        if (goldKey && normalizeTeamNameKey(predicted.gold) === goldKey) gold.push(name);
+        if (silverKey && normalizeTeamNameKey(predicted.silver) === silverKey) silver.push(name);
+        if (bronzeKey && normalizeTeamNameKey(predicted.bronze) === bronzeKey) bronze.push(name);
       });
       setMedalHits({
         gold: gold.sort((a, b) => a.localeCompare(b, "ru")),
         silver: silver.sort((a, b) => a.localeCompare(b, "ru")),
         bronze: bronze.sort((a, b) => a.localeCompare(b, "ru")),
       });
-      await applyMedalPointsToLeaderboard(pointsByUser);
     } catch (e) {
       console.error("loadMedalHits failed", e);
       setMedalHits({ gold: [], silver: [], bronze: [] });
     } finally {
       setMedalHitsLoading(false);
-    }
-  }
-
-  // Начисляет очки за медали НАПРЯМУЮ в таблицу leaderboard, не дожидаясь
-  // отдельного «Пересчитать лидерборд» в Матчах — так призёров можно вписать
-  // прямо здесь, и баллы у всех угадавших сразу появятся в общем зачёте.
-  // Идемпотентно: у каждого юзера medal_points ВСЕГДА выставляется в свежее
-  // значение (а не прибавляется), total_points пересчитывается через дельту,
-  // так что повторный запуск не задваивает баллы.
-  async function applyMedalPointsToLeaderboard(pointsByUser) {
-    try {
-      const lb = await fetchAllAdminRows("leaderboard?select=*");
-      const rows = Array.isArray(lb) ? lb : [];
-      if (!rows.length) return;
-      const updates = rows
-        .map(row => {
-          const newMedal = pointsByUser[row.id] || 0;
-          const oldMedal = Number(row.medal_points || 0);
-          const oldTotal = Number(row.total_points || 0);
-          return { row, newMedal, oldMedal, next: { ...row, medal_points: newMedal, total_points: oldTotal - oldMedal + newMedal } };
-        })
-        .filter(({ newMedal, oldMedal }) => newMedal !== 0 || oldMedal !== 0)
-        .map(({ next }) => next);
-      if (!updates.length) return;
-      const writeToken = await getFreshToken().catch(() => null) || token;
-      let r = await supa("leaderboard", {
-        method: "POST", token: writeToken,
-        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify(updates),
-      });
-      if (!r.ok) {
-        const txt = await r.clone().text().catch(() => "");
-        if (/PGRST204|could not find.*medal_points|column.*medal_points/i.test(txt)) {
-          const stripped = updates.map(({ medal_points, ...rest }) => rest);
-          r = await supa("leaderboard", {
-            method: "POST", token: writeToken,
-            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-            body: JSON.stringify(stripped),
-          });
-          if (r.ok) showToast("Баллы за медали посчитаны, но НЕ сохранились отдельной колонкой — выполни SQL из подсказки (medal_points) в Supabase и нажми ещё раз");
-          return;
-        }
-        showToast("Ошибка начисления баллов за медали: " + txt.slice(0, 200));
-        return;
-      }
-      const credited = updates.filter(u => (u.medal_points || 0) > 0).length;
-      showToast(`✓ Баллы за медали начислены в общую таблицу (${credited} чел.)`);
-    } catch (e) {
-      console.error("applyMedalPointsToLeaderboard failed", e);
-      showToast("Ошибка начисления баллов за медали: " + String(e?.message || e).slice(0, 150));
     }
   }
 
@@ -17027,7 +16975,7 @@ NOTIFY pgrst, 'reload schema';`}</pre>
       <div style={{ marginTop: 24, background: "rgba(255,255,255,.035)", border: "1px solid rgba(253,230,138,.22)", borderRadius: 10, padding: 14 }}>
         <div style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, fontWeight: 800, color: "#FDE68A", marginBottom: 6 }}>🏅 Медальный зачёт</div>
         <div style={{ fontSize: 12, color: "rgba(240,237,230,.55)", marginBottom: 12 }}>
-          Дополнительные баллы за угаданных призёров чемпионата: золото — 15 баллов, серебро — 12, бронза — 8. Прогноз участника берётся из его же счёта на Финал и матч за 3-е место — отдельно угадывать призёров не нужно. Баллы начисляются в общую таблицу прогнозистов сразу при сохранении призёров (или по кнопке "обновить" ниже) — отдельно пересчитывать лидерборд не нужно.
+          Дополнительные баллы за угаданных призёров чемпионата: золото — 15 баллов, серебро — 12, бронза — 8. Прогноз участника берётся из его же счёта на Финал и матч за 3-е место — отдельно угадывать призёров не нужно. Баллы плюсуются в «Плей-офф» в общей таблице прогнозистов автоматически, сразу как только вписаны призёры.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 12 }}>
           {[["gold", "🥇 Золото (чемпион) — 15 бал."], ["silver", "🥈 Серебро — 12 бал."], ["bronze", "🥉 Бронза — 8 бал."]].map(([key, label]) => (
@@ -17038,8 +16986,8 @@ NOTIFY pgrst, 'reload schema';`}</pre>
           ))}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="mini-btn green" disabled={medalSaving} onClick={saveMedalOfficial}>{medalSaving ? "Сохраняю…" : "✓ Сохранить призёров и начислить баллы"}</button>
-          {medalOfficial && <button className="mini-btn" disabled={medalHitsLoading} onClick={() => loadMedalHits()}>{medalHitsLoading ? "…" : "↻ обновить и начислить"}</button>}
+          <button className="mini-btn green" disabled={medalSaving} onClick={saveMedalOfficial}>{medalSaving ? "Сохраняю…" : "✓ Сохранить призёров"}</button>
+          {medalOfficial && <button className="mini-btn" disabled={medalHitsLoading} onClick={() => loadMedalHits()}>{medalHitsLoading ? "…" : "↻ обновить"}</button>}
         </div>
 
         {medalOfficial && (medalOfficial.gold || medalOfficial.silver || medalOfficial.bronze) && (
@@ -18189,7 +18137,8 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
         const bonusResult = calculateBonusPoints(bonusByUser[uid] || {}, officialBonusAnswersMap);
         const predictedMedals = predictedMedalTeamsForUser(groupScoresByUser[uid] || {}, playoffScoresByUser[uid] || {}, playoffPensByUser[uid] || {});
         const medalResult = calculateMedalPoints(predictedMedals, officialMedals);
-        const total = matchPts + bonusResult.total + medalResult.total;
+        matchPts += medalResult.total; // медали плюсуются в матчи/плей-офф, отдельно не показываем
+        const total = matchPts + bonusResult.total;
         return {
           id: uid,
           name: profileMap[uid]?.name || uid.slice(0, 8),
@@ -18197,7 +18146,6 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
           match_points: matchPts,
           group_match_points: matchPts, // TODO: разделить если нужно
           bonus_points: bonusResult.total,
-          medal_points: medalResult.total,
         };
       })
       .sort((a, b) => b.total_points - a.total_points);
@@ -18211,25 +18159,13 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
       match_points: row.match_points,
       group_match_points: row.group_match_points,
       bonus_points: row.bonus_points,
-      medal_points: row.medal_points,
     }));
     if (lbRows.length) {
-      let r = await supa("leaderboard", {
+      const r = await supa("leaderboard", {
         method: "POST", token,
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify(lbRows),
       });
-      if (!r.ok) {
-        const txt = await r.clone().text().catch(() => "");
-        if (/PGRST204|could not find.*medal_points|column.*medal_points/i.test(txt)) {
-          const stripped = lbRows.map(({ medal_points, ...rest }) => rest);
-          r = await supa("leaderboard", {
-            method: "POST", token,
-            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-            body: JSON.stringify(stripped),
-          });
-        }
-      }
     }
     showToast(`✓ Лидерборд пересчитан: ${newLeaderboard.length} участников`);
   }
@@ -26023,7 +25959,7 @@ function AppInner() {
                     <div className="av" style={{ width: 32, height: 32, background: bg, color: fg }}>{ini(p.name || "?")}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}{isMe && <span style={{ fontSize: 10, color: "rgba(240,237,230,.3)", marginLeft: 5 }}>(ты)</span>}</div>
-                      <div style={{ fontSize: 10, color: "rgba(240,237,230,.3)" }}>Матчи: {p.match_points} · Бонусы: {p.bonus_points}{p.medal_points ? ` · Медали: ${p.medal_points}` : ""}</div>
+                      <div style={{ fontSize: 10, color: "rgba(240,237,230,.3)" }}>Матчи: {p.match_points} · Бонусы: {p.bonus_points}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <span className="pp" style={{ fontSize: 21 }}>{p.total_points}</span>
