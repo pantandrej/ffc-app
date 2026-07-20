@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-14-tour8-final-3rdplace";
+const FFC_APP_BUILD = "2026-07-17-top-scorer-rank-points";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -9875,7 +9875,7 @@ function bonusOfficialImpossibleList(officialAnswer) {
   return [];
 }
 
-function buildBonusOfficialAnswer(correct = [], impossible = []) {
+function buildBonusOfficialAnswer(correct = [], impossible = [], ranks = null) {
   const uniq = (arr) => {
     const seen = new Set();
     const out = [];
@@ -9890,7 +9890,11 @@ function buildBonusOfficialAnswer(correct = [], impossible = []) {
   const miss = uniq(impossible);
   const missNorm = new Set(miss.map(normalizeBonusAnswer));
   const ok = uniq(correct).filter(x => !missNorm.has(normalizeBonusAnswer(x)));
-  return { correct: ok, impossible: miss };
+  const out = { correct: ok, impossible: miss };
+  // ranks — явная привязка балла (8/5/3) к конкретному игроку для вопросов вида
+  // «топ-3 бомбардира», где очки зависят от места, а не просто от факта попадания в список.
+  if (ranks && typeof ranks === "object" && Object.keys(ranks).length) out.ranks = ranks;
+  return out;
 }
 
 function bonusAnswerMatches(userAnswer, officialAnswer) {
@@ -13882,8 +13886,14 @@ function AdminForecastTable({ session, showToast }) {
     if (!officialRow || !bonusOfficialAllowsScoring(officialRow) || userAnswer === undefined || userAnswer === null || userAnswer === "") return "";
     const officialAns = officialRow.answer;
     if (q.id === "top_scorers") {
-      const offArr = Array.isArray(officialAns) ? officialAns : [];
+      // officialAns обычно объект { correct, impossible, ranks } — ranks явно привязывает
+      // балл (8/5/3) к игроку. Без ranks (старые записи) считаем по позиции в correct.
+      const offRanks = (officialAns && typeof officialAns === "object" && !Array.isArray(officialAns) && officialAns.ranks) || null;
       const userArr = Array.isArray(userAnswer) ? userAnswer.filter(Boolean) : [];
+      if (offRanks) {
+        return userArr.reduce((sum, name) => sum + (offRanks[normalizeBonusAnswer(name)] || 0), 0);
+      }
+      const offArr = bonusOfficialCorrectList(officialAns);
       const rankPts = [q.pts, 5, 3];
       return offArr.reduce((sum, name, idx) => sum + (userArr.some(u => String(u).toLowerCase().trim() === String(name).toLowerCase().trim()) ? (rankPts[idx] || 0) : 0), 0);
     }
@@ -14514,6 +14524,12 @@ function AdminBonusPanel({ session, showToast }) {
     return bonusOfficialImpossibleList(fromMap);
   }
 
+  function officialRanksFor(qid) {
+    const row = bonusMap[String(qid)]?.answer;
+    if (row && typeof row === "object" && !Array.isArray(row) && row.ranks && typeof row.ranks === "object") return row.ranks;
+    return {};
+  }
+
   function isCandidateOfficial(qid, answer) {
     return officialListFor(qid).map(normalizeBonusAnswer).includes(normalizeBonusAnswer(answer));
   }
@@ -14646,7 +14662,8 @@ function AdminBonusPanel({ session, showToast }) {
     setSaving(p => ({ ...p, [qid]: false }));
   }
 
-  async function addCandidateToOfficial(qid, answer) {
+  async function addCandidateToOfficial(qid, answer, points = null) {
+    const q = BONUS_QS.find(x => String(x.id) === String(qid));
     const current = officialListFor(qid);
     const impossible = officialImpossibleListFor(qid);
     const variants = allKnownCandidateVariants(qid, answer);
@@ -14658,7 +14675,17 @@ function AdminBonusPanel({ session, showToast }) {
       if (!next.some(x => String(x || "").trim() === exact)) next.push(exact);
     });
     const nextImpossible = impossible.filter(x => !norms.has(normalizeBonusAnswer(x)) && !variants.some(v => String(v || "").trim() === String(x || "").trim()));
-    await saveOfficialAnswerRaw(qid, buildBonusOfficialAnswer(next, nextImpossible), "open");
+    let ranks = null;
+    if (q?.pts_breakdown) {
+      ranks = { ...officialRanksFor(qid) };
+      if (points !== null) {
+        // Место (8/5/3) может занимать только один игрок — снимаем его с прежнего обладателя.
+        const key = normalizeBonusAnswer(answer);
+        Object.keys(ranks).forEach(k => { if (ranks[k] === points && k !== key) delete ranks[k]; });
+        ranks[key] = points;
+      }
+    }
+    await saveOfficialAnswerRaw(qid, buildBonusOfficialAnswer(next, nextImpossible, ranks), "open");
   }
 
   async function setOnlyCandidateOfficial(qid, answer) {
@@ -14670,6 +14697,7 @@ function AdminBonusPanel({ session, showToast }) {
   }
 
   async function markCandidateNotHappened(qid, answer) {
+    const q = BONUS_QS.find(x => String(x.id) === String(qid));
     const current = officialListFor(qid);
     const impossible = officialImpossibleListFor(qid);
     const variants = allKnownCandidateVariants(qid, answer);
@@ -14681,7 +14709,12 @@ function AdminBonusPanel({ session, showToast }) {
       if (!exact) return;
       if (!nextImpossible.some(x => String(x || "").trim() === exact)) nextImpossible.push(exact);
     });
-    await saveOfficialAnswerRaw(qid, buildBonusOfficialAnswer(nextCorrect, nextImpossible), "open");
+    let ranks = null;
+    if (q?.pts_breakdown) {
+      ranks = { ...officialRanksFor(qid) };
+      delete ranks[normalizeBonusAnswer(answer)];
+    }
+    await saveOfficialAnswerRaw(qid, buildBonusOfficialAnswer(nextCorrect, nextImpossible, ranks), "open");
   }
 
   async function setQuestionNotHappened(qid) {
@@ -14849,7 +14882,15 @@ function AdminBonusPanel({ session, showToast }) {
               {TARGET_PLAYER_BONUS_IDS.filter(qid => !isBonusAdminClosed(qid)).map(qid => {
                 const q = BONUS_QS.find(x => String(x.id) === String(qid));
                 const rows = showAllPlayerAnswers ? (playerCandidates[`${qid}__all`] || []) : (playerCandidates[qid] || []);
-                const officialNow = displayBonusAnswer(bonusMap[String(qid)]?.answer ?? drafts[String(qid)]);
+                const rankPtsList = q?.pts_breakdown ? q.pts_breakdown.split("/").map(Number) : null;
+                const ranksNow = rankPtsList ? officialRanksFor(qid) : null;
+                const officialNow = rankPtsList
+                  ? rankPtsList.map(pts => {
+                      const nameKey = Object.entries(ranksNow).find(([, v]) => v === pts)?.[0];
+                      const displayName = nameKey ? (officialListFor(qid).find(x => normalizeBonusAnswer(x) === nameKey) || nameKey) : "—";
+                      return `${pts}: ${displayName}`;
+                    }).join(" · ")
+                  : displayBonusAnswer(bonusMap[String(qid)]?.answer ?? drafts[String(qid)]);
                 return (
                   <div key={qid} style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, overflow: "hidden", background: "rgba(0,0,0,.16)" }}>
                     <div style={{ padding: "9px 10px", background: "rgba(22,163,74,.08)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
@@ -14867,14 +14908,21 @@ function AdminBonusPanel({ session, showToast }) {
                         const impossible = bonusIgnoreImpossibleMarks(qid) ? false : isCandidateImpossible(qid, r.answer);
                         const allUsers = [...new Set(r.users)];
                         const users = allUsers.join(", ");
+                        const rankHere = rankPtsList ? ranksNow[normalizeBonusAnswer(r.answer)] : null;
                         return (
                           <div key={r.key} style={{ padding: "9px 10px", borderTop: "1px solid rgba(255,255,255,.05)", display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", background: impossible ? "rgba(127,29,29,.16)" : "transparent" }}>
                             <div>
-                              <div style={{ color: included ? "#86EFAC" : impossible ? "#FCA5A5" : "#F0EDE6", fontWeight: 800, fontSize: 13 }}>{r.answer} <span style={{ color: "#F59E0B" }}>×{r.count}</span>{included && <span style={{ marginLeft: 5, color: "#86EFAC" }}>✓</span>}{impossible && <span style={{ marginLeft: 5, color: "#FCA5A5" }}>✕</span>}</div>
+                              <div style={{ color: included ? "#86EFAC" : impossible ? "#FCA5A5" : "#F0EDE6", fontWeight: 800, fontSize: 13 }}>{r.answer} <span style={{ color: "#F59E0B" }}>×{r.count}</span>{rankHere ? <span style={{ marginLeft: 5, color: "#86EFAC" }}>✓ {rankHere} бал.</span> : included && <span style={{ marginLeft: 5, color: "#86EFAC" }}>✓</span>}{impossible && <span style={{ marginLeft: 5, color: "#FCA5A5" }}>✕</span>}</div>
                               <div style={{ color: "rgba(240,237,230,.35)", fontSize: 10, marginTop: 2, lineHeight: 1.35 }}>{users}</div>
                             </div>
                             <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                              <button className="mini-btn green" disabled={saving[qid] || included} onClick={() => addCandidateToOfficial(qid, r.answer)}>{included ? "в зачёте" : "+ зачёт"}</button>
+                              {rankPtsList ? rankPtsList.map(pts => (
+                                <button key={pts} className={rankHere === pts ? "mini-btn green" : "mini-btn"} disabled={saving[qid]} onClick={() => addCandidateToOfficial(qid, r.answer, pts)} title={`Засчитать ${pts} баллов`}>
+                                  {rankHere === pts ? `✓ ${pts}` : `${pts} бал.`}
+                                </button>
+                              )) : (
+                                <button className="mini-btn green" disabled={saving[qid] || included} onClick={() => addCandidateToOfficial(qid, r.answer)}>{included ? "в зачёте" : "+ зачёт"}</button>
+                              )}
                               <button className="mini-btn red" disabled={saving[qid] || impossible} onClick={() => markCandidateNotHappened(qid, r.answer)}>{impossible ? "не случится" : "не случится"}</button>
                               <button className="mini-btn" disabled={saving[qid]} onClick={() => setOnlyCandidateOfficial(qid, r.answer)}>только</button>
                             </div>
@@ -17566,15 +17614,22 @@ function AdminPanel({ session, setSession, showToast, discipline, setDiscipline,
       let pts = 0, matched = false;
 
       if (q.id === "top_scorers") {
-        // player_multi: очки по месту официального игрока
-        const offArr = Array.isArray(officialAns) ? officialAns : [];
+        // player_multi: очки по месту официального игрока. officialAns — объект
+        // { correct, impossible, ranks }; ranks явно привязывает балл к игроку,
+        // без него (старые записи) считаем по позиции в correct.
+        const offRanks = (officialAns && typeof officialAns === "object" && !Array.isArray(officialAns) && officialAns.ranks) || null;
         const userArr = Array.isArray(user) ? user.filter(Boolean) : [];
-        const rankPts = [q.pts, 5, 3]; // 8/5/3
-        offArr.forEach((name, idx) => {
-          if (userArr.some(u => u?.toLowerCase() === name?.toLowerCase())) {
-            pts += rankPts[idx] || 0;
-          }
-        });
+        if (offRanks) {
+          userArr.forEach(name => { pts += offRanks[normalizeBonusAnswer(name)] || 0; });
+        } else {
+          const offArr = bonusOfficialCorrectList(officialAns);
+          const rankPts = [q.pts, 5, 3]; // 8/5/3
+          offArr.forEach((name, idx) => {
+            if (userArr.some(u => u?.toLowerCase() === name?.toLowerCase())) {
+              pts += rankPts[idx] || 0;
+            }
+          });
+        }
         matched = pts > 0;
       } else if (q.answerType === "score") {
         const normalize = v => {
