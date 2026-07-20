@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-medal-standings-live-table";
+const FFC_APP_BUILD = "2026-07-17-medal-rows-in-grid";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -12979,6 +12979,33 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
                     <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", verticalAlign: "middle", minWidth: participantColWidth, width: participantColWidth }}>
                       {renderScore(u, m.id, pairLabel)}
                     </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {matches === allPlayoffMatches && bonusOfficialMap["medal_standings"]?.answer && [
+              ["gold", "🥇 Золото", MEDAL_POINTS.gold],
+              ["silver", "🥈 Серебро", MEDAL_POINTS.silver],
+              ["bronze", "🥉 Бронза", MEDAL_POINTS.bronze],
+            ].map(([key, label, pts]) => {
+              const official = bonusOfficialMap["medal_standings"].answer[key];
+              return (
+                <tr key={`medal_${key}`} style={{ background: "rgba(245,158,11,.07)", borderTop: "2px solid rgba(245,158,11,.2)", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                  <td style={stickyTd(0, 11, "#FDE68A", 700)}>{label}</td>
+                  <td style={stickyTd(1, 11, "rgba(240,237,230,.4)")}>{pts} бал.</td>
+                  <td style={stickyTd(2, 12, "#F0EDE6", 700)}>{official || "—"}</td>
+                  <td style={stickyTd(3, 12, "#F0EDE6")}></td>
+                  <td style={stickyTd(4, 12, "#FDE68A")}></td>
+                  <td style={stickyTd(5, 12, "#93C5FD")}></td>
+                  {participants.map(u => {
+                    const predicted = userMedalPrediction(u)[key];
+                    const correct = predicted && official && normalizeTeamNameKey(predicted) === normalizeTeamNameKey(official);
+                    return (
+                      <td key={u.id} style={{ padding: "4px 6px", textAlign: "center", verticalAlign: "middle", minWidth: participantColWidth, width: participantColWidth }}>
+                        <div style={{ color: correct ? "#86EFAC" : "rgba(240,237,230,.45)", fontWeight: correct ? 800 : 400, fontSize: 11 }}>{predicted || "—"}</div>
+                        {correct && <div style={{ color: "#F59E0B", fontSize: 10 }}>+{pts}</div>}
+                      </td>
                     );
                   })}
                 </tr>
