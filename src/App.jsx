@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-top-scorer-rank-in-questions-table";
+const FFC_APP_BUILD = "2026-07-17-top-scorer-official-answer-clean";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -13211,6 +13211,26 @@ CREATE POLICY "official_results_admin_write"
                 : null;
           return { correct, pts: bom?.points || q.pts };
         }
+        // Для «Топ-3 бомбардира» в correct копится куча старых алиасов/вариантов
+        // написания (в т.ч. чужих игроков из ранних кликов «+ зачёт») — в официальном
+        // ответе показываем только тех троих, кому реально назначено место (ranks).
+        function bonusOfficialDisplayStr(q, bom) {
+          if (!bom) return "—";
+          if (q.id === "top_scorers") {
+            const ranks = (bom.answer && typeof bom.answer === "object" && !Array.isArray(bom.answer) && bom.answer.ranks) || null;
+            if (ranks && Object.keys(ranks).length) {
+              const correctList = bonusOfficialCorrectList(bom.answer);
+              return Object.entries(ranks)
+                .sort((a, b) => b[1] - a[1])
+                .map(([key, pts]) => {
+                  const displayName = correctList.find(n => normalizeBonusAnswer(n) === key) || key;
+                  return `${displayName} (${pts})`;
+                })
+                .join(", ");
+            }
+          }
+          return bonusOfficialDisplayAnswer(bom);
+        }
         const qStickyTh = (extra = {}) => ({
           padding: isNarrowViewport ? "7px 5px" : "8px 6px",
           textAlign: "left",
@@ -13286,7 +13306,7 @@ CREATE POLICY "official_results_admin_write"
                   {BONUS_QS.map((q, ri) => {
                     const bom = bonusOfficialMap[String(q.id)];
                     const offAns = bom?.answer;
-                    const offStr = bom ? bonusOfficialDisplayAnswer(bom) : "—";
+                    const offStr = bom ? bonusOfficialDisplayStr(q, bom) : "—";
                     const rowBg = ri % 2 === 0 ? "#0c1f0c" : "#071a07";
                     return (
                       <tr key={q.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
@@ -13349,7 +13369,7 @@ CREATE POLICY "official_results_admin_write"
               {BONUS_QS.map((q, ri) => {
                 const bom = bonusOfficialMap[String(q.id)];
                 const offAns = bom?.answer;
-                const offStr = bom ? bonusOfficialDisplayAnswer(bom) : "—";
+                const offStr = bom ? bonusOfficialDisplayStr(q, bom) : "—";
                 const rowBg = ri % 2 === 0 ? "#0c1f0c" : "#071a07";
                 return (
                   <tr key={q.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
