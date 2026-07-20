@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-medal-standings-auto-apply";
+const FFC_APP_BUILD = "2026-07-17-medal-standings-live-table";
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -12487,8 +12487,29 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
     return `${m?.home_key || m?.home_from || m?.home || "?"} — ${m?.away_key || m?.away_from || m?.away || "?"}`;
   }
 
+  // Прогноз участника на золото/серебро/бронзу — из его же счетов на Финал
+  // и матч за 3-е место (predByUser уже хранит h/a/pen по каждому match_id).
+  function userMedalPrediction(u) {
+    const rows = predByUser[String(u?.id || "")] || {};
+    const groupScores = {};
+    const playoffScores = {};
+    const playoffPens = {};
+    Object.entries(rows).forEach(([mid, val]) => {
+      if (!val) return;
+      const h = val.h, a = val.a;
+      if (h === "" || h === null || h === undefined || a === "" || a === null || a === undefined) return;
+      const row = { h, a };
+      if (ALL_GROUP_MATCH_IDS.has(mid)) groupScores[mid] = row;
+      else {
+        playoffScores[mid] = row;
+        if (val.pen) playoffPens[mid] = String(val.pen);
+      }
+    });
+    return predictedMedalTeamsForUser(groupScores, playoffScores, playoffPens);
+  }
+
   function userTotals(u) {
-    let group = 0, playoff = 0, bonus = 0, exact = 0, outcome = 0;
+    let group = 0, playoff = 0, bonus = 0, medal = 0, exact = 0, outcome = 0;
 
     allGroupMatches.forEach(m => {
       const pts = matchPoints(u, m.id);
@@ -12522,10 +12543,34 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
       const ans = bonusByUser[uid]?.[String(q.id)];
       const bom = bonusOfficialMap[String(q.id)];
       if (ans === undefined || !bom?.answer) return;
+      if (q.id === "top_scorers") {
+        // Очки зависят от места (8/5/3), а не просто от факта попадания в список.
+        const offRanks = (bom.answer && typeof bom.answer === "object" && !Array.isArray(bom.answer) && bom.answer.ranks) || null;
+        const userArr = Array.isArray(ans) ? ans.filter(Boolean) : bonusAnswerList(ans);
+        if (offRanks) {
+          userArr.forEach(name => { bonus += offRanks[normalizeBonusAnswer(name)] || 0; });
+        } else {
+          const offArr = bonusOfficialCorrectList(bom.answer);
+          const rankPts = [q.pts, 5, 3];
+          offArr.forEach((name, idx) => {
+            if (userArr.some(a => String(a).toLowerCase().trim() === String(name).toLowerCase().trim())) bonus += rankPts[idx] || 0;
+          });
+        }
+        return;
+      }
       const match = bonusAnswerMatches(ans, bom.answer);
       if (match) bonus += Number(bom.points ?? q.pts ?? 0) || 0;
     });
-    return { group, playoff, bonus, total: group + playoff + bonus, exact, outcome };
+
+    // Медальный зачёт: золото/серебро/бронза вписывает админ вручную
+    // (см. «⚔ Плей-офф пары» → medal_standings), прогноз берётся из
+    // предсказанного участником победителя Финала и матча за 3-е место.
+    const medalOfficialRow = bonusOfficialMap["medal_standings"];
+    if (medalOfficialRow?.answer) {
+      medal = calculateMedalPoints(userMedalPrediction(u), medalOfficialRow.answer).total;
+    }
+
+    return { group, playoff, bonus, medal, total: group + playoff + bonus + medal, exact, outcome };
   }
 
   const leaderboard = React.useMemo(() => {
@@ -12979,13 +13024,13 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: isNarrowViewport ? 720 : 560, tableLayout: "auto" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-                {["#", "Участник", "Итого", "Группы", "Плей-офф", "Бонусы", "Точных", "Исходов"].map(h => (
+                {["#", "Участник", "Итого", "Группы", "Плей-офф", "Бонусы", "Медали", "Точных", "Исходов"].map(h => (
                   <th key={h} style={{ padding: "6px 10px", fontSize: 11, color: "rgba(240,237,230,.45)", fontWeight: 700, textAlign: h === "Участник" ? "left" : "center", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {leaderboard.map(({ u, group, playoff, bonus, total, exact, outcome }, i) => (
+              {leaderboard.map(({ u, group, playoff, bonus, medal, total, exact, outcome }, i) => (
                 <tr key={u.id} style={{ borderBottom: "1px solid rgba(255,255,255,.04)", background: i === 0 ? "rgba(245,158,11,.06)" : i < 3 ? "rgba(255,255,255,.015)" : "transparent" }}>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, fontWeight: 800, color: i === 0 ? "#FDE68A" : i === 1 ? "#D1D5DB" : i === 2 ? "#F59E0B" : "rgba(240,237,230,.4)" }}>{i+1}</td>
                   <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, color: "#F0EDE6", minWidth: 150, maxWidth: 240, whiteSpace: "normal", overflowWrap: "anywhere", lineHeight: 1.15 }}>{uName(u)}</td>
@@ -12993,6 +13038,7 @@ function PublicForecastTable({ showToast, onLeaderboardReady, session }) {
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#86EFAC", fontWeight: 700 }}>{group}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#93C5FD", fontWeight: 700 }}>{playoff}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#FDE68A", fontWeight: 700 }}>{bonus}</td>
+                  <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 13, color: "#F59E0B", fontWeight: 700 }}>{medal || 0}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(134,239,172,.8)" }}>{exact}</td>
                   <td style={{ padding: "6px 10px", textAlign: "center", fontSize: 12, color: "rgba(240,237,230,.5)" }}>{outcome}</td>
                 </tr>
@@ -14020,12 +14066,37 @@ function AdminForecastTable({ session, showToast }) {
     return 0;
   }
 
+  // Прогноз участника на золото/серебро/бронзу — из его же счетов на Финал
+  // и матч за 3-е место (predByUser хранит h/a/pen по каждому match_id).
+  function userMedalPrediction(user) {
+    const rows = predByUser[String(user?.id || "")] || {};
+    const groupScores = {};
+    const playoffScores = {};
+    const playoffPens = {};
+    Object.entries(rows).forEach(([mid, val]) => {
+      if (!val) return;
+      const h = val.h, a = val.a;
+      if (h === "" || h === null || h === undefined || a === "" || a === null || a === undefined) return;
+      const row = { h, a };
+      if (ALL_GROUP_MATCH_IDS.has(mid)) groupScores[mid] = row;
+      else {
+        playoffScores[mid] = row;
+        if (val.pen) playoffPens[mid] = String(val.pen);
+      }
+    });
+    return predictedMedalTeamsForUser(groupScores, playoffScores, playoffPens);
+  }
+
   function participantTotals(user) {
-    let group = 0, playoff = 0, bonus = 0;
+    let group = 0, playoff = 0, bonus = 0, medal = 0;
     allGroupMatches.forEach(m => { const v = scoreCell(user, m.id); if (v !== "") group += Number(v) || 0; });
     allPlayoffMatches.forEach(m => { const v = scoreCell(user, m.id); if (v !== "") playoff += Number(v) || 0; });
     BONUS_QS.forEach(q => { const v = bonusPoints(q, userBonusAnswer(user, q.id), bonusOfficialMap[q.id]); if (v !== "") bonus += Number(v) || 0; });
-    return { group, playoff, bonus, total: group + playoff + bonus };
+    const medalOfficialRow = bonusOfficialMap["medal_standings"];
+    if (medalOfficialRow?.answer) {
+      medal = calculateMedalPoints(userMedalPrediction(user), medalOfficialRow.answer).total;
+    }
+    return { group, playoff, bonus, medal, total: group + playoff + bonus + medal };
   }
 
 
