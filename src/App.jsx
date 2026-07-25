@@ -7,7 +7,12 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://gcuxixbldjrztnqsdqcs.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjdXhpeGJsZGpyenRucXNkcWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDU1ODMsImV4cCI6MjA5NTM4MTU4M30.f6LGTZyW1qDyZ0urE0atzABmyAjQ9p8gAkinyu7j5h8";
-const FFC_APP_BUILD = "2026-07-17-top-scorer-per-name-highlight";
+const FFC_APP_BUILD = "2026-07-25-fantasysta-placeholder";
+
+// ЧМ-2026 закончился — прячем весь интерфейс "Прогнозиста" (весь код ниже
+// остаётся нетронутым) и показываем заглушку, пока строим FANTASYСТА
+// на этом же деплое. Чтобы вернуть старый интерфейс — верни true.
+const SHOW_LEGACY_PREDICTOR = false;
 
 // Если запись в bonus_official_answers упала с 42501 и в подсказке видно
 // "to anon" — значит запрос ушёл анонимно, а не от текущей сессии админа
@@ -24622,6 +24627,16 @@ function AppInner() {
   const todayMatches = useMemo(() => getTodayMatches(), []);
 
   // ── RENDER ──
+  if (!SHOW_LEGACY_PREDICTOR) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0A1F0A", color: "#F0EDE6", textAlign: "center", padding: 24, fontFamily: "Barlow Condensed,sans-serif" }}>
+        <div>
+          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(28px,6vw,56px)", fontWeight: 900, color: "#FDE68A", letterSpacing: 1, marginBottom: 14, textTransform: "uppercase" }}>⚽ FANTASYСТА</div>
+          <div style={{ fontSize: 16, color: "rgba(240,237,230,.6)", maxWidth: 480, margin: "0 auto" }}>Готовим новый фэнтези-режим. Совсем скоро здесь будет что-то интересное.</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <>
       <style>{S + `
