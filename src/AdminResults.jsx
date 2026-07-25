@@ -3,7 +3,7 @@ import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 
 // ⚠️ Должен совпадать с email в public.is_fantasysta_admin() (Модуль 2 SQL).
-const ADMIN_EMAIL = "YOUR_EMAIL@example.com";
+export const ADMIN_EMAIL = "YOUR_EMAIL@example.com";
 
 const LEAGUES = ["Все", "EPL", "LaLiga", "SerieA", "Bundesliga", "Ligue1"];
 const EMPTY_ROW = { is_win: false, is_draw: false, goals_scored: 0, clean_sheet: false };
@@ -17,7 +17,7 @@ function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");
 }
 
-function AdminResultsInner({ user, signOut }) {
+export function AdminResultsInner({ user, signOut }) {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
@@ -127,25 +127,17 @@ function AdminResultsInner({ user, signOut }) {
 
   if (user.email !== ADMIN_EMAIL) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-6">
+      <div className="flex items-center justify-center p-10">
         <div className="text-center text-slate-400 max-w-sm">
           Эта страница только для админа. Вошли как {user.email}.
-          <div className="mt-4">
-            <button type="button" onClick={signOut} className="text-sm text-red-400 hover:text-red-300">Выйти</button>
-          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8">
+    <div className="p-4 md:p-8">
       <div className="max-w-5xl mx-auto">
-        <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-extrabold tracking-tight">🧮 Результаты клубов</h1>
-          <button type="button" onClick={signOut} className="text-sm text-slate-500 hover:text-red-400 transition">Выйти</button>
-        </div>
-
         <div className="flex flex-wrap items-center gap-3 mb-5">
           <select
             value={gameweekId ?? ""}

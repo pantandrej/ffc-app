@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 
@@ -8,7 +8,10 @@ function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");
 }
 
-function TeamRegistrationInner({ user, profile, signOut }) {
+// Контент вкладки "Команда" — без своей шапки/логина, встраивается в FantasystaApp.
+// onTeamChange вызывается после создания/вступления/выхода, чтобы каркас мог
+// обновить teamId для вкладки "Мой пул".
+export function TeamRegistrationInner({ user, onTeamChange }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
@@ -79,6 +82,7 @@ function TeamRegistrationInner({ user, profile, signOut }) {
       showToast("✓ Команда создана");
       setNewTeamName("");
       await loadAll();
+      onTeamChange?.();
     } catch (e) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -93,6 +97,7 @@ function TeamRegistrationInner({ user, profile, signOut }) {
       if (error) throw error;
       showToast("✓ Вы вступили в команду");
       await loadAll();
+      onTeamChange?.();
     } catch (e) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -112,6 +117,7 @@ function TeamRegistrationInner({ user, profile, signOut }) {
       if (error) throw error;
       showToast("Вы вышли из команды");
       await loadAll();
+      onTeamChange?.();
     } catch (e) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -119,20 +125,12 @@ function TeamRegistrationInner({ user, profile, signOut }) {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-extrabold tracking-tight">⚽ Моя команда</h1>
-          <div className="flex items-center gap-3 text-sm text-slate-400">
-            <span>{profile?.username || user.email}</span>
-            <button type="button" onClick={signOut} className="text-slate-500 hover:text-red-400 transition">Выйти</button>
-          </div>
-        </div>
+  if (loading) return <div className="text-slate-400 p-4 md:p-8">Загрузка…</div>;
 
-        {loading ? (
-          <div className="text-slate-400">Загрузка…</div>
-        ) : myTeam ? (
+  return (
+    <div className="p-4 md:p-8">
+      <div className="max-w-3xl mx-auto">
+        {myTeam ? (
           <div className="rounded-2xl border border-emerald-500/30 bg-slate-800 p-6">
             <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">{LEAGUE_LABEL[myTeam.league] || myTeam.league}</div>
             <div className="text-2xl font-extrabold mb-4">{myTeam.name}</div>
@@ -218,6 +216,8 @@ function TeamRegistrationInner({ user, profile, signOut }) {
   );
 }
 
+// Отдельная самостоятельная страница (со своим логином) — оставлена для
+// прямого захода по ?test=team.
 export default function TeamRegistration() {
-  return <AuthGate>{({ user, profile, signOut }) => <TeamRegistrationInner user={user} profile={profile} signOut={signOut} />}</AuthGate>;
+  return <AuthGate>{({ user }) => <TeamRegistrationInner user={user} />}</AuthGate>;
 }
