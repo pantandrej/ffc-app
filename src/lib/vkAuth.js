@@ -1,7 +1,6 @@
 import { supabase, SUPABASE_URL } from "./supabaseClient.js";
 
-// ⚠️ Заполни после создания VK-приложения на vk.com/apps?act=manage.
-export const VK_APP_ID = "YOUR_VK_APP_ID";
+export const VK_APP_ID = "54614369";
 
 function vkRedirectUri() {
   return window.location.origin + window.location.pathname;

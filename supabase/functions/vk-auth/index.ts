@@ -5,8 +5,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ⚠️ Замени на ID нового VK-приложения для FANTASYSTA (см. vk.com/apps?act=manage).
-const VK_APP_ID = 'YOUR_VK_APP_ID'
+const VK_APP_ID = '54614369'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
