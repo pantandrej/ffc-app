@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 
-// ⚠️ Должен совпадать с email в public.is_fantasysta_admin() (Модуль 2 SQL).
-export const ADMIN_EMAIL = "YOUR_EMAIL@example.com";
+export const ADMIN_EMAIL = "mysliklub@gmail.com";
 
 const LEAGUES = ["Все", "EPL", "LaLiga", "SerieA", "Bundesliga", "Ligue1"];
 const EMPTY_ROW = { is_win: false, is_draw: false, goals_scored: 0, clean_sheet: false };

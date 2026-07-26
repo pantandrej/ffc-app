@@ -348,11 +348,9 @@ CREATE TRIGGER trg_recalc_team_results_for_club
 -- ============================================================================
 -- ШАГ 5. Row Level Security (RLS)
 -- ============================================================================
--- ⚠️ ЗАМЕНИ 'YOUR_EMAIL@example.com' НА СВОЙ РЕАЛЬНЫЙ EMAIL АДМИНА ⚠️
-
 CREATE OR REPLACE FUNCTION public.is_fantasysta_admin()
 RETURNS boolean LANGUAGE sql STABLE AS $$
-  SELECT auth.jwt() ->> 'email' = 'YOUR_EMAIL@example.com';
+  SELECT auth.jwt() ->> 'email' = 'mysliklub@gmail.com';
 $$;
 
 ALTER TABLE public.clubs               ENABLE ROW LEVEL SECURITY;
