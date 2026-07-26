@@ -10,7 +10,7 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const FFC_APP_BUILD = "2026-07-25-fantasysta-placeholder";
 
 // ЧМ-2026 закончился — прячем весь интерфейс "Прогнозиста" (весь код ниже
-// остаётся нетронутым) и показываем заглушку, пока строим FANTASYСТА
+// остаётся нетронутым) и показываем заглушку, пока строим FANTASYSTA
 // на этом же деплое. Чтобы вернуть старый интерфейс — верни true.
 const SHOW_LEGACY_PREDICTOR = false;
 
@@ -24631,7 +24631,7 @@ function AppInner() {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0A1F0A", color: "#F0EDE6", textAlign: "center", padding: 24, fontFamily: "Barlow Condensed,sans-serif" }}>
         <div>
-          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(28px,6vw,56px)", fontWeight: 900, color: "#FDE68A", letterSpacing: 1, marginBottom: 14, textTransform: "uppercase" }}>⚽ FANTASYСТА</div>
+          <div style={{ fontFamily: "Oswald,sans-serif", fontSize: "clamp(28px,6vw,56px)", fontWeight: 900, color: "#FDE68A", letterSpacing: 1, marginBottom: 14, textTransform: "uppercase" }}>⚽ FANTASYSTA</div>
           <div style={{ fontSize: 16, color: "rgba(240,237,230,.6)", maxWidth: 480, margin: "0 auto" }}>Готовим новый фэнтези-режим. Совсем скоро здесь будет что-то интересное.</div>
         </div>
       </div>

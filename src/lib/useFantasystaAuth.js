@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient.js";
+import { signInWithVK, handleVKCallback } from "./vkAuth.js";
 
 // auth.users общий на весь Supabase-проект (тот же, что у старого прогнозиста).
 // Триггер on_auth_user_created_fantasysta создаёт fantasysta_profiles только
@@ -35,6 +36,7 @@ export function useFantasystaAuth() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [vkError, setVkError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +52,15 @@ export function useFantasystaAuth() {
       if (!cancelled) setLoading(false);
     }
 
-    supabase.auth.getSession().then(({ data }) => initFromSession(data.session));
+    (async () => {
+      // Если в адресе есть code от VK — сначала завершаем этот вход,
+      // и только потом читаем сессию (verifyOtp внутри уже её создаст).
+      const vkResult = await handleVKCallback();
+      if (cancelled) return;
+      if (vkResult.error) setVkError(vkResult.error);
+      const { data } = await supabase.auth.getSession();
+      if (!cancelled) await initFromSession(data.session);
+    })();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       initFromSession(s);
@@ -74,5 +84,5 @@ export function useFantasystaAuth() {
     await supabase.auth.signOut();
   }, []);
 
-  return { session, user: session?.user || null, profile, loading, signInWithEmail, signOut };
+  return { session, user: session?.user || null, profile, loading, signInWithEmail, signInWithVK, vkError, signOut };
 }

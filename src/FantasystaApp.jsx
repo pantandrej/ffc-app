@@ -34,7 +34,7 @@ function FantasystaShell({ user, profile, signOut }) {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <header className="border-b border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between flex-wrap gap-3">
-        <div className="text-xl font-extrabold tracking-tight">⚽ FANTASYСТА</div>
+        <div className="text-xl font-extrabold tracking-tight">⚽ FANTASYSTA</div>
         <nav className="flex gap-1.5">
           {tabs.map(t => (
             <button
