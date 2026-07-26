@@ -37,6 +37,13 @@ const TIER_BADGE = {
   "Tier 4": "bg-slate-400 text-slate-950",
 };
 
+// Отметка еврокубка — цветная полоска сбоку карточки + короткий лейбл.
+const EURO_BADGE = {
+  ucl: { label: "ЛЧ", title: "Лига чемпионов", bar: "bg-indigo-500", pill: "bg-indigo-500 text-white" },
+  uel: { label: "ЛЕ", title: "Лига Европы", bar: "bg-orange-500", pill: "bg-orange-500 text-white" },
+  uecl: { label: "ЛК", title: "Лига конференций", bar: "bg-teal-400", pill: "bg-teal-400 text-slate-900" },
+};
+
 function formatMoney(value) {
   const n = Number(value) || 0;
   return `${new Intl.NumberFormat("ru-RU").format(n)} €`;
@@ -331,8 +338,10 @@ export default function PoolManagement({ teamId }) {
                   : captainId
                     ? "opacity-0 group-hover:opacity-40 hover:!opacity-100"
                     : "opacity-30 hover:opacity-70";
+                const euro = EURO_BADGE[club.euro_competition];
                 return (
-                  <div key={club.id} className="group rounded-xl border border-slate-700 bg-slate-800 p-3 flex items-center gap-3">
+                  <div key={club.id} className="group relative overflow-hidden rounded-xl border border-slate-700 bg-slate-800 p-3 pl-4 flex items-center gap-3">
+                    {euro && <div title={euro.title} className={`absolute left-0 top-0 bottom-0 w-1.5 ${euro.bar}`} />}
                     <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 object-contain flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold truncate">{club.name}</div>
@@ -427,10 +436,15 @@ export default function PoolManagement({ teamId }) {
                 else if (poolFull) label = "Пул заполнен";
                 else if (addLocked) label = "Лимит замен";
 
+                const euro = EURO_BADGE[club.euro_competition];
                 return (
-                  <div key={club.id} className="rounded-xl border border-slate-700 bg-slate-800 p-4 flex flex-col gap-2">
+                  <div key={club.id} className="relative overflow-hidden rounded-xl border border-slate-700 bg-slate-800 p-4 pl-5 flex flex-col gap-2">
+                    {euro && <div title={euro.title} className={`absolute left-0 top-0 bottom-0 w-1.5 ${euro.bar}`} />}
                     <div className="flex items-center gap-2">
                       <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-8 h-8 object-contain" />
+                      {euro && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${euro.pill}`}>{euro.label}</span>
+                      )}
                       <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${TIER_BADGE[club.tier] || "bg-slate-500 text-slate-950"}`}>
                         {club.tier}
                       </span>
