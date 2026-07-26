@@ -515,6 +515,13 @@ DROP POLICY IF EXISTS fantasysta_profiles_self_update ON public.fantasysta_profi
 CREATE POLICY fantasysta_profiles_self_update ON public.fantasysta_profiles
   FOR UPDATE TO authenticated USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
+-- 5.6 Fallback-инсерт своего профиля (ensureProfile() в useFantasystaAuth.js) —
+--     нужен для аккаунтов, созданных ДО появления триггера handle_new_fantasysta_user
+--     (тогда профиль не создаётся автоматически при регистрации).
+DROP POLICY IF EXISTS fantasysta_profiles_self_insert ON public.fantasysta_profiles;
+CREATE POLICY fantasysta_profiles_self_insert ON public.fantasysta_profiles
+  FOR INSERT TO authenticated WITH CHECK (id = auth.uid());
+
 -- ⚠️ В этом ТЗ НЕТ политик INSERT/UPDATE/DELETE для teams и team_members —
 -- то есть создать команду или вступить в неё через обычный ключ anon/authenticated
 -- сейчас невозможно, это будет отдельный модуль (скорее всего вместе с оплатой).
