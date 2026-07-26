@@ -61,6 +61,7 @@ export default function PoolManagement({ teamId }) {
   const [poolClubIds, setPoolClubIds] = useState([]);
   const [captainId, setCaptainId] = useState(null);
   const [initialClubIds, setInitialClubIds] = useState([]); // состав, сохранённый в БД на начало сессии
+  const [savedCaptainId, setSavedCaptainId] = useState(null); // капитан, сохранённый в БД
   const [alreadyTransferred, setAlreadyTransferred] = useState(false); // есть запись в transfers_log за этот тур
 
   const [leagueFilter, setLeagueFilter] = useState("all");
@@ -113,10 +114,12 @@ export default function PoolManagement({ teamId }) {
             setPoolClubIds(pool.club_ids || []);
             setCaptainId(pool.captain_club_id || null);
             setInitialClubIds(pool.club_ids || []);
+            setSavedCaptainId(pool.captain_club_id || null);
           } else {
             setPoolClubIds([]);
             setCaptainId(null);
             setInitialClubIds([]);
+            setSavedCaptainId(null);
           }
           setAlreadyTransferred((transferRes.data || []).length > 0);
         }
@@ -163,6 +166,14 @@ export default function PoolManagement({ teamId }) {
   const captainValid = !!captainId && poolClubIds.includes(captainId);
   const swapCountValid = removedFromInitial.length <= maxAllowedSwaps && addedSinceInitial.length <= maxAllowedSwaps;
   const canSave = !!gameweek && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0 && swapCountValid;
+
+  // Не даём нажать "Сохранить" повторно, если состав и капитан не менялись
+  // с последнего сохранения — иначе кнопка выглядит так, будто ничего не произошло.
+  const isPoolSaved =
+    poolClubIds.length === POOL_SIZE &&
+    removedFromInitial.length === 0 &&
+    addedSinceInitial.length === 0 &&
+    captainId === savedCaptainId;
 
   // ── Каталог: фильтры + сортировка ──
   const filteredClubs = useMemo(() => {
@@ -233,6 +244,7 @@ export default function PoolManagement({ teamId }) {
       }
 
       setInitialClubIds(poolClubIds);
+      setSavedCaptainId(captainId);
       showToast("✓ Пул сохранён");
     } catch (e) {
       showToast(friendlyError(e), "error");
@@ -321,7 +333,7 @@ export default function PoolManagement({ teamId }) {
                     : "opacity-30 hover:opacity-70";
                 return (
                   <div key={club.id} className="group rounded-xl border border-slate-700 bg-slate-800 p-3 flex items-center gap-3">
-                    <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 rounded-full bg-slate-700 object-contain flex-shrink-0" />
+                    <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 rounded-lg bg-slate-100 object-contain p-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold truncate">{club.name}</div>
                       <div className="text-xs text-slate-400">{club.league} · {formatMoney(club.price)}</div>
@@ -351,10 +363,10 @@ export default function PoolManagement({ teamId }) {
             <button
               type="button"
               onClick={handleSave}
-              disabled={!canSave || saving}
+              disabled={!canSave || saving || isPoolSaved}
               className="w-full py-4 rounded-xl font-bold text-lg transition bg-emerald-500 hover:bg-emerald-400 text-slate-900 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
             >
-              {saving ? "Сохраняю…" : "Сохранить Пул"}
+              {saving ? "Сохраняю…" : isPoolSaved ? "✓ Пул сохранён" : "Сохранить Пул"}
             </button>
             {!captainValid && poolClubIds.length === POOL_SIZE && (
               <div className="text-xs text-amber-400 text-center">Назначь капитана среди выбранных клубов</div>
