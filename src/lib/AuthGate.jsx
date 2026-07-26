@@ -40,7 +40,10 @@ export default function AuthGate({ children }) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-6">
         <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-6">
-          <div className="text-2xl font-extrabold mb-1">⚽ FANTASYSTA</div>
+          <div className="flex items-center gap-2 text-2xl font-extrabold mb-1">
+            <img src="/logo.png" alt="" className="w-8 h-8 rounded-md" />
+            FANTASYSTA
+          </div>
           <div className="text-sm text-slate-400 mb-5">Войди через VK или по ссылке на почту.</div>
 
           {vkError && <div className="text-red-400 text-xs mb-3">{vkError}</div>}

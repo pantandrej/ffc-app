@@ -5,6 +5,14 @@ const BUDGET = 100000000;
 const POOL_SIZE = 5;
 const PLACEHOLDER_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23334155'/%3E%3C/svg%3E";
 
+function CrownIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M3 8l4 3 5-6 5 6 4-3-1.5 10h-15L3 8z" />
+    </svg>
+  );
+}
+
 const LEAGUES = [
   { value: "all", label: "Все" },
   { value: "EPL", label: "EPL" },
@@ -306,8 +314,13 @@ export default function PoolManagement({ teamId }) {
                 const isCaptain = captainId === club.id;
                 const wasInitial = initialClubIds.includes(club.id);
                 const removeDisabled = wasInitial && swapRemoveLocked;
+                const crownVisibilityClass = isCaptain
+                  ? "opacity-100"
+                  : captainId
+                    ? "opacity-0 group-hover:opacity-40 hover:!opacity-100"
+                    : "opacity-30 hover:opacity-70";
                 return (
-                  <div key={club.id} className="rounded-xl border border-slate-700 bg-slate-800 p-3 flex items-center gap-3">
+                  <div key={club.id} className="group rounded-xl border border-slate-700 bg-slate-800 p-3 flex items-center gap-3">
                     <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 rounded-full bg-slate-700 object-contain flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold truncate">{club.name}</div>
@@ -316,10 +329,10 @@ export default function PoolManagement({ teamId }) {
                     <button
                       type="button"
                       onClick={() => toggleCaptain(club.id)}
-                      title="Назначить капитаном"
-                      className={`text-xl flex-shrink-0 transition ${isCaptain ? "text-amber-400" : "text-slate-600 hover:text-slate-400"}`}
+                      title={isCaptain ? "Убрать с капитанства" : "Назначить капитаном"}
+                      className={`flex-shrink-0 transition ${isCaptain ? "text-amber-400" : "text-slate-400"} ${crownVisibilityClass}`}
                     >
-                      👑
+                      <CrownIcon className="w-6 h-6" />
                     </button>
                     <button
                       type="button"
