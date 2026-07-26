@@ -333,7 +333,7 @@ export default function PoolManagement({ teamId }) {
                     : "opacity-30 hover:opacity-70";
                 return (
                   <div key={club.id} className="group rounded-xl border border-slate-700 bg-slate-800 p-3 flex items-center gap-3">
-                    <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 rounded-lg bg-slate-100 object-contain p-0.5 flex-shrink-0" />
+                    <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 object-contain flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold truncate">{club.name}</div>
                       <div className="text-xs text-slate-400">{club.league} · {formatMoney(club.price)}</div>
@@ -430,7 +430,7 @@ export default function PoolManagement({ teamId }) {
                 return (
                   <div key={club.id} className="rounded-xl border border-slate-700 bg-slate-800 p-4 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
-                      <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-8 h-8 rounded-full bg-slate-700 object-contain" />
+                      <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-8 h-8 object-contain" />
                       <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${TIER_BADGE[club.tier] || "bg-slate-500 text-slate-950"}`}>
                         {club.tier}
                       </span>
