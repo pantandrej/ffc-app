@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 
-const LEAGUE_LABEL = { free: "Общая лига", superleague: "Суперлига" };
+const LEAGUE_LABEL = { free: "Общая лига", superleague: "Бриллиантовая лига" };
 
 function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");

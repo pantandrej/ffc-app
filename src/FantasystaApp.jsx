@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 import PoolManagement from "./PoolManagement.jsx";
+import Leaderboard from "./Leaderboard.jsx";
 import { TeamRegistrationInner } from "./TeamRegistration.jsx";
 import { AdminResultsInner, ADMIN_EMAIL } from "./AdminResults.jsx";
 
 function FantasystaShell({ user, profile, signOut }) {
-  const [tab, setTab] = useState("pool"); // "pool" | "team" | "admin"
+  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "admin"
   const [teamId, setTeamId] = useState(null);
   const [loadingTeam, setLoadingTeam] = useState(true);
 
@@ -28,6 +29,7 @@ function FantasystaShell({ user, profile, signOut }) {
   const tabs = [
     { id: "pool", label: "⚽ Мой пул" },
     { id: "team", label: "👥 Команда" },
+    { id: "table", label: "🏆 Таблица" },
     ...(isAdmin ? [{ id: "admin", label: "🧮 Админка" }] : []),
   ];
 
@@ -78,6 +80,7 @@ function FantasystaShell({ user, profile, signOut }) {
           )
         )}
         {tab === "team" && <TeamRegistrationInner user={user} onTeamChange={loadTeam} />}
+        {tab === "table" && <Leaderboard user={user} />}
         {tab === "admin" && isAdmin && <AdminResultsInner user={user} signOut={signOut} />}
       </main>
     </div>
