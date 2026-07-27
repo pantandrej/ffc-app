@@ -2,12 +2,14 @@ import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 import PoolManagement from "./PoolManagement.jsx";
+import PersonalLineup from "./PersonalLineup.jsx";
 import Leaderboard from "./Leaderboard.jsx";
 import { TeamRegistrationInner } from "./TeamRegistration.jsx";
 import { AdminResultsInner, ADMIN_EMAIL } from "./AdminResults.jsx";
+import { AdminDiamondInner } from "./AdminDiamond.jsx";
 
 function FantasystaShell({ user, profile, signOut }) {
-  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "admin"
+  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "diamond" | "admin" | "admin-diamond"
   const [teamId, setTeamId] = useState(null);
   const [loadingTeam, setLoadingTeam] = useState(true);
 
@@ -30,7 +32,11 @@ function FantasystaShell({ user, profile, signOut }) {
     { id: "pool", label: "⚽ Мой пул" },
     { id: "team", label: "👥 Команда" },
     { id: "table", label: "🏆 Таблица" },
-    ...(isAdmin ? [{ id: "admin", label: "🧮 Админка" }] : []),
+    { id: "diamond", label: "💎 Личный состав" },
+    ...(isAdmin ? [
+      { id: "admin", label: "🧮 Админка" },
+      { id: "admin-diamond", label: "💎 Админка H2H" },
+    ] : []),
   ];
 
   return (
@@ -81,7 +87,9 @@ function FantasystaShell({ user, profile, signOut }) {
         )}
         {tab === "team" && <TeamRegistrationInner user={user} onTeamChange={loadTeam} />}
         {tab === "table" && <Leaderboard user={user} />}
+        {tab === "diamond" && <PersonalLineup user={user} />}
         {tab === "admin" && isAdmin && <AdminResultsInner user={user} signOut={signOut} />}
+        {tab === "admin-diamond" && isAdmin && <AdminDiamondInner user={user} />}
       </main>
     </div>
   );

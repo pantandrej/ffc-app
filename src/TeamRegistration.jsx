@@ -3,6 +3,7 @@ import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 
 const LEAGUE_LABEL = { free: "Общая лига", superleague: "Бриллиантовая лига" };
+const ROLE_LABEL = { captain: "Капитан", player_1: "Игрок 1", player_2: "Игрок 2" };
 
 function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");
@@ -41,7 +42,7 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
         setMyTeam(membership.teams);
         const membersRes = await supabase
           .from("team_members")
-          .select("profile_id, fantasysta_profiles(username)")
+          .select("profile_id, role_in_team, fantasysta_profiles(username)")
           .eq("team_id", membership.teams.id);
         if (membersRes.error) throw membersRes.error;
         setMyTeammates(membersRes.data || []);
@@ -105,6 +106,28 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
     }
   }
 
+  async function setMyRole(role) {
+    if (!myTeam) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase
+        .from("team_members")
+        .update({ role_in_team: role || null })
+        .eq("team_id", myTeam.id)
+        .eq("profile_id", user.id);
+      if (error) throw error;
+      showToast("✓ Роль сохранена");
+      await loadAll();
+    } catch (e) {
+      showToast(
+        e?.code === "23505" ? "Эта роль уже занята другим участником" : friendlyError(e),
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function leaveTeam() {
     if (!myTeam) return;
     setBusy(true);
@@ -135,14 +158,34 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
             <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">{LEAGUE_LABEL[myTeam.league] || myTeam.league}</div>
             <div className="text-2xl font-extrabold mb-4">{myTeam.name}</div>
             <div className="text-sm text-slate-400 mb-2">Состав ({myTeammates.length}/3):</div>
-            <ul className="flex flex-col gap-2 mb-6">
+            <ul className="flex flex-col gap-2 mb-3">
               {myTeammates.map(m => (
-                <li key={m.profile_id} className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm">
-                  {m.fantasysta_profiles?.username || m.profile_id}
-                  {m.profile_id === user.id && <span className="text-slate-500"> (ты)</span>}
+                <li key={m.profile_id} className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm flex items-center justify-between gap-3">
+                  <span>
+                    {m.fantasysta_profiles?.username || m.profile_id}
+                    {m.profile_id === user.id && <span className="text-slate-500"> (ты)</span>}
+                  </span>
+                  {m.profile_id === user.id ? (
+                    <select
+                      value={m.role_in_team || ""}
+                      onChange={e => setMyRole(e.target.value)}
+                      disabled={busy}
+                      className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1 text-slate-200 disabled:opacity-50"
+                    >
+                      <option value="">Роль не выбрана</option>
+                      <option value="captain">Капитан</option>
+                      <option value="player_1">Игрок 1</option>
+                      <option value="player_2">Игрок 2</option>
+                    </select>
+                  ) : (
+                    <span className="text-xs text-slate-500">{ROLE_LABEL[m.role_in_team] || "роль не выбрана"}</span>
+                  )}
                 </li>
               ))}
             </ul>
+            <div className="text-xs text-slate-500 mb-6">
+              Роль (Капитан / Игрок 1 / Игрок 2) определяет твоего соперника 1×1 в Бриллиантовой лиге — у каждой роли должен быть свой личный состав из 5 клубов.
+            </div>
             <button
               type="button"
               onClick={leaveTeam}
