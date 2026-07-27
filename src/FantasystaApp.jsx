@@ -44,7 +44,7 @@ function FantasystaShell({ user, profile, signOut }) {
       <header className="border-b border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
           <img src="/logo.png" alt="" className="w-7 h-7 rounded-md" />
-          <span className="text-emerald-400">FANTASY</span>STA
+          <span><span className="text-emerald-400">FANTASY</span>STA</span>
         </div>
         <nav className="flex gap-1.5">
           {tabs.map(t => (
@@ -70,19 +70,8 @@ function FantasystaShell({ user, profile, signOut }) {
         {tab === "pool" && (
           loadingTeam ? (
             <div className="text-slate-400 p-8">Загрузка…</div>
-          ) : teamId ? (
-            <PoolManagement teamId={teamId} />
           ) : (
-            <div className="flex flex-col items-center justify-center gap-4 p-16 text-center">
-              <div className="text-slate-400 max-w-sm">Сначала нужна команда — создай свою или вступи в открытую.</div>
-              <button
-                type="button"
-                onClick={() => setTab("team")}
-                className="px-5 py-2 rounded-lg font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-900 transition"
-              >
-                Перейти к команде
-              </button>
-            </div>
+            <PoolManagement teamId={teamId} onNeedTeam={() => setTab("team")} />
           )
         )}
         {tab === "team" && <TeamRegistrationInner user={user} onTeamChange={loadTeam} />}

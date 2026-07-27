@@ -56,7 +56,7 @@ function friendlyError(e) {
   return msg;
 }
 
-export default function PoolManagement({ teamId }) {
+export default function PoolManagement({ teamId, onNeedTeam }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -221,7 +221,12 @@ export default function PoolManagement({ teamId }) {
   }
 
   async function handleSave() {
-    if (!canSave || !gameweek || !teamId) return;
+    if (!teamId) {
+      showToast("Сначала создай команду или вступи в открытую — без неё сет не сохранить", "error");
+      onNeedTeam?.();
+      return;
+    }
+    if (!canSave || !gameweek) return;
     setSaving(true);
     try {
       const { error: upsertError } = await supabase
@@ -261,14 +266,6 @@ export default function PoolManagement({ teamId }) {
   }
 
   // ── Рендер ──
-  if (!teamId) {
-    return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-6">
-        <div className="text-center text-slate-400">Команда не выбрана — некуда сохранять сет.</div>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
@@ -301,7 +298,18 @@ export default function PoolManagement({ teamId }) {
           <span className="text-sm text-slate-400">Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}</span>
         </div>
 
-        {!isFirstSave && (
+        {!teamId && (
+          <div className="mb-6 rounded-xl px-4 py-3 text-sm bg-amber-950/40 text-amber-300 border border-amber-500/30 flex items-center justify-between gap-3 flex-wrap">
+            <span>Собирать сет можно и без команды, но сохранить получится только после того, как создашь свою или вступишь в открытую.</span>
+            {onNeedTeam && (
+              <button type="button" onClick={onNeedTeam} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-400 text-amber-950 hover:bg-amber-300 transition flex-shrink-0">
+                Перейти к команде
+              </button>
+            )}
+          </div>
+        )}
+
+        {teamId && !isFirstSave && (
           <div className={`mb-6 rounded-xl px-4 py-3 text-sm ${alreadyTransferred ? "bg-red-950/40 text-red-300 border border-red-500/30" : "bg-sky-950/40 text-sky-300 border border-sky-500/30"}`}>
             {alreadyTransferred
               ? "Бесплатная замена на этот тур уже использована — состав больше менять нельзя."
