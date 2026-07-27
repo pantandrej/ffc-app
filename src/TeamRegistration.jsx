@@ -78,7 +78,7 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
       if (error) throw error;
       const { error: memberError } = await supabase
         .from("team_members")
-        .insert({ team_id: team.id, profile_id: user.id });
+        .insert({ team_id: team.id, profile_id: user.id, role_in_team: "captain" });
       if (memberError) throw memberError;
       showToast("✓ Команда создана");
       setNewTeamName("");
@@ -106,23 +106,25 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
     }
   }
 
-  async function setMyRole(role) {
+  // Только капитан может менять роли (включая передачу капитанства). Логика
+  // (кто кого подвинет, проверка прав) — на сервере, в set_team_member_role:
+  // передача капитанства требует двух изменений разом, а два отдельных
+  // update() — это два разных запроса/транзакции, и капитан теряет право
+  // менять роли уже после первого из них.
+  async function setMemberRole(targetProfileId, role) {
     if (!myTeam) return;
     setBusy(true);
     try {
-      const { error } = await supabase
-        .from("team_members")
-        .update({ role_in_team: role || null })
-        .eq("team_id", myTeam.id)
-        .eq("profile_id", user.id);
+      const { error } = await supabase.rpc("set_team_member_role", {
+        p_team_id: myTeam.id,
+        p_target_profile_id: targetProfileId,
+        p_role: role || null,
+      });
       if (error) throw error;
       showToast("✓ Роль сохранена");
       await loadAll();
     } catch (e) {
-      showToast(
-        e?.code === "23505" ? "Эта роль уже занята другим участником" : friendlyError(e),
-        "error"
-      );
+      showToast(friendlyError(e), "error");
     } finally {
       setBusy(false);
     }
@@ -150,6 +152,12 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
 
   if (loading) return <div className="text-slate-400 p-4 md:p-8">Загрузка…</div>;
 
+  const myRole = myTeammates.find(m => m.profile_id === user.id)?.role_in_team;
+  const hasCaptain = myTeammates.some(m => m.role_in_team === "captain");
+  // Если в команде ещё вообще нет капитана (например, старая команда до этой
+  // фичи) — даём любому участнику назначить роли, чтобы не зависнуть без доступа.
+  const canManageRoles = myRole === "captain" || !hasCaptain;
+
   return (
     <div className="p-4 md:p-8">
       <div className="max-w-3xl mx-auto">
@@ -165,10 +173,10 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
                     {m.fantasysta_profiles?.username || m.profile_id}
                     {m.profile_id === user.id && <span className="text-slate-500"> (ты)</span>}
                   </span>
-                  {m.profile_id === user.id ? (
+                  {canManageRoles ? (
                     <select
                       value={m.role_in_team || ""}
-                      onChange={e => setMyRole(e.target.value)}
+                      onChange={e => setMemberRole(m.profile_id, e.target.value)}
                       disabled={busy}
                       className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1 text-slate-200 disabled:opacity-50"
                     >
@@ -184,7 +192,8 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
               ))}
             </ul>
             <div className="text-xs text-slate-500 mb-6">
-              Роль (Капитан / Игрок 1 / Игрок 2) определяет твоего соперника 1×1 в Бриллиантовой лиге — у каждой роли должен быть свой личный состав из 5 клубов.
+              Роль (Капитан / Игрок 1 / Игрок 2) определяет соперника 1×1 в Бриллиантовой лиге — у каждой роли свой личный состав из 5 клубов.
+              {canManageRoles ? " Роли назначает капитан — он может передать капитанство другому." : " Роли назначает капитан команды."}
             </div>
             <button
               type="button"
