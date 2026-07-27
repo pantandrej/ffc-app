@@ -1,38 +1,20 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "./lib/supabaseClient.js";
+import React, { useState } from "react";
 import AuthGate from "./lib/AuthGate.jsx";
 import PoolManagement from "./PoolManagement.jsx";
-import PersonalLineup from "./PersonalLineup.jsx";
 import Leaderboard from "./Leaderboard.jsx";
 import { TeamRegistrationInner } from "./TeamRegistration.jsx";
 import { AdminResultsInner, ADMIN_EMAIL } from "./AdminResults.jsx";
 import { AdminDiamondInner } from "./AdminDiamond.jsx";
 
 function FantasystaShell({ user, profile, signOut }) {
-  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "diamond" | "admin" | "admin-diamond"
-  const [teamId, setTeamId] = useState(null);
-  const [loadingTeam, setLoadingTeam] = useState(true);
+  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "admin" | "admin-diamond"
 
   const isAdmin = user.email === ADMIN_EMAIL;
 
-  const loadTeam = useCallback(async () => {
-    setLoadingTeam(true);
-    const { data } = await supabase
-      .from("team_members")
-      .select("team_id")
-      .eq("profile_id", user.id)
-      .maybeSingle();
-    setTeamId(data?.team_id || null);
-    setLoadingTeam(false);
-  }, [user.id]);
-
-  useEffect(() => { loadTeam(); }, [loadTeam]);
-
   const tabs = [
-    { id: "pool", label: "⚽ Мой сет" },
+    { id: "pool", label: "⚽ Мой пул клубов" },
     { id: "team", label: "👥 Команда" },
     { id: "table", label: "🏆 Таблица" },
-    { id: "diamond", label: "💎 Личный состав" },
     ...(isAdmin ? [
       { id: "admin", label: "🧮 Админка" },
       { id: "admin-diamond", label: "💎 Админка H2H" },
@@ -67,16 +49,9 @@ function FantasystaShell({ user, profile, signOut }) {
       </header>
 
       <main>
-        {tab === "pool" && (
-          loadingTeam ? (
-            <div className="text-slate-400 p-8">Загрузка…</div>
-          ) : (
-            <PoolManagement teamId={teamId} onNeedTeam={() => setTab("team")} />
-          )
-        )}
-        {tab === "team" && <TeamRegistrationInner user={user} onTeamChange={loadTeam} />}
+        {tab === "pool" && <PoolManagement user={user} />}
+        {tab === "team" && <TeamRegistrationInner user={user} />}
         {tab === "table" && <Leaderboard user={user} />}
-        {tab === "diamond" && <PersonalLineup user={user} />}
         {tab === "admin" && isAdmin && <AdminResultsInner user={user} signOut={signOut} />}
         {tab === "admin-diamond" && isAdmin && <AdminDiamondInner user={user} />}
       </main>

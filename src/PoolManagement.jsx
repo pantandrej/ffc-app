@@ -37,7 +37,6 @@ const TIER_BADGE = {
   "Tier 4": "bg-slate-400 text-slate-950",
 };
 
-// Отметка еврокубка — цветная полоска сбоку карточки + короткий лейбл.
 const EURO_BADGE = {
   ucl: { label: "ЛЧ", title: "Лига чемпионов", bar: "bg-indigo-500", pill: "bg-indigo-500 text-white" },
   uel: { label: "ЛЕ", title: "Лига Европы", bar: "bg-orange-500", pill: "bg-orange-500 text-white" },
@@ -50,30 +49,30 @@ function formatMoney(value) {
 }
 
 function friendlyError(e) {
-  const msg = e?.message || String(e || "Неизвестная ошибка");
-  // Триггеры БД уже кидают понятные русские сообщения (RAISE EXCEPTION) —
-  // Supabase присылает их как есть в error.message, просто показываем.
-  return msg;
+  return e?.message || String(e || "Неизвестная ошибка");
 }
 
-export default function PoolManagement({ teamId, onNeedTeam }) {
+// Единственный экран выбора клубов — пишет в user_lineups (личный пул на
+// каждого игрока). Очки команды в Общей лиге = среднее по всем участникам
+// (см. sql/fantasysta_module12_unified_lineup_scoring.sql); та же таблица
+// станет основой для будущих дуэлей 1×1, когда включим Бриллиантовую лигу.
+export default function PoolManagement({ user }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState(null); // { text, kind }
+  const [toast, setToast] = useState(null);
 
   const [clubs, setClubs] = useState([]);
   const [gameweek, setGameweek] = useState(null);
 
   const [poolClubIds, setPoolClubIds] = useState([]);
   const [captainId, setCaptainId] = useState(null);
-  const [initialClubIds, setInitialClubIds] = useState([]); // состав, сохранённый в БД на начало сессии
-  const [savedCaptainId, setSavedCaptainId] = useState(null); // капитан, сохранённый в БД
-  const [alreadyTransferred, setAlreadyTransferred] = useState(false); // есть запись в transfers_log за этот тур
+  const [savedClubIds, setSavedClubIds] = useState([]);
+  const [savedCaptainId, setSavedCaptainId] = useState(null);
 
   const [leagueFilter, setLeagueFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("price_desc"); // price_desc | price_asc | name_asc
+  const [sortBy, setSortBy] = useState("price_desc");
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -81,7 +80,6 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
     showToast._t = window.setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // ── Загрузка данных ──
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -107,28 +105,22 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
         if (cancelled) return;
         setGameweek(gw);
 
-        if (gw && teamId) {
-          const [poolRes, transferRes] = await Promise.all([
-            supabase.from("team_pools").select("*").eq("team_id", teamId).eq("gameweek_id", gw.id).maybeSingle(),
-            supabase.from("transfers_log").select("id").eq("team_id", teamId).eq("gameweek_id", gw.id).limit(1),
-          ]);
+        if (gw) {
+          const lineupRes = await supabase
+            .from("user_lineups")
+            .select("club_id, is_club_captain")
+            .eq("profile_id", user.id)
+            .eq("gameweek_id", gw.id);
           if (cancelled) return;
-          if (poolRes.error && poolRes.error.code !== "PGRST116") throw poolRes.error;
-          if (transferRes.error) throw transferRes.error;
+          if (lineupRes.error) throw lineupRes.error;
 
-          const pool = poolRes.data;
-          if (pool) {
-            setPoolClubIds(pool.club_ids || []);
-            setCaptainId(pool.captain_club_id || null);
-            setInitialClubIds(pool.club_ids || []);
-            setSavedCaptainId(pool.captain_club_id || null);
-          } else {
-            setPoolClubIds([]);
-            setCaptainId(null);
-            setInitialClubIds([]);
-            setSavedCaptainId(null);
-          }
-          setAlreadyTransferred((transferRes.data || []).length > 0);
+          const rows = lineupRes.data || [];
+          const ids = rows.map(r => r.club_id);
+          const cap = rows.find(r => r.is_club_captain)?.club_id || null;
+          setPoolClubIds(ids);
+          setCaptainId(cap);
+          setSavedClubIds(ids);
+          setSavedCaptainId(cap);
         }
       } catch (e) {
         if (!cancelled) setLoadError(friendlyError(e));
@@ -138,7 +130,7 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
     }
     load();
     return () => { cancelled = true; };
-  }, [teamId]);
+  }, [user.id]);
 
   const clubsById = useMemo(() => {
     const map = new Map();
@@ -156,33 +148,14 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
     [poolClubs]
   );
 
-  // ── Лимит замен ──
-  const isFirstSave = initialClubIds.length === 0;
-  const maxAllowedSwaps = isFirstSave ? Infinity : (alreadyTransferred ? 0 : 1);
-  const removedFromInitial = useMemo(
-    () => initialClubIds.filter(id => !poolClubIds.includes(id)),
-    [initialClubIds, poolClubIds]
-  );
-  const addedSinceInitial = useMemo(
-    () => poolClubIds.filter(id => !initialClubIds.includes(id)),
-    [initialClubIds, poolClubIds]
-  );
-  const swapRemoveLocked = !isFirstSave && removedFromInitial.length >= maxAllowedSwaps;
-  const swapAddLocked = !isFirstSave && addedSinceInitial.length >= maxAllowedSwaps;
-
   const captainValid = !!captainId && poolClubIds.includes(captainId);
-  const swapCountValid = removedFromInitial.length <= maxAllowedSwaps && addedSinceInitial.length <= maxAllowedSwaps;
-  const canSave = !!gameweek && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0 && swapCountValid;
+  const canSave = !!gameweek && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0;
 
-  // Не даём нажать "Сохранить" повторно, если состав и капитан не менялись
-  // с последнего сохранения — иначе кнопка выглядит так, будто ничего не произошло.
-  const isPoolSaved =
-    poolClubIds.length === POOL_SIZE &&
-    removedFromInitial.length === 0 &&
-    addedSinceInitial.length === 0 &&
+  const isSaved =
+    poolClubIds.length === savedClubIds.length &&
+    poolClubIds.every(id => savedClubIds.includes(id)) &&
     captainId === savedCaptainId;
 
-  // ── Каталог: фильтры + сортировка ──
   const filteredClubs = useMemo(() => {
     let list = clubs;
     if (leagueFilter !== "all") list = list.filter(c => c.league === leagueFilter);
@@ -194,24 +167,13 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
     return list;
   }, [clubs, leagueFilter, tierFilter, sortBy]);
 
-  // ── Действия с сетом ──
   function addClub(clubId) {
     if (poolClubIds.length >= POOL_SIZE) return;
     if (poolClubIds.includes(clubId)) return;
-    const isNewAddition = !initialClubIds.includes(clubId);
-    if (isNewAddition && swapAddLocked) {
-      showToast("Разрешена только 1 замена между турами!", "error");
-      return;
-    }
     setPoolClubIds(prev => [...prev, clubId]);
   }
 
   function removeClub(clubId) {
-    const wasInitial = initialClubIds.includes(clubId);
-    if (wasInitial && swapRemoveLocked) {
-      showToast("Разрешена только 1 замена между турами!", "error");
-      return;
-    }
     setPoolClubIds(prev => prev.filter(id => id !== clubId));
     if (captainId === clubId) setCaptainId(null);
   }
@@ -221,43 +183,28 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
   }
 
   async function handleSave() {
-    if (!teamId) {
-      showToast("Сначала создай команду или вступи в открытую — без неё сет не сохранить", "error");
-      onNeedTeam?.();
-      return;
-    }
     if (!canSave || !gameweek) return;
     setSaving(true);
     try {
-      const { error: upsertError } = await supabase
-        .from("team_pools")
-        .upsert(
-          {
-            team_id: teamId,
-            gameweek_id: gameweek.id,
-            club_ids: poolClubIds,
-            captain_club_id: captainId,
-          },
-          { onConflict: "team_id,gameweek_id" }
-        );
-      if (upsertError) throw upsertError;
+      const { error: delError } = await supabase
+        .from("user_lineups")
+        .delete()
+        .eq("profile_id", user.id)
+        .eq("gameweek_id", gameweek.id);
+      if (delError) throw delError;
 
-      // Если это не первая сборка сета в этом туре и состав реально поменялся —
-      // фиксируем факт замены в transfers_log (ровно 1 клуб на 1 клуб).
-      if (!isFirstSave && removedFromInitial.length === 1 && addedSinceInitial.length === 1) {
-        const { error: transferError } = await supabase.from("transfers_log").insert({
-          team_id: teamId,
-          gameweek_id: gameweek.id,
-          club_out_id: removedFromInitial[0],
-          club_in_id: addedSinceInitial[0],
-        });
-        if (transferError) throw transferError;
-        setAlreadyTransferred(true);
-      }
+      const rows = poolClubIds.map(clubId => ({
+        profile_id: user.id,
+        gameweek_id: gameweek.id,
+        club_id: clubId,
+        is_club_captain: clubId === captainId,
+      }));
+      const { error: insError } = await supabase.from("user_lineups").insert(rows);
+      if (insError) throw insError;
 
-      setInitialClubIds(poolClubIds);
+      setSavedClubIds(poolClubIds);
       setSavedCaptainId(captainId);
-      showToast("✓ Сет сохранён");
+      showToast("✓ Пул сохранён");
     } catch (e) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -265,11 +212,10 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
     }
   }
 
-  // ── Рендер ──
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
-        <div className="text-slate-400">Загружаю сет…</div>
+        <div className="text-slate-400">Загружаю пул…</div>
       </div>
     );
   }
@@ -293,32 +239,15 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-extrabold tracking-tight">⚽ Управление сетом</h1>
+        <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
+          <h1 className="text-2xl font-extrabold tracking-tight">⚽ Мой пул клубов</h1>
           <span className="text-sm text-slate-400">Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}</span>
         </div>
-
-        {!teamId && (
-          <div className="mb-6 rounded-xl px-4 py-3 text-sm bg-amber-950/40 text-amber-300 border border-amber-500/30 flex items-center justify-between gap-3 flex-wrap">
-            <span>Собирать сет можно и без команды, но сохранить получится только после того, как создашь свою или вступишь в открытую.</span>
-            {onNeedTeam && (
-              <button type="button" onClick={onNeedTeam} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-400 text-amber-950 hover:bg-amber-300 transition flex-shrink-0">
-                Перейти к команде
-              </button>
-            )}
-          </div>
-        )}
-
-        {teamId && !isFirstSave && (
-          <div className={`mb-6 rounded-xl px-4 py-3 text-sm ${alreadyTransferred ? "bg-red-950/40 text-red-300 border border-red-500/30" : "bg-sky-950/40 text-sky-300 border border-sky-500/30"}`}>
-            {alreadyTransferred
-              ? "Бесплатная замена на этот тур уже использована — состав больше менять нельзя."
-              : "Сет уже сохранён на этот тур — доступна ровно 1 бесплатная замена."}
-          </div>
-        )}
+        <div className="text-sm text-slate-400 mb-6">
+          Собери свои 5 клубов на этот тур, выбери Капитана и помоги своей команде победить.
+        </div>
 
         <div className="flex flex-col md:flex-row gap-6">
-          {/* ── Левая колонка: Мой Сет ── */}
           <aside className="md:w-[35%] flex flex-col gap-4">
             <div className={`rounded-2xl p-5 border ${bankBalance < 0 ? "bg-red-950/40 border-red-500" : "bg-slate-800 border-emerald-500/30"}`}>
               <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Баланс</div>
@@ -339,8 +268,6 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
                   );
                 }
                 const isCaptain = captainId === club.id;
-                const wasInitial = initialClubIds.includes(club.id);
-                const removeDisabled = wasInitial && swapRemoveLocked;
                 const crownVisibilityClass = isCaptain
                   ? "opacity-100"
                   : captainId
@@ -366,9 +293,8 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
                     <button
                       type="button"
                       onClick={() => removeClub(club.id)}
-                      disabled={removeDisabled}
-                      title={removeDisabled ? "Лимит замен исчерпан" : "Убрать из сета"}
-                      className="text-slate-500 hover:text-red-400 disabled:opacity-25 disabled:hover:text-slate-500 disabled:cursor-not-allowed flex-shrink-0"
+                      title="Убрать из пула"
+                      className="text-slate-500 hover:text-red-400 flex-shrink-0"
                     >
                       ✕
                     </button>
@@ -380,17 +306,16 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
             <button
               type="button"
               onClick={handleSave}
-              disabled={!canSave || saving || isPoolSaved}
+              disabled={!canSave || saving || isSaved}
               className="w-full py-4 rounded-xl font-bold text-lg transition bg-emerald-500 hover:bg-emerald-400 text-slate-900 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
             >
-              {saving ? "Сохраняю…" : isPoolSaved ? "✓ Сет сохранён" : "Сохранить Сет"}
+              {saving ? "Сохраняю…" : isSaved ? "✓ Пул сохранён" : "Сохранить пул"}
             </button>
             {!captainValid && poolClubIds.length === POOL_SIZE && (
               <div className="text-xs text-amber-400 text-center">Назначь капитана среди выбранных клубов</div>
             )}
           </aside>
 
-          {/* ── Правая колонка: Каталог клубов ── */}
           <main className="md:w-[65%] flex flex-col gap-4">
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap gap-2">
@@ -436,13 +361,10 @@ export default function PoolManagement({ teamId, onNeedTeam }) {
               {filteredClubs.map(club => {
                 const inPool = poolClubIds.includes(club.id);
                 const poolFull = poolClubIds.length >= POOL_SIZE;
-                const isNewAddition = !initialClubIds.includes(club.id);
-                const addLocked = !inPool && isNewAddition && swapAddLocked;
-                const disabled = inPool || (poolFull && !inPool) || addLocked;
+                const disabled = inPool || (poolFull && !inPool);
                 let label = "Добавить";
-                if (inPool) label = "В сете";
-                else if (poolFull) label = "Сет заполнен";
-                else if (addLocked) label = "Лимит замен";
+                if (inPool) label = "В пуле";
+                else if (poolFull) label = "Пул заполнен";
 
                 const euro = EURO_BADGE[club.euro_competition];
                 return (
