@@ -63,7 +63,7 @@ export default function AuthGate({ children }) {
         <div className="relative z-10 px-4 py-10 md:py-16">
           <div className="max-w-5xl mx-auto flex items-center gap-2 text-2xl font-extrabold mb-8">
             <img src="/logo.png" alt="" className="w-9 h-9 rounded-md" />
-            FANTASYSTA
+            <span className="text-emerald-400">FANTASY</span>STA
           </div>
 
           <div className="max-w-5xl mx-auto mb-12">

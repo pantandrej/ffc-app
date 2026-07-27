@@ -44,7 +44,7 @@ function FantasystaShell({ user, profile, signOut }) {
       <header className="border-b border-slate-800 px-4 md:px-8 py-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
           <img src="/logo.png" alt="" className="w-7 h-7 rounded-md" />
-          FANTASYSTA
+          <span className="text-emerald-400">FANTASY</span>STA
         </div>
         <nav className="flex gap-1.5">
           {tabs.map(t => (
