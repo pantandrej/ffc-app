@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     }
 
     const user_id = vkUser.user_id
-    if (!user_id) {
+    if (!user_id || user_id === 'undefined') {
       return new Response(JSON.stringify({ error: 'No user_id: ' + userText.slice(0, 300) }), {
         status: 401, headers: { ...CORS, 'Content-Type': 'application/json' }
       })

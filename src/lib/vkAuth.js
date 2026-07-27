@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL } from "./supabaseClient.js";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
 
 export const VK_APP_ID = "54614369";
 
@@ -71,11 +71,18 @@ export async function handleVKCallback() {
 
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/vk-auth`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // До входа нет пользовательской сессии — шлюз Supabase Functions всё
+        // равно требует Authorization с валидным JWT, подходит и публичный anon-ключ.
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "apikey": SUPABASE_ANON_KEY,
+      },
       body: JSON.stringify({ access_token, redirectTo: vkRedirectUri() }),
     });
     const result = await resp.json();
-    if (result.error) throw new Error(result.error);
+    if (result.error || result.message) throw new Error(result.error || result.message);
+    if (!result.token_hash) throw new Error("Пустой ответ от vk-auth: " + JSON.stringify(result).slice(0, 200));
 
     const { error: verifyErr } = await supabase.auth.verifyOtp({ token_hash: result.token_hash, type: "email" });
     if (verifyErr) throw verifyErr;
