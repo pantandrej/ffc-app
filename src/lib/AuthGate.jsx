@@ -44,7 +44,7 @@ export default function AuthGate({ children }) {
           FANTASYSTA
         </div>
         <div className="max-w-4xl mx-auto text-slate-400 mb-10">
-          Собери пул из 5 реальных клубов, следи за турами и борись за первое место в таблице.
+          Собери сет из 5 реальных клубов, следи за турами и борись за первое место в таблице.
         </div>
 
         <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-8">
@@ -56,7 +56,7 @@ export default function AuthGate({ children }) {
                 <li className="flex justify-between border-b border-slate-800 pb-1.5"><span>Ничья</span><span className="font-semibold text-emerald-400">+1</span></li>
                 <li className="flex justify-between border-b border-slate-800 pb-1.5"><span>Гол (за каждый)</span><span className="font-semibold text-emerald-400">+1</span></li>
                 <li className="flex justify-between border-b border-slate-800 pb-1.5"><span>Сухой матч</span><span className="font-semibold text-emerald-400">+2</span></li>
-                <li className="flex justify-between"><span>Капитан пула</span><span className="font-semibold text-amber-400">очки ×2</span></li>
+                <li className="flex justify-between"><span>Капитан сета</span><span className="font-semibold text-amber-400">очки ×2</span></li>
               </ul>
               <div className="text-xs text-slate-500 mt-3">
                 Бюджет 100 млн € на 5 клубов, 1 бесплатная замена за тур.

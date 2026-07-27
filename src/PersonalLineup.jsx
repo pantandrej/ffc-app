@@ -55,7 +55,7 @@ function friendlyError(e) {
 }
 
 // Личный состав для микробаттлов 1x1 Бриллиантовой лиги — в отличие от общего
-// team_pools, у каждого участника команды свой пул из 5 клубов (user_lineups).
+// team_pools, у каждого участника команды свой сет из 5 клубов (user_lineups).
 export default function PersonalLineup({ user }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);

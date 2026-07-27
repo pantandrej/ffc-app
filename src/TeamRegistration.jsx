@@ -11,7 +11,7 @@ function friendlyError(e) {
 
 // Контент вкладки "Команда" — без своей шапки/логина, встраивается в FantasystaApp.
 // onTeamChange вызывается после создания/вступления/выхода, чтобы каркас мог
-// обновить teamId для вкладки "Мой пул".
+// обновить teamId для вкладки "Мой сет".
 export function TeamRegistrationInner({ user, onTeamChange }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);

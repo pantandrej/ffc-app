@@ -194,7 +194,7 @@ export default function PoolManagement({ teamId }) {
     return list;
   }, [clubs, leagueFilter, tierFilter, sortBy]);
 
-  // ── Действия с пулом ──
+  // ── Действия с сетом ──
   function addClub(clubId) {
     if (poolClubIds.length >= POOL_SIZE) return;
     if (poolClubIds.includes(clubId)) return;
@@ -237,7 +237,7 @@ export default function PoolManagement({ teamId }) {
         );
       if (upsertError) throw upsertError;
 
-      // Если это не первая сборка пула в этом туре и состав реально поменялся —
+      // Если это не первая сборка сета в этом туре и состав реально поменялся —
       // фиксируем факт замены в transfers_log (ровно 1 клуб на 1 клуб).
       if (!isFirstSave && removedFromInitial.length === 1 && addedSinceInitial.length === 1) {
         const { error: transferError } = await supabase.from("transfers_log").insert({
@@ -252,7 +252,7 @@ export default function PoolManagement({ teamId }) {
 
       setInitialClubIds(poolClubIds);
       setSavedCaptainId(captainId);
-      showToast("✓ Пул сохранён");
+      showToast("✓ Сет сохранён");
     } catch (e) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -264,7 +264,7 @@ export default function PoolManagement({ teamId }) {
   if (!teamId) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-6">
-        <div className="text-center text-slate-400">Команда не выбрана — некуда сохранять пул.</div>
+        <div className="text-center text-slate-400">Команда не выбрана — некуда сохранять сет.</div>
       </div>
     );
   }
@@ -272,7 +272,7 @@ export default function PoolManagement({ teamId }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
-        <div className="text-slate-400">Загружаю пул…</div>
+        <div className="text-slate-400">Загружаю сет…</div>
       </div>
     );
   }
@@ -297,7 +297,7 @@ export default function PoolManagement({ teamId }) {
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-extrabold tracking-tight">⚽ Управление пулом</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">⚽ Управление сетом</h1>
           <span className="text-sm text-slate-400">Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}</span>
         </div>
 
@@ -305,12 +305,12 @@ export default function PoolManagement({ teamId }) {
           <div className={`mb-6 rounded-xl px-4 py-3 text-sm ${alreadyTransferred ? "bg-red-950/40 text-red-300 border border-red-500/30" : "bg-sky-950/40 text-sky-300 border border-sky-500/30"}`}>
             {alreadyTransferred
               ? "Бесплатная замена на этот тур уже использована — состав больше менять нельзя."
-              : "Пул уже сохранён на этот тур — доступна ровно 1 бесплатная замена."}
+              : "Сет уже сохранён на этот тур — доступна ровно 1 бесплатная замена."}
           </div>
         )}
 
         <div className="flex flex-col md:flex-row gap-6">
-          {/* ── Левая колонка: Мой Пул ── */}
+          {/* ── Левая колонка: Мой Сет ── */}
           <aside className="md:w-[35%] flex flex-col gap-4">
             <div className={`rounded-2xl p-5 border ${bankBalance < 0 ? "bg-red-950/40 border-red-500" : "bg-slate-800 border-emerald-500/30"}`}>
               <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Баланс</div>
@@ -359,7 +359,7 @@ export default function PoolManagement({ teamId }) {
                       type="button"
                       onClick={() => removeClub(club.id)}
                       disabled={removeDisabled}
-                      title={removeDisabled ? "Лимит замен исчерпан" : "Убрать из пула"}
+                      title={removeDisabled ? "Лимит замен исчерпан" : "Убрать из сета"}
                       className="text-slate-500 hover:text-red-400 disabled:opacity-25 disabled:hover:text-slate-500 disabled:cursor-not-allowed flex-shrink-0"
                     >
                       ✕
@@ -375,7 +375,7 @@ export default function PoolManagement({ teamId }) {
               disabled={!canSave || saving || isPoolSaved}
               className="w-full py-4 rounded-xl font-bold text-lg transition bg-emerald-500 hover:bg-emerald-400 text-slate-900 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
             >
-              {saving ? "Сохраняю…" : isPoolSaved ? "✓ Пул сохранён" : "Сохранить Пул"}
+              {saving ? "Сохраняю…" : isPoolSaved ? "✓ Сет сохранён" : "Сохранить Сет"}
             </button>
             {!captainValid && poolClubIds.length === POOL_SIZE && (
               <div className="text-xs text-amber-400 text-center">Назначь капитана среди выбранных клубов</div>
@@ -432,8 +432,8 @@ export default function PoolManagement({ teamId }) {
                 const addLocked = !inPool && isNewAddition && swapAddLocked;
                 const disabled = inPool || (poolFull && !inPool) || addLocked;
                 let label = "Добавить";
-                if (inPool) label = "В пуле";
-                else if (poolFull) label = "Пул заполнен";
+                if (inPool) label = "В сете";
+                else if (poolFull) label = "Сет заполнен";
                 else if (addLocked) label = "Лимит замен";
 
                 const euro = EURO_BADGE[club.euro_competition];

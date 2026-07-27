@@ -29,7 +29,7 @@ function FantasystaShell({ user, profile, signOut }) {
   useEffect(() => { loadTeam(); }, [loadTeam]);
 
   const tabs = [
-    { id: "pool", label: "⚽ Мой пул" },
+    { id: "pool", label: "⚽ Мой сет" },
     { id: "team", label: "👥 Команда" },
     { id: "table", label: "🏆 Таблица" },
     { id: "diamond", label: "💎 Личный состав" },
