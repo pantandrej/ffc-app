@@ -69,7 +69,7 @@ export default function AuthGate({ children }) {
           <div className="max-w-5xl mx-auto mb-12">
             <h1 className="font-extrabold uppercase tracking-tight leading-[0.95] text-4xl md:text-6xl mb-4">
               Собери состав.<br />
-              <span className="text-emerald-400">Назначь капитана.</span><br />
+              <span className="text-emerald-400">Выбери Джокера.</span><br />
               Разнеси соперника <span className="text-amber-400">1×1</span>.
             </h1>
             <p className="text-slate-400 text-base md:text-lg max-w-2xl">
@@ -94,10 +94,10 @@ export default function AuthGate({ children }) {
 
             <div className="rounded-2xl border border-amber-500/20 bg-slate-800/80 backdrop-blur-sm p-5 shadow-[0_0_25px_-5px_rgba(245,158,11,0.35)]">
               <div className="text-xs font-bold text-amber-400 uppercase tracking-wide mb-2">Шаг 2</div>
-              <div className="font-bold text-lg mb-2">Назначь капитана</div>
-              <div className="text-sm text-slate-400 mb-3">Один клуб в сете — твой капитан. Всё, что он наберёт за тур, удваивается.</div>
+              <div className="font-bold text-lg mb-2">Выбери Джокера</div>
+              <div className="text-sm text-slate-400 mb-3">Один клуб в сете — твой Джокер. Всё, что он наберёт за тур, удваивается.</div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/30 font-bold text-sm">
-                👑 очки ×2
+                🃏 очки ×2
               </div>
             </div>
 

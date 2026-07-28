@@ -244,7 +244,7 @@ export default function PoolManagement({ user }) {
           <span className="text-sm text-slate-400">Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}</span>
         </div>
         <div className="text-sm text-slate-400 mb-6">
-          Собери свои 5 клубов на этот тур, выбери Капитана и помоги своей команде победить.
+          Собери свои 5 клубов на этот тур, выбери Джокера и помоги своей команде победить.
         </div>
 
         <div className="flex flex-col md:flex-row gap-6">
@@ -285,7 +285,7 @@ export default function PoolManagement({ user }) {
                     <button
                       type="button"
                       onClick={() => toggleCaptain(club.id)}
-                      title={isCaptain ? "Убрать с капитанства" : "Назначить капитаном"}
+                      title={isCaptain ? "Убрать джокера" : "Сделать джокером"}
                       className={`flex-shrink-0 transition ${isCaptain ? "text-amber-400" : "text-slate-400"} ${crownVisibilityClass}`}
                     >
                       <CrownIcon className="w-6 h-6" />
@@ -312,7 +312,7 @@ export default function PoolManagement({ user }) {
               {saving ? "Сохраняю…" : isSaved ? "✓ Сет сохранён" : "Сохранить сет"}
             </button>
             {!captainValid && poolClubIds.length === POOL_SIZE && (
-              <div className="text-xs text-amber-400 text-center">Назначь капитана среди выбранных клубов</div>
+              <div className="text-xs text-amber-400 text-center">Выбери Джокера среди выбранных клубов</div>
             )}
           </aside>
 
