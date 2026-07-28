@@ -1,13 +1,15 @@
 import React, { useState } from "react";
 import AuthGate from "./lib/AuthGate.jsx";
 import PoolManagement from "./PoolManagement.jsx";
+import Calendar from "./Calendar.jsx";
 import Leaderboard from "./Leaderboard.jsx";
 import { TeamRegistrationInner } from "./TeamRegistration.jsx";
 import { AdminResultsInner, ADMIN_EMAIL } from "./AdminResults.jsx";
 import { AdminDiamondInner } from "./AdminDiamond.jsx";
+import { AdminCalendarInner } from "./AdminCalendar.jsx";
 
 function FantasystaShell({ user, profile, signOut }) {
-  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "admin" | "admin-diamond"
+  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "calendar" | "admin" | "admin-diamond" | "admin-calendar"
 
   const isAdmin = user.email === ADMIN_EMAIL;
 
@@ -15,9 +17,11 @@ function FantasystaShell({ user, profile, signOut }) {
     { id: "pool", label: "⚽ Мой пул клубов" },
     { id: "team", label: "👥 Команда" },
     { id: "table", label: "🏆 Таблица" },
+    { id: "calendar", label: "📅 Календарь" },
     ...(isAdmin ? [
       { id: "admin", label: "🧮 Админка" },
       { id: "admin-diamond", label: "💎 Админка H2H" },
+      { id: "admin-calendar", label: "📅 Админка тура" },
     ] : []),
   ];
 
@@ -28,7 +32,7 @@ function FantasystaShell({ user, profile, signOut }) {
           <img src="/logo.png" alt="" className="w-7 h-7 rounded-md" />
           <span><span className="text-emerald-400">FANTASY</span>STA</span>
         </div>
-        <nav className="flex gap-1.5">
+        <nav className="flex gap-1.5 flex-wrap">
           {tabs.map(t => (
             <button
               key={t.id}
@@ -52,8 +56,10 @@ function FantasystaShell({ user, profile, signOut }) {
         {tab === "pool" && <PoolManagement user={user} />}
         {tab === "team" && <TeamRegistrationInner user={user} />}
         {tab === "table" && <Leaderboard user={user} />}
+        {tab === "calendar" && <Calendar />}
         {tab === "admin" && isAdmin && <AdminResultsInner user={user} signOut={signOut} />}
         {tab === "admin-diamond" && isAdmin && <AdminDiamondInner user={user} />}
+        {tab === "admin-calendar" && isAdmin && <AdminCalendarInner user={user} />}
       </main>
     </div>
   );
