@@ -52,7 +52,7 @@ function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");
 }
 
-// Единственный экран выбора клубов — пишет в user_lineups (личный пул на
+// Единственный экран выбора клубов — пишет в user_lineups (личный сет на
 // каждого игрока). Очки команды в Общей лиге = среднее по всем участникам
 // (см. sql/fantasysta_module12_unified_lineup_scoring.sql); та же таблица
 // станет основой для будущих дуэлей 1×1, когда включим Бриллиантовую лигу.
@@ -204,7 +204,7 @@ export default function PoolManagement({ user }) {
 
       setSavedClubIds(poolClubIds);
       setSavedCaptainId(captainId);
-      showToast("✓ Пул сохранён");
+      showToast("✓ Сет сохранён");
     } catch (e) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -215,7 +215,7 @@ export default function PoolManagement({ user }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
-        <div className="text-slate-400">Загружаю пул…</div>
+        <div className="text-slate-400">Загружаю сет…</div>
       </div>
     );
   }
@@ -240,7 +240,7 @@ export default function PoolManagement({ user }) {
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-extrabold tracking-tight">⚽ Мой пул клубов</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">⚽ Мой сет</h1>
           <span className="text-sm text-slate-400">Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}</span>
         </div>
         <div className="text-sm text-slate-400 mb-6">
@@ -293,7 +293,7 @@ export default function PoolManagement({ user }) {
                     <button
                       type="button"
                       onClick={() => removeClub(club.id)}
-                      title="Убрать из пула"
+                      title="Убрать из сета"
                       className="text-slate-500 hover:text-red-400 flex-shrink-0"
                     >
                       ✕
@@ -309,7 +309,7 @@ export default function PoolManagement({ user }) {
               disabled={!canSave || saving || isSaved}
               className="w-full py-4 rounded-xl font-bold text-lg transition bg-emerald-500 hover:bg-emerald-400 text-slate-900 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
             >
-              {saving ? "Сохраняю…" : isSaved ? "✓ Пул сохранён" : "Сохранить пул"}
+              {saving ? "Сохраняю…" : isSaved ? "✓ Сет сохранён" : "Сохранить сет"}
             </button>
             {!captainValid && poolClubIds.length === POOL_SIZE && (
               <div className="text-xs text-amber-400 text-center">Назначь капитана среди выбранных клубов</div>
@@ -363,8 +363,8 @@ export default function PoolManagement({ user }) {
                 const poolFull = poolClubIds.length >= POOL_SIZE;
                 const disabled = inPool || (poolFull && !inPool);
                 let label = "Добавить";
-                if (inPool) label = "В пуле";
-                else if (poolFull) label = "Пул заполнен";
+                if (inPool) label = "В сете";
+                else if (poolFull) label = "Сет заполнен";
 
                 const euro = EURO_BADGE[club.euro_competition];
                 return (

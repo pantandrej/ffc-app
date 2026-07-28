@@ -14,7 +14,7 @@ function FantasystaShell({ user, profile, signOut }) {
   const isAdmin = user.email === ADMIN_EMAIL;
 
   const tabs = [
-    { id: "pool", label: "⚽ Мой пул клубов" },
+    { id: "pool", label: "⚽ Мой сет" },
     { id: "team", label: "👥 Команда" },
     { id: "table", label: "🏆 Таблица" },
     { id: "calendar", label: "📅 Календарь" },

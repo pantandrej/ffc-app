@@ -16,7 +16,7 @@ function formatKickoff(d) {
 }
 
 // Календарь реальных матчей всех 5 чемпионатов на текущий тур — чтобы видеть,
-// против кого играют клубы, прежде чем собирать пул.
+// против кого играют клубы, прежде чем собирать сет.
 export default function Calendar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
