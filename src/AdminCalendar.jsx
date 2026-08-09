@@ -8,8 +8,19 @@ function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");
 }
 
-// Админка тура: даты понедельник-воскресенье, календарь реальных матчей всех
-// 5 чемпионатов на тур, и таблица популярности выбора клубов игроками.
+function fmtDateTime(d) {
+  if (!d) return "—";
+  return new Date(d).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+// Округляет конец дня для запроса "матчи по датам тура включительно".
+function endOfDayIso(dateStr) {
+  return `${dateStr}T23:59:59`;
+}
+
+// Админка тура: даты понедельник-воскресенье, календарь матчей (по датам, не
+// привязан жёстко к туру — какой тур матч попадает, решают даты), таблица
+// популярности выбора клубов игроками.
 export function AdminCalendarInner({ user }) {
   const [toast, setToast] = useState(null);
   const [savingDates, setSavingDates] = useState(false);
@@ -22,6 +33,11 @@ export function AdminCalendarInner({ user }) {
 
   const [clubs, setClubs] = useState([]);
   const [fixtures, setFixtures] = useState([]);
+  const [pickedClubIds, setPickedClubIds] = useState(new Set());
+  const [onlyPicked, setOnlyPicked] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [editKickoff, setEditKickoff] = useState("");
+
   const [popularity, setPopularity] = useState([]);
   const [popularityScope, setPopularityScope] = useState("gameweek"); // "gameweek" | "all"
 
@@ -63,17 +79,35 @@ export function AdminCalendarInner({ user }) {
     setEndsOn(gw?.ends_on || "");
   }, [gameweekId, gameweeks]);
 
+  // Матчи показываем по датам тура (starts_on..ends_on включительно), а не по
+  // жёсткой привязке к gameweek_id — так один раз занесённый календарь сам
+  // "раскладывается" по турам.
   const loadFixtures = useCallback(async () => {
-    if (!gameweekId) return;
+    if (!startsOn || !endsOn) {
+      setFixtures([]);
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from("club_fixtures")
-        .select("id,league,kickoff_at,home_club_id,away_club_id,home:clubs!club_fixtures_home_club_id_fkey(name),away:clubs!club_fixtures_away_club_id_fkey(name)")
-        .eq("gameweek_id", gameweekId)
+        .select("id,league,kickoff_at,status,original_kickoff_at,home_club_id,away_club_id,home:clubs!club_fixtures_home_club_id_fkey(name),away:clubs!club_fixtures_away_club_id_fkey(name)")
+        .gte("kickoff_at", startsOn)
+        .lte("kickoff_at", endOfDayIso(endsOn))
         .order("league")
         .order("kickoff_at");
       if (error) throw error;
       setFixtures(data || []);
+    } catch (e) {
+      showToast(friendlyError(e), "error");
+    }
+  }, [startsOn, endsOn, showToast]);
+
+  const loadPickedClubs = useCallback(async () => {
+    if (!gameweekId) { setPickedClubIds(new Set()); return; }
+    try {
+      const { data, error } = await supabase.from("club_pick_popularity").select("club_id").eq("gameweek_id", gameweekId);
+      if (error) throw error;
+      setPickedClubIds(new Set((data || []).map(r => r.club_id)));
     } catch (e) {
       showToast(friendlyError(e), "error");
     }
@@ -103,6 +137,7 @@ export function AdminCalendarInner({ user }) {
   }, [gameweekId, popularityScope, showToast]);
 
   useEffect(() => { loadFixtures(); }, [loadFixtures]);
+  useEffect(() => { loadPickedClubs(); }, [loadPickedClubs]);
   useEffect(() => { loadPopularity(); }, [loadPopularity]);
 
   async function saveDates() {
@@ -125,20 +160,24 @@ export function AdminCalendarInner({ user }) {
 
   const clubsInLeague = useMemo(() => clubs.filter(c => c.league === league), [clubs, league]);
 
+  const visibleFixtures = useMemo(
+    () => onlyPicked ? fixtures.filter(fx => pickedClubIds.has(fx.home_club_id) || pickedClubIds.has(fx.away_club_id)) : fixtures,
+    [fixtures, onlyPicked, pickedClubIds]
+  );
+
   async function addFixture(e) {
     e.preventDefault();
-    if (!gameweekId || !homeClubId || !awayClubId || homeClubId === awayClubId) {
-      showToast("Выбери тур, лигу и двух разных клубов", "error");
+    if (!homeClubId || !awayClubId || homeClubId === awayClubId || !kickoffAt) {
+      showToast("Выбери лигу, дату и двух разных клубов", "error");
       return;
     }
     setCreateBusy(true);
     try {
       const { error } = await supabase.from("club_fixtures").insert({
-        gameweek_id: gameweekId,
         league,
         home_club_id: homeClubId,
         away_club_id: awayClubId,
-        kickoff_at: kickoffAt || null,
+        kickoff_at: kickoffAt,
       });
       if (error) throw error;
       showToast("✓ Матч добавлен");
@@ -157,6 +196,24 @@ export function AdminCalendarInner({ user }) {
     try {
       const { error } = await supabase.from("club_fixtures").delete().eq("id", id);
       if (error) throw error;
+      await loadFixtures();
+    } catch (e) {
+      showToast(friendlyError(e), "error");
+    }
+  }
+
+  function startEdit(fx) {
+    setEditingId(fx.id);
+    setEditKickoff(fx.kickoff_at ? fx.kickoff_at.slice(0, 16) : "");
+  }
+
+  async function savePostpone(id) {
+    if (!editKickoff) return;
+    try {
+      const { error } = await supabase.from("club_fixtures").update({ kickoff_at: editKickoff }).eq("id", id);
+      if (error) throw error;
+      showToast("✓ Дата матча обновлена — помечен как перенесённый");
+      setEditingId(null);
       await loadFixtures();
     } catch (e) {
       showToast(friendlyError(e), "error");
@@ -212,6 +269,10 @@ export function AdminCalendarInner({ user }) {
               Сохранить даты
             </button>
           </div>
+          <div className="text-xs text-slate-500 mt-2">
+            Матчи ниже показываются по этим датам, а не по жёсткой привязке к туру — календарь можно занести один раз на весь сезон,
+            он сам "разложится" по турам, когда проставишь даты.
+          </div>
         </section>
 
         <section>
@@ -245,6 +306,7 @@ export function AdminCalendarInner({ user }) {
               type="datetime-local"
               value={kickoffAt}
               onChange={e => setKickoffAt(e.target.value)}
+              required
               className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2"
             />
             <button
@@ -258,22 +320,53 @@ export function AdminCalendarInner({ user }) {
         </section>
 
         <section>
-          <h2 className="font-bold mb-3">Матчи тура</h2>
-          {fixtures.length === 0 ? (
-            <div className="text-slate-500 text-sm">Матчей пока не добавлено.</div>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="font-bold">Матчи тура {startsOn && endsOn ? `(${startsOn} — ${endsOn})` : ""}</h2>
+            <button
+              type="button"
+              onClick={() => setOnlyPicked(v => !v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${onlyPicked ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
+            >
+              {onlyPicked ? "Только выбранные игроками клубы" : "Показаны все матчи"}
+            </button>
+          </div>
+          {!startsOn || !endsOn ? (
+            <div className="text-slate-500 text-sm">Сначала задай даты тура выше.</div>
+          ) : visibleFixtures.length === 0 ? (
+            <div className="text-slate-500 text-sm">
+              {fixtures.length === 0 ? "Матчей на эти даты пока не добавлено." : "Нет матчей с выбранными игроками клубами — попробуй выключить фильтр."}
+            </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {fixtures.map(fx => (
-                <div key={fx.id} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 flex items-center justify-between gap-3 text-sm">
-                  <span className="text-xs text-slate-500 w-24 flex-shrink-0">{fx.league}</span>
+              {visibleFixtures.map(fx => (
+                <div key={fx.id} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 flex items-center justify-between gap-3 text-sm flex-wrap">
+                  <span className="text-xs text-slate-500 w-20 flex-shrink-0">{fx.league}</span>
                   <div className="flex-1 min-w-0 truncate">
                     <span className="font-medium">{fx.home?.name}</span>
                     <span className="text-slate-500"> — </span>
                     <span className="font-medium">{fx.away?.name}</span>
                   </div>
-                  <span className="text-xs text-slate-500 flex-shrink-0">
-                    {fx.kickoff_at ? new Date(fx.kickoff_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
-                  </span>
+
+                  {editingId === fx.id ? (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <input
+                        type="datetime-local"
+                        value={editKickoff}
+                        onChange={e => setEditKickoff(e.target.value)}
+                        className="bg-slate-900 border border-slate-700 rounded-lg text-xs px-2 py-1"
+                      />
+                      <button type="button" onClick={() => savePostpone(fx.id)} className="text-emerald-400 hover:text-emerald-300 text-xs font-semibold">Сохранить</button>
+                      <button type="button" onClick={() => setEditingId(null)} className="text-slate-500 hover:text-slate-300 text-xs">Отмена</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => startEdit(fx)} className="text-xs text-slate-400 hover:text-sky-400 flex-shrink-0 flex items-center gap-1.5">
+                      {fx.status === "postponed" && (
+                        <span title={`Было: ${fmtDateTime(fx.original_kickoff_at)}`} className="px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">перенесён</span>
+                      )}
+                      {fmtDateTime(fx.kickoff_at)}
+                    </button>
+                  )}
+
                   <button type="button" onClick={() => deleteFixture(fx.id)} className="text-slate-500 hover:text-red-400 flex-shrink-0">✕</button>
                 </div>
               ))}
