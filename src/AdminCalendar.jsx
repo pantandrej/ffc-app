@@ -41,6 +41,8 @@ export function AdminCalendarInner({ user }) {
   const [popularity, setPopularity] = useState([]);
   const [popularityScope, setPopularityScope] = useState("gameweek"); // "gameweek" | "all"
 
+  const [lineups, setLineups] = useState([]); // [{ profileId, username, teamName, clubs: [{name, isCaptain}] }]
+
   const [league, setLeague] = useState(LEAGUES[0]);
   const [homeClubId, setHomeClubId] = useState("");
   const [awayClubId, setAwayClubId] = useState("");
@@ -136,9 +138,44 @@ export function AdminCalendarInner({ user }) {
     }
   }, [gameweekId, popularityScope, showToast]);
 
+  const loadLineups = useCallback(async () => {
+    if (!gameweekId) { setLineups([]); return; }
+    try {
+      const [lineupRes, membersRes] = await Promise.all([
+        supabase
+          .from("user_lineups")
+          .select("profile_id, is_club_captain, fantasysta_profiles(username), clubs(name)")
+          .eq("gameweek_id", gameweekId),
+        supabase.from("team_members").select("profile_id, teams(name)"),
+      ]);
+      if (lineupRes.error) throw lineupRes.error;
+      if (membersRes.error) throw membersRes.error;
+
+      const teamByProfile = new Map((membersRes.data || []).map(m => [m.profile_id, m.teams?.name || null]));
+
+      const grouped = new Map();
+      (lineupRes.data || []).forEach(row => {
+        const key = row.profile_id;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            profileId: key,
+            username: row.fantasysta_profiles?.username || key,
+            teamName: teamByProfile.get(key) || null,
+            clubs: [],
+          });
+        }
+        grouped.get(key).clubs.push({ name: row.clubs?.name || "—", isCaptain: row.is_club_captain });
+      });
+      setLineups([...grouped.values()].sort((a, b) => a.username.localeCompare(b.username, "ru")));
+    } catch (e) {
+      showToast(friendlyError(e), "error");
+    }
+  }, [gameweekId, showToast]);
+
   useEffect(() => { loadFixtures(); }, [loadFixtures]);
   useEffect(() => { loadPickedClubs(); }, [loadPickedClubs]);
   useEffect(() => { loadPopularity(); }, [loadPopularity]);
+  useEffect(() => { loadLineups(); }, [loadLineups]);
 
   async function saveDates() {
     if (!gameweekId) return;
@@ -418,6 +455,39 @@ export function AdminCalendarInner({ user }) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h2 className="font-bold mb-3">Составы игроков (сеты этого тура)</h2>
+          {lineups.length === 0 ? (
+            <div className="text-slate-500 text-sm">Пока никто не собрал сет на этот тур.</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {lineups.map(l => (
+                <div key={l.profileId} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="font-semibold">{l.username}</span>
+                    {l.teamName && <span className="text-xs text-slate-500">· {l.teamName}</span>}
+                    {l.clubs.length < 5 && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">
+                        {l.clubs.length}/5
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {l.clubs.map((c, i) => (
+                      <span
+                        key={i}
+                        className={`px-2 py-1 rounded-lg text-xs ${c.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
+                      >
+                        {c.isCaptain && "🃏 "}{c.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>

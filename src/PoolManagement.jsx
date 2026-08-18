@@ -253,8 +253,17 @@ export default function PoolManagement({ user }) {
             )}
           </span>
         </div>
-        <div className="text-sm text-slate-400 mb-6">
+        <div className="text-sm text-slate-400 mb-4">
           Собери свои 5 клубов на этот тур, выбери Джокера и помоги своей команде победить.
+        </div>
+
+        <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+          <span className="text-slate-500 font-semibold uppercase tracking-wide">Как начисляются баллы</span>
+          <span className="text-slate-300">Победа <b className="text-emerald-400">+3</b></span>
+          <span className="text-slate-300">Ничья <b className="text-emerald-400">+1</b></span>
+          <span className="text-slate-300">Гол (за каждый) <b className="text-emerald-400">+1</b></span>
+          <span className="text-slate-300">Сухой матч <b className="text-emerald-400">+2</b></span>
+          <span className="text-slate-300">Джокер <b className="text-amber-400">очки ×2</b></span>
         </div>
 
         <div className="flex flex-col md:flex-row gap-6">
