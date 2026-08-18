@@ -8,8 +8,39 @@ import { AdminResultsInner, ADMIN_EMAILS } from "./AdminResults.jsx";
 import { AdminDiamondInner } from "./AdminDiamond.jsx";
 import { AdminCalendarInner } from "./AdminCalendar.jsx";
 
+const ADMIN_SECTIONS = [
+  { id: "results", label: "Результаты" },
+  { id: "diamond", label: "H2H" },
+  { id: "calendar", label: "Тур" },
+];
+
+function AdminArea({ user, signOut }) {
+  const [section, setSection] = useState("results");
+  return (
+    <div>
+      <div className="px-4 md:px-8 pt-4 flex gap-1.5">
+        {ADMIN_SECTIONS.map(s => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setSection(s.id)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${
+              section === s.id ? "bg-emerald-500 text-slate-900" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {section === "results" && <AdminResultsInner user={user} signOut={signOut} />}
+      {section === "diamond" && <AdminDiamondInner user={user} />}
+      {section === "calendar" && <AdminCalendarInner user={user} />}
+    </div>
+  );
+}
+
 function FantasystaShell({ user, profile, signOut }) {
-  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "calendar" | "admin" | "admin-diamond" | "admin-calendar"
+  const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "calendar" | "admin"
 
   const isAdmin = ADMIN_EMAILS.includes(user.email);
 
@@ -18,11 +49,7 @@ function FantasystaShell({ user, profile, signOut }) {
     { id: "team", label: "👥 Команда" },
     { id: "table", label: "🏆 Таблица" },
     { id: "calendar", label: "📅 Календарь" },
-    ...(isAdmin ? [
-      { id: "admin", label: "🧮 Админка" },
-      { id: "admin-diamond", label: "💎 Админка H2H" },
-      { id: "admin-calendar", label: "📅 Админка тура" },
-    ] : []),
+    ...(isAdmin ? [{ id: "admin", label: "🛠 Админка" }] : []),
   ];
 
   return (
@@ -57,9 +84,7 @@ function FantasystaShell({ user, profile, signOut }) {
         {tab === "team" && <TeamRegistrationInner user={user} />}
         {tab === "table" && <Leaderboard user={user} />}
         {tab === "calendar" && <Calendar />}
-        {tab === "admin" && isAdmin && <AdminResultsInner user={user} signOut={signOut} />}
-        {tab === "admin-diamond" && isAdmin && <AdminDiamondInner user={user} />}
-        {tab === "admin-calendar" && isAdmin && <AdminCalendarInner user={user} />}
+        {tab === "admin" && isAdmin && <AdminArea user={user} signOut={signOut} />}
       </main>
     </div>
   );
