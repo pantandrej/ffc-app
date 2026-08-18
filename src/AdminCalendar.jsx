@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
-import { ADMIN_EMAIL } from "./AdminResults.jsx";
+import { ADMIN_EMAILS } from "./AdminResults.jsx";
 
 const LEAGUES = ["EPL", "LaLiga", "SerieA", "Bundesliga", "Ligue1"];
 
@@ -220,7 +220,7 @@ export function AdminCalendarInner({ user }) {
     }
   }
 
-  if (user.email !== ADMIN_EMAIL) {
+  if (!ADMIN_EMAILS.includes(user.email)) {
     return (
       <div className="flex items-center justify-center p-10">
         <div className="text-center text-slate-400 max-w-sm">Эта страница только для админа.</div>

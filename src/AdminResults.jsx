@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
 
-export const ADMIN_EMAIL = "mysliklub@gmail.com";
+export const ADMIN_EMAILS = ["mysliklub@gmail.com", "vk3950760@fantasysta.app"];
+export const ADMIN_EMAIL = ADMIN_EMAILS[0]; // старое имя оставлено — используется в паре мест как единичное значение
 
 const LEAGUES = ["Все", "EPL", "LaLiga", "SerieA", "Bundesliga", "Ligue1"];
 const EMPTY_ROW = { is_win: false, is_draw: false, goals_scored: 0, clean_sheet: false };
@@ -124,7 +125,7 @@ export function AdminResultsInner({ user, signOut }) {
     return list;
   }, [clubs, leagueFilter, search]);
 
-  if (user.email !== ADMIN_EMAIL) {
+  if (!ADMIN_EMAILS.includes(user.email)) {
     return (
       <div className="flex items-center justify-center p-10">
         <div className="text-center text-slate-400 max-w-sm">

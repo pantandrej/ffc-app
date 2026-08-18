@@ -4,14 +4,14 @@ import PoolManagement from "./PoolManagement.jsx";
 import Calendar from "./Calendar.jsx";
 import Leaderboard from "./Leaderboard.jsx";
 import { TeamRegistrationInner } from "./TeamRegistration.jsx";
-import { AdminResultsInner, ADMIN_EMAIL } from "./AdminResults.jsx";
+import { AdminResultsInner, ADMIN_EMAILS } from "./AdminResults.jsx";
 import { AdminDiamondInner } from "./AdminDiamond.jsx";
 import { AdminCalendarInner } from "./AdminCalendar.jsx";
 
 function FantasystaShell({ user, profile, signOut }) {
   const [tab, setTab] = useState("pool"); // "pool" | "team" | "table" | "calendar" | "admin" | "admin-diamond" | "admin-calendar"
 
-  const isAdmin = user.email === ADMIN_EMAIL;
+  const isAdmin = ADMIN_EMAILS.includes(user.email);
 
   const tabs = [
     { id: "pool", label: "⚽ Мой сет" },

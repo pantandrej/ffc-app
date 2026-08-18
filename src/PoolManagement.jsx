@@ -52,6 +52,11 @@ function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");
 }
 
+function formatTourDate(d) {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("ru-RU", { day: "2-digit", month: "long" });
+}
+
 // Единственный экран выбора клубов — пишет в user_lineups (личный сет на
 // каждого игрока). Очки команды в Общей лиге = среднее по всем участникам
 // (см. sql/fantasysta_module12_unified_lineup_scoring.sql); та же таблица
@@ -241,7 +246,12 @@ export default function PoolManagement({ user }) {
       <div className="max-w-7xl mx-auto">
         <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-extrabold tracking-tight">⚽ Мой сет</h1>
-          <span className="text-sm text-slate-400">Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}</span>
+          <span className="text-sm text-slate-400">
+            Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}
+            {gameweek.starts_on && gameweek.ends_on && (
+              <> · {formatTourDate(gameweek.starts_on)} — {formatTourDate(gameweek.ends_on)}</>
+            )}
+          </span>
         </div>
         <div className="text-sm text-slate-400 mb-6">
           Собери свои 5 клубов на этот тур, выбери Джокера и помоги своей команде победить.
