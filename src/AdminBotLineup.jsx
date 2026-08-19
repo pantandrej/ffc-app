@@ -4,6 +4,7 @@ import { ADMIN_EMAILS } from "./AdminResults.jsx";
 
 const BUDGET = 100000000;
 const POOL_SIZE = 5;
+const ROLE_LABEL = { captain: "Капитан", player_1: "Игрок 1", player_2: "Игрок 2" };
 
 function friendlyError(e) {
   return e?.message || String(e || "Неизвестная ошибка");
@@ -35,6 +36,9 @@ export function AdminBotLineupInner({ user }) {
   const [addProfileId, setAddProfileId] = useState("");
   const [addRole, setAddRole] = useState("");
   const [addBusy, setAddBusy] = useState(false);
+
+  const [members, setMembers] = useState([]); // [{profileId, username, teamName, role}]
+  const [lineupsByProfile, setLineupsByProfile] = useState(new Map()); // profileId -> [{name, isCaptain}]
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -87,11 +91,57 @@ export function AdminBotLineupInner({ user }) {
     return () => { cancelled = true; };
   }, [profileId, gameweekId, showToast]);
 
+  const loadOverview = useCallback(async () => {
+    if (!gameweekId) { setMembers([]); setLineupsByProfile(new Map()); return; }
+    try {
+      const [membersRes, lineupsRes] = await Promise.all([
+        supabase
+          .from("team_members")
+          .select("profile_id, role_in_team, fantasysta_profiles(username), teams(name)"),
+        supabase
+          .from("user_lineups")
+          .select("profile_id, is_club_captain, clubs(name)")
+          .eq("gameweek_id", gameweekId),
+      ]);
+      if (membersRes.error) throw membersRes.error;
+      if (lineupsRes.error) throw lineupsRes.error;
+
+      setMembers((membersRes.data || []).map(m => ({
+        profileId: m.profile_id,
+        username: m.fantasysta_profiles?.username || m.profile_id,
+        teamName: m.teams?.name || "—",
+        role: m.role_in_team,
+      })));
+
+      const map = new Map();
+      (lineupsRes.data || []).forEach(row => {
+        const list = map.get(row.profile_id) || [];
+        list.push({ name: row.clubs?.name || "—", isCaptain: row.is_club_captain });
+        map.set(row.profile_id, list);
+      });
+      setLineupsByProfile(map);
+    } catch (e) {
+      showToast(friendlyError(e), "error");
+    }
+  }, [gameweekId, showToast]);
+
+  useEffect(() => { loadOverview(); }, [loadOverview]);
+
   const clubsById = useMemo(() => new Map(clubs.map(c => [c.id, c])), [clubs]);
   const poolClubs = useMemo(() => poolClubIds.map(id => clubsById.get(id)).filter(Boolean), [poolClubIds, clubsById]);
   const bankBalance = useMemo(() => BUDGET - poolClubs.reduce((s, c) => s + Number(c.price || 0), 0), [poolClubs]);
   const captainValid = !!captainId && poolClubIds.includes(captainId);
   const canSave = !!profileId && !!gameweekId && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0;
+
+  const teamsWithMembers = useMemo(() => {
+    const map = new Map();
+    members.forEach(m => {
+      const list = map.get(m.teamName) || [];
+      list.push(m);
+      map.set(m.teamName, list);
+    });
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "ru"));
+  }, [members]);
 
   function toggleClub(clubId) {
     setPoolClubIds(prev => {
@@ -119,6 +169,7 @@ export function AdminBotLineupInner({ user }) {
       const { error: insErr } = await supabase.from("user_lineups").insert(rows);
       if (insErr) throw insErr;
       showToast("✓ Сет сохранён");
+      await loadOverview();
     } catch (e) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -143,6 +194,7 @@ export function AdminBotLineupInner({ user }) {
       showToast("✓ Игрок добавлен в команду");
       setAddProfileId("");
       setAddRole("");
+      await loadOverview();
     } catch (e) {
       showToast(
         e?.code === "23505" ? "Эта роль в команде уже занята" : friendlyError(e),
@@ -184,6 +236,66 @@ export function AdminBotLineupInner({ user }) {
             </button>
           </form>
           <div className="text-xs text-slate-500 mt-2">Если игрок уже в другой команде — вставка не пройдёт (человек может состоять только в одной команде).</div>
+        </section>
+
+        <section>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="font-bold">Участники и их сеты</h2>
+            <select value={gameweekId ?? ""} onChange={e => setGameweekId(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1.5">
+              {gameweeks.map(gw => <option key={gw.id} value={gw.id}>Тур №{gw.id} · {gw.status}</option>)}
+            </select>
+          </div>
+          {teamsWithMembers.length === 0 ? (
+            <div className="text-slate-500 text-sm">Пока ни одной команды с участниками.</div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {teamsWithMembers.map(([teamName, list]) => (
+                <div key={teamName} className="rounded-xl border border-slate-700 bg-slate-800 p-3">
+                  <div className="font-semibold text-sm mb-2">{teamName}</div>
+                  <div className="flex flex-col gap-2">
+                    {list.map(m => {
+                      const lineup = lineupsByProfile.get(m.profileId);
+                      return (
+                        <div key={m.profileId} className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{m.username}</span>
+                              {m.role && <span className="text-[10px] text-slate-500">{ROLE_LABEL[m.role] || m.role}</span>}
+                            </div>
+                            {lineup ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-400/10 text-emerald-300 border border-emerald-400/30">
+                                {lineup.length}/5 выбрано
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setProfileId(m.profileId)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30 hover:bg-amber-400/20 transition"
+                              >
+                                не выбрал — заполнить
+                              </button>
+                            )}
+                          </div>
+                          {lineup && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {lineup.map((c, i) => (
+                                <span
+                                  key={i}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] ${c.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30" : "bg-slate-800 text-slate-300 border border-slate-700"}`}
+                                >
+                                  {c.isCaptain && "🃏 "}{c.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="flex flex-col gap-4">
