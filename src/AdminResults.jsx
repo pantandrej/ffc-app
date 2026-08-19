@@ -26,6 +26,8 @@ export function AdminResultsInner({ user, signOut }) {
   const [clubs, setClubs] = useState([]);
   const [rows, setRows] = useState({}); // clubId -> { is_win, is_draw, goals_scored, clean_sheet }
   const [savingIds, setSavingIds] = useState(() => new Set());
+  const [pickCounts, setPickCounts] = useState(new Map()); // clubId -> times_picked
+  const [onlyPicked, setOnlyPicked] = useState(true);
 
   const [leagueFilter, setLeagueFilter] = useState("Все");
   const [search, setSearch] = useState("");
@@ -82,6 +84,23 @@ export function AdminResultsInner({ user, signOut }) {
     return () => { cancelled = true; };
   }, [gameweekId, showToast]);
 
+  // ── Сколько раз каждый клуб выбрали игроки в этом туре ──
+  useEffect(() => {
+    if (!gameweekId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("club_pick_popularity").select("club_id, times_picked").eq("gameweek_id", gameweekId);
+        if (error) throw error;
+        if (cancelled) return;
+        setPickCounts(new Map((data || []).map(r => [r.club_id, r.times_picked])));
+      } catch (e) {
+        if (!cancelled) showToast(friendlyError(e), "error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [gameweekId, showToast]);
+
   async function saveRow(clubId, row) {
     setSavingIds(prev => new Set(prev).add(clubId));
     try {
@@ -117,13 +136,14 @@ export function AdminResultsInner({ user, signOut }) {
 
   const filteredClubs = useMemo(() => {
     let list = clubs;
+    if (onlyPicked) list = list.filter(c => pickCounts.has(c.id));
     if (leagueFilter !== "Все") list = list.filter(c => c.league === leagueFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(c => c.name.toLowerCase().includes(q));
     }
-    return list;
-  }, [clubs, leagueFilter, search]);
+    return [...list].sort((a, b) => (pickCounts.get(b.id) || 0) - (pickCounts.get(a.id) || 0));
+  }, [clubs, leagueFilter, search, onlyPicked, pickCounts]);
 
   if (!ADMIN_EMAILS.includes(user.email)) {
     return (
@@ -166,6 +186,16 @@ export function AdminResultsInner({ user, signOut }) {
             ))}
           </div>
 
+          <button
+            type="button"
+            onClick={() => setOnlyPicked(v => !v)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+              onlyPicked ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300 hover:border-slate-500"
+            }`}
+          >
+            {onlyPicked ? "Только выбранные игроками" : "Показаны все клубы"}
+          </button>
+
           <input
             type="text"
             value={search}
@@ -183,6 +213,7 @@ export function AdminResultsInner({ user, signOut }) {
               <thead>
                 <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
                   <th className="text-left px-4 py-2">Клуб</th>
+                  <th className="px-3 py-2">Выбран</th>
                   <th className="px-3 py-2">Победа</th>
                   <th className="px-3 py-2">Ничья</th>
                   <th className="px-3 py-2">Голы</th>
@@ -200,6 +231,11 @@ export function AdminResultsInner({ user, signOut }) {
                       <td className="px-4 py-2">
                         <div className="font-medium">{club.name}</div>
                         <div className="text-xs text-slate-500">{club.league} · {club.tier}</div>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="text-xs font-bold px-2 py-1 rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/30">
+                          {pickCounts.get(club.id) || 0}
+                        </span>
                       </td>
                       <td className="px-3 py-2 text-center">
                         <button
@@ -256,7 +292,9 @@ export function AdminResultsInner({ user, signOut }) {
                 })}
                 {filteredClubs.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center text-slate-500 py-8">Клубов не найдено</td>
+                    <td colSpan={7} className="text-center text-slate-500 py-8">
+                      {onlyPicked ? "Ни один клуб ещё не выбран игроками на этот тур." : "Клубов не найдено"}
+                    </td>
                   </tr>
                 )}
               </tbody>
