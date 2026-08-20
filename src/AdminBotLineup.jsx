@@ -39,6 +39,7 @@ export function AdminBotLineupInner({ user }) {
 
   const [members, setMembers] = useState([]); // [{profileId, username, teamName, role}]
   const [lineupsByProfile, setLineupsByProfile] = useState(new Map()); // profileId -> [{name, isCaptain}]
+  const [overviewView, setOverviewView] = useState("grouped"); // "grouped" | "flat"
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -241,11 +242,82 @@ export function AdminBotLineupInner({ user }) {
         <section>
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-bold">Участники и их сеты</h2>
-            <select value={gameweekId ?? ""} onChange={e => setGameweekId(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1.5">
-              {gameweeks.map(gw => <option key={gw.id} value={gw.id}>Тур №{gw.id} · {gw.status}</option>)}
-            </select>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setOverviewView("grouped")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${overviewView === "grouped" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
+                >
+                  По командам
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverviewView("flat")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${overviewView === "flat" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
+                >
+                  Списком
+                </button>
+              </div>
+              <select value={gameweekId ?? ""} onChange={e => setGameweekId(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1.5">
+                {gameweeks.map(gw => <option key={gw.id} value={gw.id}>Тур №{gw.id} · {gw.status}</option>)}
+              </select>
+            </div>
           </div>
-          {teamsWithMembers.length === 0 ? (
+
+          {overviewView === "flat" ? (
+            members.length === 0 ? (
+              <div className="text-slate-500 text-sm">Пока ни одного участника.</div>
+            ) : (
+              <div className="rounded-2xl border border-slate-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
+                      <th className="text-left px-4 py-2">Участник</th>
+                      <th className="text-left px-4 py-2">Команда</th>
+                      <th className="text-left px-4 py-2">Сет</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m, i) => {
+                      const lineup = lineupsByProfile.get(m.profileId);
+                      return (
+                        <tr key={m.profileId} className={`border-t border-slate-800 ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
+                          <td className="px-4 py-2">
+                            <div className="font-medium">{m.username}</div>
+                            {m.role && <div className="text-[10px] text-slate-500">{ROLE_LABEL[m.role] || m.role}</div>}
+                          </td>
+                          <td className="px-4 py-2 text-slate-400">{m.teamName}</td>
+                          <td className="px-4 py-2">
+                            {lineup ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {lineup.map((c, j) => (
+                                  <span
+                                    key={j}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] ${c.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30" : "bg-slate-800 text-slate-300 border border-slate-700"}`}
+                                  >
+                                    {c.isCaptain && "🃏 "}{c.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setProfileId(m.profileId)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30 hover:bg-amber-400/20 transition"
+                              >
+                                не выбрал — заполнить
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : teamsWithMembers.length === 0 ? (
             <div className="text-slate-500 text-sm">Пока ни одной команды с участниками.</div>
           ) : (
             <div className="flex flex-col gap-3">
