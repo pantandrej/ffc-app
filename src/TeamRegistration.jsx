@@ -158,6 +158,11 @@ export function TeamRegistrationInner({ user, onTeamChange }) {
   return (
     <div className="p-4 md:p-8">
       <div className="max-w-3xl mx-auto">
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-200 mb-6">
+          Сейчас основной формат — личный зачёт (сумма очков за туры, вкладка «Мой сет»), команда для него не нужна.
+          Командный зачёт (среднее очков всех участников команды) считается, но никуда не выводится — он для будущей
+          платной Бриллиантовой лиги (1×1-дуэли по ролям), которая ещё не запущена.
+        </div>
         {myTeam ? (
           <div className="rounded-2xl border border-emerald-500/30 bg-slate-800 p-6">
             <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">{LEAGUE_LABEL[myTeam.league] || myTeam.league}</div>
