@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./lib/supabaseClient.js";
-
-function friendlyError(e) {
-  return e?.message || String(e || "Неизвестная ошибка");
-}
+import { friendlyError } from "./lib/friendlyError.js";
 
 function formatDate(d) {
   if (!d) return "";

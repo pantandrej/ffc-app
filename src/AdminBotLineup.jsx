@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import { ADMIN_EMAILS } from "./AdminResults.jsx";
+import { friendlyError } from "./lib/friendlyError.js";
 
 const BUDGET = 100000000;
 const POOL_SIZE = 5;
 const ROLE_LABEL = { captain: "Капитан", player_1: "Игрок 1", player_2: "Игрок 2" };
-
-function friendlyError(e) {
-  return e?.message || String(e || "Неизвестная ошибка");
-}
 
 function formatMoney(value) {
   return `${new Intl.NumberFormat("ru-RU").format(Number(value) || 0)} €`;

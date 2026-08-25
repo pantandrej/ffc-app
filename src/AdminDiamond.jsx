@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import { ADMIN_EMAILS } from "./AdminResults.jsx";
-
-function friendlyError(e) {
-  return e?.message || String(e || "Неизвестная ошибка");
-}
+import { friendlyError } from "./lib/friendlyError.js";
 
 // Админка Бриллиантовой лиги: создание матчей тура, пересчёт микробаттлов
 // 1x1 (recalc_diamond_gameweek) и просмотр турнирной таблицы.

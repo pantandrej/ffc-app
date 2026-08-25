@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
+import { friendlyError } from "./lib/friendlyError.js";
 
 const LEAGUE_LABEL = { free: "Общая лига", superleague: "Бриллиантовая лига" };
 const ROLE_LABEL = { captain: "Капитан", player_1: "Игрок 1", player_2: "Игрок 2" };
-
-function friendlyError(e) {
-  return e?.message || String(e || "Неизвестная ошибка");
-}
 
 // Контент вкладки "Команда" — без своей шапки/логина, встраивается в FantasystaApp.
 // onTeamChange вызывается после создания/вступления/выхода, чтобы каркас мог

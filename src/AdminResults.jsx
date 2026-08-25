@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import AuthGate from "./lib/AuthGate.jsx";
+import { friendlyError } from "./lib/friendlyError.js";
 
 export const ADMIN_EMAILS = ["mysliklub@gmail.com", "vk3950760@fantasysta.app"];
 export const ADMIN_EMAIL = ADMIN_EMAILS[0]; // старое имя оставлено — используется в паре мест как единичное значение
@@ -11,10 +12,6 @@ const EMPTY_ROW = { is_win: false, is_draw: false, goals_scored: 0, clean_sheet:
 function computePoints(row) {
   if (!row) return 0;
   return (row.is_win ? 3 : 0) + (row.is_draw ? 1 : 0) + (Number(row.goals_scored) || 0) + (row.clean_sheet ? 2 : 0);
-}
-
-function friendlyError(e) {
-  return e?.message || String(e || "Неизвестная ошибка");
 }
 
 export function AdminResultsInner({ user, signOut }) {

@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import { ADMIN_EMAILS } from "./AdminResults.jsx";
+import { friendlyError } from "./lib/friendlyError.js";
 
 const LEAGUES = ["EPL", "LaLiga", "SerieA", "Bundesliga", "Ligue1"];
-
-function friendlyError(e) {
-  return e?.message || String(e || "Неизвестная ошибка");
-}
 
 function fmtDateTime(d) {
   if (!d) return "—";

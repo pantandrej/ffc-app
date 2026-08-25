@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
+import { friendlyError } from "./lib/friendlyError.js";
 
 const BUDGET = 100000000;
 const POOL_SIZE = 5;
@@ -46,10 +47,6 @@ const EURO_BADGE = {
 function formatMoney(value) {
   const n = Number(value) || 0;
   return `${new Intl.NumberFormat("ru-RU").format(n)} €`;
-}
-
-function friendlyError(e) {
-  return e?.message || String(e || "Неизвестная ошибка");
 }
 
 function formatTourDate(d) {
