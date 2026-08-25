@@ -70,12 +70,11 @@ export default function AuthGate({ children }) {
             <h1 className="font-extrabold uppercase tracking-tight leading-[0.95] text-4xl md:text-6xl mb-4">
               Собери состав.<br />
               <span className="text-emerald-400">Выбери Джокера.</span><br />
-              Разнеси соперника <span className="text-amber-400">1×1</span>.
+              Возглавь <span className="text-amber-400">рейтинг</span>.
             </h1>
             <p className="text-slate-400 text-base md:text-lg max-w-2xl">
-              Никаких скучных прогнозов на диван — командный фэнтези-футбол с настоящими
-              микробаттлами. Твой сет реальных клубов бьётся насмерть с сетом соперника,
-              каждый тур — новая дуэль.
+              Докажи, что ты лучший футбольный аналитик. Собери свой пул из 5 клубов на тур
+              и возглавь рейтинг экспертов — играешь сам за себя, никакой команды собирать не нужно.
             </p>
           </div>
 
@@ -116,15 +115,15 @@ export default function AuthGate({ children }) {
 
           <div className="max-w-5xl mx-auto grid md:grid-cols-[1fr_auto] gap-8 items-start">
             <section>
-              <h2 className="font-bold text-lg mb-3">Две лиги, два формата боя</h2>
+              <h2 className="font-bold text-lg mb-3">Сейчас — бесплатная квалификация</h2>
               <div className="flex flex-col gap-3">
                 <div className="rounded-xl border border-slate-700 bg-slate-800 p-3">
-                  <div className="font-semibold text-emerald-400 text-sm mb-1">Общая лига · бесплатно</div>
-                  <div className="text-xs text-slate-400">Личный зачёт: сумма очков твоей команды за все туры, одна общая таблица всех игроков.</div>
+                  <div className="font-semibold text-emerald-400 text-sm mb-1">Личный зачёт · бесплатно, весь август</div>
+                  <div className="text-xs text-slate-400">Играешь сам за себя — никакой команды собирать не нужно. Сумма твоих очков за все туры, один общий рейтинг всех игроков.</div>
                 </div>
                 <div className="rounded-xl border border-slate-700 bg-slate-800 p-3">
-                  <div className="font-semibold text-amber-300 text-sm mb-1">💎 Бриллиантовая лига · платно, скоро</div>
-                  <div className="text-xs text-slate-400">Команда против команды: каждый тур — три личные дуэли 1×1 по ролям (капитан/игрок1/игрок2), исход решает общий счёт матча.</div>
+                  <div className="font-semibold text-amber-300 text-sm mb-1">💎 Бриллиантовая лига · платно, позже</div>
+                  <div className="text-xs text-slate-400">Команда против команды: каждый тур — три личные дуэли 1×1 по ролям (капитан/игрок1/игрок2), исход решает общий счёт матча. Запустим после квалификации.</div>
                 </div>
               </div>
             </section>

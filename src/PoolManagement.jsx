@@ -254,7 +254,7 @@ export default function PoolManagement({ user }) {
           </span>
         </div>
         <div className="text-sm text-slate-400 mb-4">
-          Собери свои 5 клубов на этот тур, выбери Джокера и помоги своей команде победить.
+          Докажи, что ты лучший футбольный аналитик. Собери свой пул из 5 клубов на тур и возглавь рейтинг экспертов.
         </div>
 
         <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
