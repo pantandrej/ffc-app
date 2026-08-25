@@ -35,11 +35,6 @@ export function AdminCalendarInner({ user }) {
   const [editingId, setEditingId] = useState(null);
   const [editKickoff, setEditKickoff] = useState("");
 
-  const [popularity, setPopularity] = useState([]);
-  const [popularityScope, setPopularityScope] = useState("gameweek"); // "gameweek" | "all"
-
-  const [lineups, setLineups] = useState([]); // [{ profileId, username, teamName, clubs: [{name, isCaptain}] }]
-
   const [league, setLeague] = useState(LEAGUES[0]);
   const [homeClubId, setHomeClubId] = useState("");
   const [awayClubId, setAwayClubId] = useState("");
@@ -112,67 +107,8 @@ export function AdminCalendarInner({ user }) {
     }
   }, [gameweekId, showToast]);
 
-  const loadPopularity = useCallback(async () => {
-    try {
-      let query = supabase.from("club_pick_popularity").select("*");
-      if (popularityScope === "gameweek" && gameweekId) query = query.eq("gameweek_id", gameweekId);
-      const { data, error } = await query;
-      if (error) throw error;
-      const rows = data || [];
-      if (popularityScope === "all") {
-        const map = new Map();
-        rows.forEach(r => {
-          const cur = map.get(r.club_id) || { club_name: r.club_name, league: r.league, times_picked: 0 };
-          cur.times_picked += r.times_picked;
-          map.set(r.club_id, cur);
-        });
-        setPopularity([...map.values()].sort((a, b) => b.times_picked - a.times_picked));
-      } else {
-        setPopularity(rows.sort((a, b) => b.times_picked - a.times_picked));
-      }
-    } catch (e) {
-      showToast(friendlyError(e), "error");
-    }
-  }, [gameweekId, popularityScope, showToast]);
-
-  const loadLineups = useCallback(async () => {
-    if (!gameweekId) { setLineups([]); return; }
-    try {
-      const [lineupRes, membersRes] = await Promise.all([
-        supabase
-          .from("user_lineups")
-          .select("profile_id, is_club_captain, fantasysta_profiles(username), clubs(name)")
-          .eq("gameweek_id", gameweekId),
-        supabase.from("team_members").select("profile_id, teams(name)"),
-      ]);
-      if (lineupRes.error) throw lineupRes.error;
-      if (membersRes.error) throw membersRes.error;
-
-      const teamByProfile = new Map((membersRes.data || []).map(m => [m.profile_id, m.teams?.name || null]));
-
-      const grouped = new Map();
-      (lineupRes.data || []).forEach(row => {
-        const key = row.profile_id;
-        if (!grouped.has(key)) {
-          grouped.set(key, {
-            profileId: key,
-            username: row.fantasysta_profiles?.username || key,
-            teamName: teamByProfile.get(key) || null,
-            clubs: [],
-          });
-        }
-        grouped.get(key).clubs.push({ name: row.clubs?.name || "—", isCaptain: row.is_club_captain });
-      });
-      setLineups([...grouped.values()].sort((a, b) => a.username.localeCompare(b.username, "ru")));
-    } catch (e) {
-      showToast(friendlyError(e), "error");
-    }
-  }, [gameweekId, showToast]);
-
   useEffect(() => { loadFixtures(); }, [loadFixtures]);
   useEffect(() => { loadPickedClubs(); }, [loadPickedClubs]);
-  useEffect(() => { loadPopularity(); }, [loadPopularity]);
-  useEffect(() => { loadLineups(); }, [loadLineups]);
 
   async function saveDates() {
     if (!gameweekId) return;
@@ -408,86 +344,9 @@ export function AdminCalendarInner({ user }) {
           )}
         </section>
 
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-bold">Популярность клубов у игроков</h2>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPopularityScope("gameweek")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${popularityScope === "gameweek" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
-              >
-                Этот тур
-              </button>
-              <button
-                type="button"
-                onClick={() => setPopularityScope("all")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${popularityScope === "all" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
-              >
-                За всё время
-              </button>
-            </div>
-          </div>
-          {popularity.length === 0 ? (
-            <div className="text-slate-500 text-sm">Пока никто не выбрал клубы.</div>
-          ) : (
-            <div className="rounded-2xl border border-slate-700 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
-                    <th className="text-left px-4 py-2">#</th>
-                    <th className="text-left px-4 py-2">Клуб</th>
-                    <th className="text-left px-4 py-2">Лига</th>
-                    <th className="px-4 py-2">Выбран раз</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {popularity.map((row, i) => (
-                    <tr key={row.club_id || row.club_name} className={`border-t border-slate-800 ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
-                      <td className="px-4 py-2 text-slate-500">{i + 1}</td>
-                      <td className="px-4 py-2 font-medium">{row.club_name}</td>
-                      <td className="px-4 py-2 text-slate-400">{row.league}</td>
-                      <td className="px-4 py-2 text-center font-bold text-emerald-400">{row.times_picked}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h2 className="font-bold mb-3">Составы игроков (сеты этого тура)</h2>
-          {lineups.length === 0 ? (
-            <div className="text-slate-500 text-sm">Пока никто не собрал сет на этот тур.</div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {lineups.map(l => (
-                <div key={l.profileId} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm">
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <span className="font-semibold">{l.username}</span>
-                    {l.teamName && <span className="text-xs text-slate-500">· {l.teamName}</span>}
-                    {l.clubs.length < 5 && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">
-                        {l.clubs.length}/5
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {l.clubs.map((c, i) => (
-                      <span
-                        key={i}
-                        className={`px-2 py-1 rounded-lg text-xs ${c.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
-                      >
-                        {c.isCaptain && "🃏 "}{c.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        <div className="text-xs text-slate-500">
+          Составы игроков и популярность клубов — во вкладке «Боты/участники».
+        </div>
       </div>
 
       {toast && (

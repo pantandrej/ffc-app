@@ -36,7 +36,8 @@ export function AdminBotLineupInner({ user }) {
 
   const [members, setMembers] = useState([]); // [{profileId, username, teamName, role}]
   const [lineupsByProfile, setLineupsByProfile] = useState(new Map()); // profileId -> [{name, isCaptain}]
-  const [overviewView, setOverviewView] = useState("grouped"); // "grouped" | "flat"
+  const [overviewView, setOverviewView] = useState("members"); // "members" | "clubs"
+  const [clubPopularity, setClubPopularity] = useState([]); // [{club_id, club_name, league, times_picked}]
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -125,21 +126,24 @@ export function AdminBotLineupInner({ user }) {
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
 
+  const loadClubPopularity = useCallback(async () => {
+    if (!gameweekId) { setClubPopularity([]); return; }
+    try {
+      const { data, error } = await supabase.from("club_pick_popularity").select("*").eq("gameweek_id", gameweekId);
+      if (error) throw error;
+      setClubPopularity((data || []).sort((a, b) => b.times_picked - a.times_picked));
+    } catch (e) {
+      showToast(friendlyError(e), "error");
+    }
+  }, [gameweekId, showToast]);
+
+  useEffect(() => { loadClubPopularity(); }, [loadClubPopularity]);
+
   const clubsById = useMemo(() => new Map(clubs.map(c => [c.id, c])), [clubs]);
   const poolClubs = useMemo(() => poolClubIds.map(id => clubsById.get(id)).filter(Boolean), [poolClubIds, clubsById]);
   const bankBalance = useMemo(() => BUDGET - poolClubs.reduce((s, c) => s + Number(c.price || 0), 0), [poolClubs]);
   const captainValid = !!captainId && poolClubIds.includes(captainId);
   const canSave = !!profileId && !!gameweekId && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0;
-
-  const teamsWithMembers = useMemo(() => {
-    const map = new Map();
-    members.forEach(m => {
-      const list = map.get(m.teamName) || [];
-      list.push(m);
-      map.set(m.teamName, list);
-    });
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "ru"));
-  }, [members]);
 
   function toggleClub(clubId) {
     setPoolClubIds(prev => {
@@ -243,17 +247,17 @@ export function AdminBotLineupInner({ user }) {
               <div className="flex gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setOverviewView("grouped")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${overviewView === "grouped" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
+                  onClick={() => setOverviewView("members")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${overviewView === "members" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
                 >
-                  По командам
+                  Участники
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOverviewView("flat")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${overviewView === "flat" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
+                  onClick={() => setOverviewView("clubs")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${overviewView === "clubs" ? "bg-emerald-500 border-emerald-500 text-slate-900" : "border-slate-700 text-slate-300"}`}
                 >
-                  Списком
+                  Выбранные клубы
                 </button>
               </div>
               <select value={gameweekId ?? ""} onChange={e => setGameweekId(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2 py-1.5">
@@ -262,7 +266,7 @@ export function AdminBotLineupInner({ user }) {
             </div>
           </div>
 
-          {overviewView === "flat" ? (
+          {overviewView === "members" ? (
             members.length === 0 ? (
               <div className="text-slate-500 text-sm">Пока ни одного участника.</div>
             ) : (
@@ -314,55 +318,30 @@ export function AdminBotLineupInner({ user }) {
                 </table>
               </div>
             )
-          ) : teamsWithMembers.length === 0 ? (
-            <div className="text-slate-500 text-sm">Пока ни одной команды с участниками.</div>
+          ) : clubPopularity.length === 0 ? (
+            <div className="text-slate-500 text-sm">Пока никто не выбрал клубы на этот тур.</div>
           ) : (
-            <div className="flex flex-col gap-3">
-              {teamsWithMembers.map(([teamName, list]) => (
-                <div key={teamName} className="rounded-xl border border-slate-700 bg-slate-800 p-3">
-                  <div className="font-semibold text-sm mb-2">{teamName}</div>
-                  <div className="flex flex-col gap-2">
-                    {list.map(m => {
-                      const lineup = lineupsByProfile.get(m.profileId);
-                      return (
-                        <div key={m.profileId} className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">{m.username}</span>
-                              {m.role && <span className="text-[10px] text-slate-500">{ROLE_LABEL[m.role] || m.role}</span>}
-                            </div>
-                            {lineup ? (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-400/10 text-emerald-300 border border-emerald-400/30">
-                                {lineup.length}/5 выбрано
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setProfileId(m.profileId)}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30 hover:bg-amber-400/20 transition"
-                              >
-                                не выбрал — заполнить
-                              </button>
-                            )}
-                          </div>
-                          {lineup && (
-                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                              {lineup.map((c, i) => (
-                                <span
-                                  key={i}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] ${c.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30" : "bg-slate-800 text-slate-300 border border-slate-700"}`}
-                                >
-                                  {c.isCaptain && "🃏 "}{c.name}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+            <div className="rounded-2xl border border-slate-700 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
+                    <th className="text-left px-4 py-2">#</th>
+                    <th className="text-left px-4 py-2">Клуб</th>
+                    <th className="text-left px-4 py-2">Лига</th>
+                    <th className="px-4 py-2">Выбран раз</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clubPopularity.map((row, i) => (
+                    <tr key={row.club_id} className={`border-t border-slate-800 ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
+                      <td className="px-4 py-2 text-slate-500">{i + 1}</td>
+                      <td className="px-4 py-2 font-medium">{row.club_name}</td>
+                      <td className="px-4 py-2 text-slate-400">{row.league}</td>
+                      <td className="px-4 py-2 text-center font-bold text-emerald-400">{row.times_picked}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
