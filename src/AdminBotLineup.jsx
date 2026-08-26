@@ -39,6 +39,10 @@ export function AdminBotLineupInner({ user }) {
   const [overviewView, setOverviewView] = useState("members"); // "members" | "clubs"
   const [clubPopularity, setClubPopularity] = useState([]); // [{club_id, club_name, league, times_picked}]
 
+  const [editingProfileId, setEditingProfileId] = useState(null);
+  const [editUsername, setEditUsername] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
     window.setTimeout(() => setToast(null), 4000);
@@ -207,6 +211,43 @@ export function AdminBotLineupInner({ user }) {
     }
   }
 
+  function startRename(m) {
+    setEditingProfileId(m.profileId);
+    setEditUsername(m.username);
+  }
+
+  async function saveRename(profileIdToRename) {
+    const name = editUsername.trim();
+    if (!name) return;
+    setRenameBusy(true);
+    try {
+      const { error } = await supabase.from("fantasysta_profiles").update({ username: name }).eq("id", profileIdToRename);
+      if (error) throw error;
+      setMembers(prev => prev.map(m => (m.profileId === profileIdToRename ? { ...m, username: name } : m)));
+      setProfiles(prev => prev.map(p => (p.id === profileIdToRename ? { ...p, username: name } : p)));
+      setEditingProfileId(null);
+      showToast("✓ Имя сохранено");
+    } catch (e) {
+      showToast(e?.code === "23505" ? "Это имя уже занято" : friendlyError(e), "error");
+    } finally {
+      setRenameBusy(false);
+    }
+  }
+
+  const postListText = useMemo(
+    () => members.map((m, i) => `${i + 1}) ${m.username} (${m.teamName})`).join("\n"),
+    [members]
+  );
+
+  async function copyPostList() {
+    try {
+      await navigator.clipboard.writeText(postListText);
+      showToast("✓ Список скопирован");
+    } catch {
+      showToast("Не удалось скопировать — выдели текст вручную", "error");
+    }
+  }
+
   if (!ADMIN_EMAILS.includes(user.email)) {
     return <div className="p-10 text-center text-slate-400">Эта страница только для админа.</div>;
   }
@@ -285,7 +326,24 @@ export function AdminBotLineupInner({ user }) {
                       return (
                         <tr key={m.profileId} className={`border-t border-slate-800 ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
                           <td className="px-4 py-2">
-                            <div className="font-medium">{m.username}</div>
+                            {editingProfileId === m.profileId ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={editUsername}
+                                  onChange={e => setEditUsername(e.target.value)}
+                                  autoFocus
+                                  className="bg-slate-900 border border-slate-700 rounded-lg text-sm px-2 py-1 w-32"
+                                />
+                                <button type="button" disabled={renameBusy} onClick={() => saveRename(m.profileId)} className="text-emerald-400 hover:text-emerald-300 text-xs font-semibold">✓</button>
+                                <button type="button" onClick={() => setEditingProfileId(null)} className="text-slate-500 hover:text-slate-300 text-xs">✕</button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <div className="font-medium">{m.username}</div>
+                                <button type="button" onClick={() => startRename(m)} title="Переименовать" className="text-slate-600 hover:text-sky-400 text-xs">✎</button>
+                              </div>
+                            )}
                             {m.role && <div className="text-[10px] text-slate-500">{ROLE_LABEL[m.role] || m.role}</div>}
                           </td>
                           <td className="px-4 py-2 text-slate-400">{m.teamName}</td>
@@ -344,6 +402,28 @@ export function AdminBotLineupInner({ user }) {
               </table>
             </div>
           )}
+        </section>
+
+        <section>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="font-bold">Список для поста</h2>
+            <button
+              type="button"
+              onClick={copyPostList}
+              disabled={members.length === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 text-slate-300 hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-50 transition"
+            >
+              Скопировать
+            </button>
+          </div>
+          <textarea
+            readOnly
+            value={postListText}
+            placeholder="Пока некому — добавь участников выше."
+            rows={Math.max(4, members.length)}
+            onFocus={e => e.target.select()}
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl text-sm px-3 py-2 font-mono text-slate-300"
+          />
         </section>
 
         <section className="flex flex-col gap-4">
