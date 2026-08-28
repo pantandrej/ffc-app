@@ -54,6 +54,13 @@ function formatTourDate(d) {
   return new Date(d).toLocaleDateString("ru-RU", { day: "2-digit", month: "long" });
 }
 
+// Локальная (устройства игрока) дата в формате YYYY-MM-DD — starts_on
+// хранится как чистая дата без времени, сравниваем календарными днями.
+function todayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Единственный экран выбора клубов — пишет в user_lineups (личный сет на
 // каждого игрока). Очки команды в Общей лиге = среднее по всем участникам
 // (см. sql/fantasysta_module12_unified_lineup_scoring.sql); та же таблица
@@ -150,8 +157,10 @@ export default function PoolManagement({ user }) {
     [poolClubs]
   );
 
+  const tourStarted = !!gameweek?.starts_on && todayLocalISO() >= gameweek.starts_on;
+
   const captainValid = !!captainId && poolClubIds.includes(captainId);
-  const canSave = !!gameweek && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0;
+  const canSave = !tourStarted && !!gameweek && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0;
 
   const isSaved =
     poolClubIds.length === savedClubIds.length &&
@@ -170,17 +179,20 @@ export default function PoolManagement({ user }) {
   }, [clubs, leagueFilter, tierFilter, sortBy]);
 
   function addClub(clubId) {
+    if (tourStarted) return;
     if (poolClubIds.length >= POOL_SIZE) return;
     if (poolClubIds.includes(clubId)) return;
     setPoolClubIds(prev => [...prev, clubId]);
   }
 
   function removeClub(clubId) {
+    if (tourStarted) return;
     setPoolClubIds(prev => prev.filter(id => id !== clubId));
     if (captainId === clubId) setCaptainId(null);
   }
 
   function toggleCaptain(clubId) {
+    if (tourStarted) return;
     setCaptainId(prev => (prev === clubId ? null : clubId));
   }
 
@@ -254,6 +266,12 @@ export default function PoolManagement({ user }) {
           Докажи, что ты лучший футбольный аналитик. Собери свой пул из 5 клубов на тур и возглавь рейтинг экспертов.
         </div>
 
+        {tourStarted && (
+          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
+            Тур уже начался — менять сет нельзя. Дождись следующего тура.
+          </div>
+        )}
+
         <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
           <span className="text-slate-500 font-semibold uppercase tracking-wide">Как начисляются баллы</span>
           <span className="text-slate-300">Победа <b className="text-emerald-400">+3</b></span>
@@ -298,22 +316,29 @@ export default function PoolManagement({ user }) {
                       <div className="font-semibold truncate">{club.name}</div>
                       <div className="text-xs text-slate-400">{club.league} · {formatMoney(club.price)}</div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => toggleCaptain(club.id)}
-                      title={isCaptain ? "Убрать джокера" : "Сделать джокером"}
-                      className={`flex-shrink-0 transition ${isCaptain ? "text-amber-400" : "text-slate-400"} ${crownVisibilityClass}`}
-                    >
-                      <CrownIcon className="w-6 h-6" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeClub(club.id)}
-                      title="Убрать из сета"
-                      className="text-slate-500 hover:text-red-400 flex-shrink-0"
-                    >
-                      ✕
-                    </button>
+                    {!tourStarted && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => toggleCaptain(club.id)}
+                          title={isCaptain ? "Убрать джокера" : "Сделать джокером"}
+                          className={`flex-shrink-0 transition ${isCaptain ? "text-amber-400" : "text-slate-400"} ${crownVisibilityClass}`}
+                        >
+                          <CrownIcon className="w-6 h-6" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeClub(club.id)}
+                          title="Убрать из сета"
+                          className="text-slate-500 hover:text-red-400 flex-shrink-0"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                    {tourStarted && isCaptain && (
+                      <CrownIcon className="w-6 h-6 text-amber-400 flex-shrink-0" />
+                    )}
                   </div>
                 );
               })}
@@ -325,9 +350,9 @@ export default function PoolManagement({ user }) {
               disabled={!canSave || saving || isSaved}
               className="w-full py-4 rounded-xl font-bold text-lg transition bg-emerald-500 hover:bg-emerald-400 text-slate-900 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
             >
-              {saving ? "Сохраняю…" : isSaved ? "✓ Сет сохранён" : "Сохранить сет"}
+              {tourStarted ? "Тур начался — сет заблокирован" : saving ? "Сохраняю…" : isSaved ? "✓ Сет сохранён" : "Сохранить сет"}
             </button>
-            {!captainValid && poolClubIds.length === POOL_SIZE && (
+            {!tourStarted && !captainValid && poolClubIds.length === POOL_SIZE && (
               <div className="text-xs text-amber-400 text-center">Выбери Джокера среди выбранных клубов</div>
             )}
           </aside>
@@ -377,7 +402,7 @@ export default function PoolManagement({ user }) {
               {filteredClubs.map(club => {
                 const inPool = poolClubIds.includes(club.id);
                 const poolFull = poolClubIds.length >= POOL_SIZE;
-                const disabled = inPool || (poolFull && !inPool);
+                const disabled = tourStarted || inPool || (poolFull && !inPool);
                 let label = "Добавить";
                 if (inPool) label = "В сете";
                 else if (poolFull) label = "Сет заполнен";
