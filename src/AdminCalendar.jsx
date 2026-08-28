@@ -4,6 +4,13 @@ import { ADMIN_EMAILS } from "./AdminResults.jsx";
 import { friendlyError } from "./lib/friendlyError.js";
 
 const LEAGUES = ["EPL", "LaLiga", "SerieA", "Bundesliga", "Ligue1"];
+// Еврокубки сводят клубы из РАЗНЫХ чемпионатов в одном матче, поэтому для них
+// клубы в форме фильтруются по euro_competition, а не по league.
+const EURO_COMPETITIONS = [
+  { value: "UCL", label: "Лига чемпионов", tag: "ucl" },
+  { value: "UEL", label: "Лига Европы", tag: "uel" },
+  { value: "UECL", label: "Лига конференций", tag: "uecl" },
+];
 
 function fmtDateTime(d) {
   if (!d) return "—";
@@ -51,7 +58,7 @@ export function AdminCalendarInner({ user }) {
       try {
         const [gwRes, clubsRes] = await Promise.all([
           supabase.from("gameweeks").select("*").order("id"),
-          supabase.from("clubs").select("id,name,league").order("league").order("name"),
+          supabase.from("clubs").select("id,name,league,euro_competition").order("league").order("name"),
         ]);
         if (gwRes.error) throw gwRes.error;
         if (clubsRes.error) throw clubsRes.error;
@@ -128,7 +135,11 @@ export function AdminCalendarInner({ user }) {
     }
   }
 
-  const clubsInLeague = useMemo(() => clubs.filter(c => c.league === league), [clubs, league]);
+  const euroTag = useMemo(() => EURO_COMPETITIONS.find(e => e.value === league)?.tag, [league]);
+  const clubsInLeague = useMemo(
+    () => (euroTag ? clubs.filter(c => c.euro_competition === euroTag) : clubs.filter(c => c.league === league)),
+    [clubs, league, euroTag]
+  );
 
   const visibleFixtures = useMemo(
     () => onlyPicked ? fixtures.filter(fx => pickedClubIds.has(fx.home_club_id) || pickedClubIds.has(fx.away_club_id)) : fixtures,
@@ -254,6 +265,7 @@ export function AdminCalendarInner({ user }) {
               className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2"
             >
               {LEAGUES.map(l => <option key={l} value={l}>{l}</option>)}
+              {EURO_COMPETITIONS.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
             </select>
             <select
               value={homeClubId}
@@ -261,7 +273,7 @@ export function AdminCalendarInner({ user }) {
               className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2"
             >
               <option value="">Клуб (дома)</option>
-              {clubsInLeague.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {clubsInLeague.map(c => <option key={c.id} value={c.id}>{euroTag ? `${c.name} (${c.league})` : c.name}</option>)}
             </select>
             <span className="text-slate-500">—</span>
             <select
@@ -270,7 +282,7 @@ export function AdminCalendarInner({ user }) {
               className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2"
             >
               <option value="">Клуб (гости)</option>
-              {clubsInLeague.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {clubsInLeague.map(c => <option key={c.id} value={c.id}>{euroTag ? `${c.name} (${c.league})` : c.name}</option>)}
             </select>
             <input
               type="datetime-local"
