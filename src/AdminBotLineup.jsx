@@ -103,26 +103,42 @@ export function AdminBotLineupInner({ user }) {
           .select("profile_id, role_in_team, fantasysta_profiles(username), teams(name)"),
         supabase
           .from("user_lineups")
-          .select("profile_id, is_club_captain, clubs(name)")
+          .select("profile_id, is_club_captain, clubs(name), fantasysta_profiles(username)")
           .eq("gameweek_id", gameweekId),
       ]);
       if (membersRes.error) throw membersRes.error;
       if (lineupsRes.error) throw lineupsRes.error;
 
-      setMembers((membersRes.data || []).map(m => ({
-        profileId: m.profile_id,
-        username: m.fantasysta_profiles?.username || m.profile_id,
-        teamName: m.teams?.name || "—",
-        role: m.role_in_team,
-      })));
+      // Участник — это либо член какой-то команды, либо просто игрок с
+      // собранным сетом на этот тур (сольный формат не требует команды,
+      // поэтому одних team_members недостаточно — иначе такие игроки
+      // невидимы для админа).
+      const byProfile = new Map();
+      (membersRes.data || []).forEach(m => {
+        byProfile.set(m.profile_id, {
+          profileId: m.profile_id,
+          username: m.fantasysta_profiles?.username || m.profile_id,
+          teamName: m.teams?.name || "—",
+          role: m.role_in_team,
+        });
+      });
 
       const map = new Map();
       (lineupsRes.data || []).forEach(row => {
         const list = map.get(row.profile_id) || [];
         list.push({ name: row.clubs?.name || "—", isCaptain: row.is_club_captain });
         map.set(row.profile_id, list);
+        if (!byProfile.has(row.profile_id)) {
+          byProfile.set(row.profile_id, {
+            profileId: row.profile_id,
+            username: row.fantasysta_profiles?.username || row.profile_id,
+            teamName: "—",
+            role: null,
+          });
+        }
       });
       setLineupsByProfile(map);
+      setMembers([...byProfile.values()].sort((a, b) => a.username.localeCompare(b.username, "ru")));
     } catch (e) {
       showToast(friendlyError(e), "error");
     }
