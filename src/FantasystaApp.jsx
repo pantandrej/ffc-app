@@ -8,12 +8,14 @@ import { AdminResultsInner, ADMIN_EMAILS } from "./AdminResults.jsx";
 import { AdminDiamondInner } from "./AdminDiamond.jsx";
 import { AdminCalendarInner } from "./AdminCalendar.jsx";
 import { AdminBotLineupInner } from "./AdminBotLineup.jsx";
+import { AdminScreenshotInner } from "./AdminScreenshot.jsx";
 
 const ADMIN_SECTIONS = [
   { id: "results", label: "Результаты" },
   { id: "diamond", label: "H2H" },
   { id: "calendar", label: "Тур" },
   { id: "bots", label: "Боты/участники" },
+  { id: "screenshot", label: "Скрин таблиц" },
 ];
 
 function AdminArea({ user, signOut }) {
@@ -38,6 +40,7 @@ function AdminArea({ user, signOut }) {
       {section === "diamond" && <AdminDiamondInner user={user} />}
       {section === "calendar" && <AdminCalendarInner user={user} />}
       {section === "bots" && <AdminBotLineupInner user={user} />}
+      {section === "screenshot" && <AdminScreenshotInner user={user} />}
     </div>
   );
 }
