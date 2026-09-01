@@ -83,6 +83,8 @@ export default function PoolManagement({ user }) {
   const [tierFilter, setTierFilter] = useState("all");
   const [sortBy, setSortBy] = useState("price_desc");
 
+  const [clubResults, setClubResults] = useState(new Map()); // club_id -> total_points
+
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
     window.clearTimeout(showToast._t);
@@ -130,6 +132,11 @@ export default function PoolManagement({ user }) {
           setCaptainId(cap);
           setSavedClubIds(ids);
           setSavedCaptainId(cap);
+
+          const resultsRes = await supabase.from("club_results").select("club_id, total_points").eq("gameweek_id", gw.id);
+          if (cancelled) return;
+          if (resultsRes.error) throw resultsRes.error;
+          setClubResults(new Map((resultsRes.data || []).map(r => [r.club_id, r.total_points])));
         }
       } catch (e) {
         if (!cancelled) setLoadError(friendlyError(e));
@@ -150,6 +157,27 @@ export default function PoolManagement({ user }) {
   const poolClubs = useMemo(
     () => poolClubIds.map(id => clubsById.get(id)).filter(Boolean),
     [poolClubIds, clubsById]
+  );
+
+  // Разбивка очков ЗАФИКСИРОВАННОГО (сохранённого) сета за этот тур — а не
+  // текущего черновика, который игрок может ещё крутить до сохранения.
+  const savedTourBreakdown = useMemo(
+    () => savedClubIds.map(id => {
+      const club = clubsById.get(id);
+      const basePoints = clubResults.has(id) ? Number(clubResults.get(id)) : null;
+      const isCaptain = id === savedCaptainId;
+      return {
+        club,
+        basePoints,
+        points: basePoints === null ? null : (isCaptain ? basePoints * 2 : basePoints),
+        isCaptain,
+      };
+    }).filter(row => row.club),
+    [savedClubIds, savedCaptainId, clubsById, clubResults]
+  );
+  const savedTourTotal = useMemo(
+    () => savedTourBreakdown.some(r => r.points === null) ? null : savedTourBreakdown.reduce((s, r) => s + r.points, 0),
+    [savedTourBreakdown]
   );
 
   const bankBalance = useMemo(
@@ -280,6 +308,27 @@ export default function PoolManagement({ user }) {
           <span className="text-slate-300">Сухой матч <b className="text-emerald-400">+2</b></span>
           <span className="text-slate-300">Джокер <b className="text-amber-400">очки ×2</b></span>
         </div>
+
+        {savedTourBreakdown.length > 0 && (
+          <div className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-800/60 px-4 py-3">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <span className="text-slate-500 font-semibold uppercase tracking-wide text-xs">Очки твоего сета в этом туре</span>
+              <span className="font-extrabold text-lg text-emerald-400">
+                {savedTourTotal === null ? "тур не сыгран" : `${savedTourTotal} очков`}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {savedTourBreakdown.map(row => (
+                <span
+                  key={row.club.id}
+                  className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
+                >
+                  {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col md:flex-row gap-6">
           <aside className="md:w-[35%] flex flex-col gap-4">
