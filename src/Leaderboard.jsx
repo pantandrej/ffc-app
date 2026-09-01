@@ -54,69 +54,6 @@ function PointsTab({ user }) {
   );
 }
 
-function WinsTab({ user }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const { data, error: err } = await supabase
-        .from("leaderboard_wins")
-        .select("*")
-        .order("wins", { ascending: false })
-        .order("win_pct", { ascending: false });
-      if (cancelled) return;
-      if (err) setError(err.message);
-      else setRows(data || []);
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  if (loading) return <div className="text-slate-400 py-8 text-center">Загрузка…</div>;
-  if (error) return <div className="text-red-400 py-8 text-center">{error}</div>;
-  if (rows.length === 0) {
-    return (
-      <div className="text-slate-400 text-center py-16 max-w-sm mx-auto">
-        Пока нет сыгранных дуэлей 1×1 — этот рейтинг заполнится, когда запустим Бриллиантовую лигу.
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-slate-700 overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
-            <th className="text-left px-4 py-2">#</th>
-            <th className="text-left px-4 py-2">Игрок</th>
-            <th className="px-3 py-2">Матчей</th>
-            <th className="px-3 py-2">Побед</th>
-            <th className="px-3 py-2">% побед</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => {
-            const isMe = r.profile_id === user.id;
-            return (
-              <tr key={r.profile_id} className={`border-t border-slate-800 ${isMe ? "bg-emerald-500/10" : i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
-                <td className="px-4 py-2 text-slate-500">{i + 1}</td>
-                <td className={`px-4 py-2 font-semibold ${isMe ? "text-emerald-400" : ""}`}>{r.username}</td>
-                <td className="px-3 py-2 text-center">{r.matches}</td>
-                <td className="px-3 py-2 text-center font-bold text-emerald-400">{r.wins}</td>
-                <td className="px-3 py-2 text-center">{r.win_pct}%</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 // Командный зачёт — среднее очков участников за тур (team_results, module 12),
 // просуммированное по всем сыгранным турам. Информационно: Бриллиантовая лига
 // (сама борьба команд) ещё не запущена, но игрокам интересно видеть зачёт своей
@@ -168,11 +105,10 @@ function TeamsTab({ user, myTeamId }) {
   );
 }
 
-// Таблица "Общей лиги": вкладки — Очки (личный зачёт, сумма за всё время),
-// Команды (средний командный зачёт, сумма за всё время) и Победы (матчи/
-// победы/% побед по личным дуэлям 1×1, заполняется с Бриллиантовой лигой).
+// Таблица "Общей лиги": вкладки — Личный (сумма очков за всё время) и
+// Командный (средний командный зачёт, сумма за всё время).
 export default function Leaderboard({ user }) {
-  const [tab, setTab] = useState("points"); // "points" | "teams" | "wins"
+  const [tab, setTab] = useState("points"); // "points" | "teams"
   const [myTeamId, setMyTeamId] = useState(null);
 
   useEffect(() => {
@@ -194,28 +130,20 @@ export default function Leaderboard({ user }) {
             onClick={() => setTab("points")}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${tab === "points" ? "bg-emerald-500 text-slate-900" : "text-slate-300 hover:bg-slate-800"}`}
           >
-            Очки
+            Личный
           </button>
           <button
             type="button"
             onClick={() => setTab("teams")}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${tab === "teams" ? "bg-emerald-500 text-slate-900" : "text-slate-300 hover:bg-slate-800"}`}
           >
-            Команды
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("wins")}
-            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${tab === "wins" ? "bg-emerald-500 text-slate-900" : "text-slate-300 hover:bg-slate-800"}`}
-          >
-            Победы
+            Командный
           </button>
         </div>
       </div>
 
       {tab === "points" && <PointsTab user={user} />}
       {tab === "teams" && <TeamsTab user={user} myTeamId={myTeamId} />}
-      {tab === "wins" && <WinsTab user={user} />}
     </div>
   );
 }
