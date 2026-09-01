@@ -60,6 +60,7 @@ function PointsTab({ user }) {
 // команды уже сейчас.
 function TeamsTab({ user, myTeamId }) {
   const [rows, setRows] = useState([]);
+  const [membersByTeam, setMembersByTeam] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -67,13 +68,22 @@ function TeamsTab({ user, myTeamId }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data, error: err } = await supabase
-        .from("leaderboard_teams")
-        .select("*")
-        .order("total_points", { ascending: false });
+      const [teamsRes, membersRes] = await Promise.all([
+        supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
+        supabase.from("team_members").select("team_id, fantasysta_profiles(username)"),
+      ]);
       if (cancelled) return;
-      if (err) setError(err.message);
-      else setRows(data || []);
+      if (teamsRes.error) { setError(teamsRes.error.message); setLoading(false); return; }
+      if (membersRes.error) { setError(membersRes.error.message); setLoading(false); return; }
+
+      const map = new Map();
+      (membersRes.data || []).forEach(m => {
+        const list = map.get(m.team_id) || [];
+        list.push(m.fantasysta_profiles?.username || m.team_id);
+        map.set(m.team_id, list);
+      });
+      setMembersByTeam(map);
+      setRows(teamsRes.data || []);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -96,6 +106,7 @@ function TeamsTab({ user, myTeamId }) {
             <div className="flex-1 min-w-0">
               <div className={`font-semibold truncate ${isMyTeam ? "text-emerald-400" : ""}`}>{r.team_name}</div>
               <div className="text-xs text-slate-500 truncate">{r.gameweeks_played} {r.gameweeks_played === 1 ? "тур" : "тура"} сыграно · среднее по составу</div>
+              <div className="text-xs text-slate-500 truncate">В зачёте: {(membersByTeam.get(r.team_id) || []).join(", ") || "—"}</div>
             </div>
             <div className="font-bold text-lg flex-shrink-0">{formatPoints(r.total_points)}</div>
           </div>
