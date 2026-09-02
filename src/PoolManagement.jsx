@@ -52,6 +52,11 @@ function formatTourDate(d) {
   return new Date(d).toLocaleDateString("ru-RU", { day: "2-digit", month: "long" });
 }
 
+function formatDeadline(d) {
+  if (!d) return "";
+  return new Date(d).toLocaleString("ru-RU", { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
+}
+
 // Локальная (устройства игрока) дата в формате YYYY-MM-DD — starts_on
 // хранится как чистая дата без времени, сравниваем календарными днями.
 function todayLocalISO() {
@@ -82,6 +87,7 @@ export default function PoolManagement({ user }) {
   const [sortBy, setSortBy] = useState("pot_asc");
 
   const [clubResults, setClubResults] = useState(new Map()); // club_id -> total_points
+  const [firstKickoffAt, setFirstKickoffAt] = useState(null); // момент первого матча тура (ISO)
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -135,6 +141,23 @@ export default function PoolManagement({ user }) {
           if (cancelled) return;
           if (resultsRes.error) throw resultsRes.error;
           setClubResults(new Map((resultsRes.data || []).map(r => [r.club_id, r.total_points])));
+
+          // Сет блокируется в момент первого матча тура (по всем 5 лигам),
+          // а не в полночь дня начала — иначе пятница блокируется целиком,
+          // хотя первый матч может быть только вечером.
+          if (gw.starts_on && gw.ends_on) {
+            const fxRes = await supabase
+              .from("club_fixtures")
+              .select("kickoff_at")
+              .gte("kickoff_at", gw.starts_on)
+              .lt("kickoff_at", `${gw.ends_on}T23:59:59.999`)
+              .order("kickoff_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            if (cancelled) return;
+            if (fxRes.error) throw fxRes.error;
+            setFirstKickoffAt(fxRes.data?.kickoff_at || null);
+          }
         }
       } catch (e) {
         if (!cancelled) setLoadError(friendlyError(e));
@@ -187,7 +210,11 @@ export default function PoolManagement({ user }) {
   }, [poolClubs]);
   const potsComplete = POTS.every(p => (countByPot.get(p) || 0) === PER_POT);
 
-  const tourStarted = !!gameweek?.starts_on && todayLocalISO() >= gameweek.starts_on;
+  // Порог блокировки — момент первого матча тура, если календарь уже занесён;
+  // иначе (fallback) полночь дня начала тура, как раньше.
+  const tourStarted = firstKickoffAt
+    ? Date.now() >= new Date(firstKickoffAt).getTime()
+    : !!gameweek?.starts_on && todayLocalISO() >= gameweek.starts_on;
 
   const captainValid = !!captainId && poolClubIds.includes(captainId);
   const canSave = !tourStarted && !!gameweek && poolClubIds.length === POOL_SIZE && potsComplete && captainValid;
@@ -298,9 +325,13 @@ export default function PoolManagement({ user }) {
           Докажи, что ты лучший футбольный аналитик. Собери сет из 10 клубов — по 2 из каждой из 5 корзин — и возглавь рейтинг экспертов.
         </div>
 
-        {tourStarted && (
+        {tourStarted ? (
           <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
-            Тур уже начался — менять сет нельзя. Дождись следующего тура.
+            Первый матч тура уже начался — менять сет нельзя. Дождись следующего тура.
+          </div>
+        ) : firstKickoffAt && (
+          <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-sky-200">
+            Сет можно менять до первого матча тура — {formatDeadline(firstKickoffAt)} (мск).
           </div>
         )}
 
