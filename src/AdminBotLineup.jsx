@@ -16,9 +16,9 @@ const POT_BADGE = {
 };
 
 // Проставление сета за игрока, который сам не может зайти на сайт (боты вроде
-// ChatGPT/Claude, тестовые аккаунты) — те же правила (5 клубов, 100 млн,
-// 1 Джокер), только пишет от имени выбранного профиля (нужны права админа
-// на user_lineups, см. sql/fantasysta_module20).
+// ChatGPT/Claude, тестовые аккаунты) — те же правила (10 клубов, по 2 из
+// каждой из 5 корзин, 1 Джокер), только пишет от имени выбранного профиля
+// (нужны права админа на user_lineups, см. sql/fantasysta_module20).
 export function AdminBotLineupInner({ user }) {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
