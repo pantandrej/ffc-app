@@ -10,7 +10,7 @@ function formatPoints(n) {
 // Компактная страница только для скриншота в пост — личная и командная
 // таблицы рядом, с брендингом сверху, без лишних UI-элементов (вкладок,
 // подписей "N тур сыграно" и т.п.), чтобы влезло побольше строк.
-function CompactTable({ title, rows, nameKey }) {
+function CompactTable({ title, rows, nameKey, subtitle }) {
   return (
     <div className="flex-1 min-w-0">
       <div className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-2">{title}</div>
@@ -21,11 +21,16 @@ function CompactTable({ title, rows, nameKey }) {
           rows.map((r, i) => (
             <div
               key={r[nameKey] + i}
-              className={`flex items-center gap-3 px-3 py-1.5 text-sm ${i > 0 ? "border-t border-slate-800" : ""} ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}
+              className={`px-3 py-1.5 text-sm ${i > 0 ? "border-t border-slate-800" : ""} ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}
             >
-              <div className="w-5 text-slate-500 font-semibold flex-shrink-0 text-xs">{i + 1}</div>
-              <div className="flex-1 min-w-0 truncate font-medium">{r[nameKey]}</div>
-              <div className="font-bold flex-shrink-0">{formatPoints(r.total_points)}</div>
+              <div className="flex items-center gap-3">
+                <div className="w-5 text-slate-500 font-semibold flex-shrink-0 text-xs">{i + 1}</div>
+                <div className="flex-1 min-w-0 truncate font-medium">{r[nameKey]}</div>
+                <div className="font-bold flex-shrink-0">{formatPoints(r.total_points)}</div>
+              </div>
+              {subtitle && (
+                <div className="pl-8 text-[11px] text-slate-500 truncate">{subtitle(r)}</div>
+              )}
             </div>
           ))
         )}
@@ -39,21 +44,32 @@ export function AdminScreenshotInner({ user }) {
   const [error, setError] = useState("");
   const [personal, setPersonal] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [membersByTeam, setMembersByTeam] = useState(new Map());
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const [pRes, tRes] = await Promise.all([
+        const [pRes, tRes, mRes] = await Promise.all([
           supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
           supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
+          supabase.from("team_members").select("team_id, fantasysta_profiles(username)"),
         ]);
         if (pRes.error) throw pRes.error;
         if (tRes.error) throw tRes.error;
+        if (mRes.error) throw mRes.error;
         if (cancelled) return;
         setPersonal(pRes.data || []);
         setTeams(tRes.data || []);
+
+        const map = new Map();
+        (mRes.data || []).forEach(m => {
+          const list = map.get(m.team_id) || [];
+          list.push(m.fantasysta_profiles?.username || m.team_id);
+          map.set(m.team_id, list);
+        });
+        setMembersByTeam(map);
       } catch (e) {
         if (!cancelled) setError(friendlyError(e));
       } finally {
@@ -82,7 +98,12 @@ export function AdminScreenshotInner({ user }) {
         ) : (
           <div className="flex flex-col md:flex-row gap-6">
             <CompactTable title="Личный зачёт" rows={personal} nameKey="username" />
-            <CompactTable title="Командный зачёт" rows={teams} nameKey="team_name" />
+            <CompactTable
+              title="Командный зачёт"
+              rows={teams}
+              nameKey="team_name"
+              subtitle={r => `В зачёте: ${(membersByTeam.get(r.team_id) || []).join(", ") || "—"}`}
+            />
           </div>
         )}
       </div>
