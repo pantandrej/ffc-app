@@ -73,7 +73,7 @@ export default function AuthGate({ children }) {
               Возглавь <span className="text-amber-400">рейтинг</span>.
             </h1>
             <p className="text-slate-400 text-base md:text-lg max-w-2xl">
-              Докажи, что ты лучший футбольный аналитик. Собери свой пул из 5 клубов на тур
+              Докажи, что ты лучший футбольный аналитик. Собери свой сет из 10 клубов на тур
               и возглавь рейтинг экспертов — играешь сам за себя, никакой команды собирать не нужно.
             </p>
           </div>
@@ -81,13 +81,14 @@ export default function AuthGate({ children }) {
           <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-4 mb-12">
             <div className="rounded-2xl border border-emerald-500/20 bg-slate-800/80 backdrop-blur-sm p-5 shadow-[0_0_25px_-5px_rgba(16,185,129,0.35)]">
               <div className="text-xs font-bold text-emerald-400 uppercase tracking-wide mb-2">Шаг 1</div>
-              <div className="font-bold text-lg mb-2">Собери сет — 100 млн €</div>
-              <div className="text-sm text-slate-400 mb-3">5 реальных клубов, бюджет ограничен, 1 бесплатная замена за тур.</div>
+              <div className="font-bold text-lg mb-2">Собери сет из 5 корзин</div>
+              <div className="text-sm text-slate-400 mb-3">96 клубов из 5 лиг разложены по силе на 5 корзин — бери ровно по 2 клуба из каждой, 10 клубов в сете.</div>
               <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
-                <span className="px-2 py-1 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/30">Tier 1 · 35М</span>
-                <span className="px-2 py-1 rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/30">Tier 2 · 25М</span>
-                <span className="px-2 py-1 rounded-full bg-emerald-400/10 text-emerald-300 border border-emerald-400/30">Tier 3 · 15М</span>
-                <span className="px-2 py-1 rounded-full bg-slate-400/10 text-slate-300 border border-slate-400/30">Tier 4 · 10М</span>
+                <span className="px-2 py-1 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/30">Корзина 1 · 2</span>
+                <span className="px-2 py-1 rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/30">Корзина 2 · 2</span>
+                <span className="px-2 py-1 rounded-full bg-emerald-400/10 text-emerald-300 border border-emerald-400/30">Корзина 3 · 2</span>
+                <span className="px-2 py-1 rounded-full bg-slate-400/10 text-slate-300 border border-slate-400/30">Корзина 4 · 2</span>
+                <span className="px-2 py-1 rounded-full bg-fuchsia-400/10 text-fuchsia-300 border border-fuchsia-400/30">Корзина 5 · 2</span>
               </div>
             </div>
 

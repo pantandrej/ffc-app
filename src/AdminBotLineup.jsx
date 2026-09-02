@@ -3,13 +3,17 @@ import { supabase } from "./lib/supabaseClient.js";
 import { ADMIN_EMAILS } from "./AdminResults.jsx";
 import { friendlyError } from "./lib/friendlyError.js";
 
-const BUDGET = 100000000;
-const POOL_SIZE = 5;
+const POTS = [1, 2, 3, 4, 5];
+const PER_POT = 2;
+const POOL_SIZE = POTS.length * PER_POT;
 const ROLE_LABEL = { captain: "Капитан", player_1: "Игрок 1", player_2: "Игрок 2" };
-
-function formatMoney(value) {
-  return `${new Intl.NumberFormat("ru-RU").format(Number(value) || 0)} €`;
-}
+const POT_BADGE = {
+  1: "bg-amber-400 text-amber-950",
+  2: "bg-sky-400 text-sky-950",
+  3: "bg-emerald-400 text-emerald-950",
+  4: "bg-slate-400 text-slate-950",
+  5: "bg-fuchsia-400 text-fuchsia-950",
+};
 
 // Проставление сета за игрока, который сам не может зайти на сайт (боты вроде
 // ChatGPT/Claude, тестовые аккаунты) — те же правила (5 клубов, 100 млн,
@@ -161,9 +165,14 @@ export function AdminBotLineupInner({ user }) {
 
   const clubsById = useMemo(() => new Map(clubs.map(c => [c.id, c])), [clubs]);
   const poolClubs = useMemo(() => poolClubIds.map(id => clubsById.get(id)).filter(Boolean), [poolClubIds, clubsById]);
-  const bankBalance = useMemo(() => BUDGET - poolClubs.reduce((s, c) => s + Number(c.price || 0), 0), [poolClubs]);
+  const countByPot = useMemo(() => {
+    const map = new Map();
+    poolClubs.forEach(c => map.set(c.pot, (map.get(c.pot) || 0) + 1));
+    return map;
+  }, [poolClubs]);
+  const potsComplete = POTS.every(p => (countByPot.get(p) || 0) === PER_POT);
   const captainValid = !!captainId && poolClubIds.includes(captainId);
-  const canSave = !!profileId && !!gameweekId && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0;
+  const canSave = !!profileId && !!gameweekId && poolClubIds.length === POOL_SIZE && potsComplete && captainValid;
 
   function toggleClub(clubId) {
     setPoolClubIds(prev => {
@@ -172,6 +181,8 @@ export function AdminBotLineupInner({ user }) {
         return prev.filter(id => id !== clubId);
       }
       if (prev.length >= POOL_SIZE) return prev;
+      const club = clubsById.get(clubId);
+      if (club && (countByPot.get(club.pot) || 0) >= PER_POT) return prev;
       return [...prev, clubId];
     });
   }
@@ -457,21 +468,32 @@ export function AdminBotLineupInner({ user }) {
 
         {profileId && (
           <>
-            <div className={`rounded-2xl p-4 border ${bankBalance < 0 ? "bg-red-950/40 border-red-500" : "bg-slate-800 border-emerald-500/30"}`}>
-              <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Баланс</div>
-              <div className={`text-2xl font-extrabold ${bankBalance < 0 ? "text-red-400" : "text-emerald-400"}`}>{formatMoney(bankBalance)}</div>
-              <div className="text-xs text-slate-500 mt-1">{poolClubIds.length}/5 клубов выбрано</div>
+            <div className={`rounded-2xl p-4 border ${potsComplete ? "bg-slate-800 border-emerald-500/30" : "bg-slate-800 border-slate-700"}`}>
+              <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Собрано</div>
+              <div className={`text-2xl font-extrabold ${potsComplete ? "text-emerald-400" : "text-slate-200"}`}>{poolClubIds.length}/{POOL_SIZE}</div>
+              <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-2">
+                {POTS.map(p => (
+                  <span key={p} className={(countByPot.get(p) || 0) === PER_POT ? "text-emerald-400" : ""}>
+                    Корзина {p}: {countByPot.get(p) || 0}/{PER_POT}
+                  </span>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {clubs.map(c => {
                 const selected = poolClubIds.includes(c.id);
                 const isCaptain = captainId === c.id;
+                const potFull = (countByPot.get(c.pot) || 0) >= PER_POT;
+                const disabled = !selected && (poolClubIds.length >= POOL_SIZE || potFull);
                 return (
                   <div key={c.id} className={`rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-2 ${selected ? "border-emerald-500 bg-emerald-500/10" : "border-slate-700 bg-slate-800"}`}>
-                    <button type="button" onClick={() => toggleClub(c.id)} className="flex-1 min-w-0 text-left truncate">
+                    <button type="button" onClick={() => toggleClub(c.id)} disabled={disabled} className="flex-1 min-w-0 text-left truncate disabled:opacity-40">
                       <div className="truncate font-medium">{c.name}</div>
-                      <div className="text-xs text-slate-500">{c.league} · {formatMoney(c.price)}</div>
+                      <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                        <span>{c.league}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${POT_BADGE[c.pot] || "bg-slate-500 text-slate-950"}`}>К{c.pot}</span>
+                      </div>
                     </button>
                     {selected && (
                       <button

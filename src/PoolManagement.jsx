@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import { friendlyError } from "./lib/friendlyError.js";
 
-const BUDGET = 100000000;
-const POOL_SIZE = 5;
+const POTS = [1, 2, 3, 4, 5];
+const PER_POT = 2;
+const POOL_SIZE = POTS.length * PER_POT;
 const PLACEHOLDER_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23334155'/%3E%3C/svg%3E";
 
 function CrownIcon({ className }) {
@@ -23,19 +24,21 @@ const LEAGUES = [
   { value: "Ligue1", label: "Ligue1" },
 ];
 
-const TIERS = [
+const POT_FILTERS = [
   { value: "all", label: "Все" },
-  { value: "Tier 1", label: "Tier 1 (35 млн)" },
-  { value: "Tier 2", label: "Tier 2 (25 млн)" },
-  { value: "Tier 3", label: "Tier 3 (15 млн)" },
-  { value: "Tier 4", label: "Tier 4 (10 млн)" },
+  { value: 1, label: "Корзина 1" },
+  { value: 2, label: "Корзина 2" },
+  { value: 3, label: "Корзина 3" },
+  { value: 4, label: "Корзина 4" },
+  { value: 5, label: "Корзина 5" },
 ];
 
-const TIER_BADGE = {
-  "Tier 1": "bg-amber-400 text-amber-950",
-  "Tier 2": "bg-sky-400 text-sky-950",
-  "Tier 3": "bg-emerald-400 text-emerald-950",
-  "Tier 4": "bg-slate-400 text-slate-950",
+const POT_BADGE = {
+  1: "bg-amber-400 text-amber-950",
+  2: "bg-sky-400 text-sky-950",
+  3: "bg-emerald-400 text-emerald-950",
+  4: "bg-slate-400 text-slate-950",
+  5: "bg-fuchsia-400 text-fuchsia-950",
 };
 
 const EURO_BADGE = {
@@ -43,11 +46,6 @@ const EURO_BADGE = {
   uel: { label: "ЛЕ", title: "Лига Европы", bar: "bg-orange-500", pill: "bg-orange-500 text-white" },
   uecl: { label: "ЛК", title: "Лига конференций", bar: "bg-teal-400", pill: "bg-teal-400 text-slate-900" },
 };
-
-function formatMoney(value) {
-  const n = Number(value) || 0;
-  return `${new Intl.NumberFormat("ru-RU").format(n)} €`;
-}
 
 function formatTourDate(d) {
   if (!d) return "";
@@ -80,8 +78,8 @@ export default function PoolManagement({ user }) {
   const [savedCaptainId, setSavedCaptainId] = useState(null);
 
   const [leagueFilter, setLeagueFilter] = useState("all");
-  const [tierFilter, setTierFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("price_desc");
+  const [potFilter, setPotFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("pot_asc");
 
   const [clubResults, setClubResults] = useState(new Map()); // club_id -> total_points
 
@@ -180,15 +178,19 @@ export default function PoolManagement({ user }) {
     [savedTourBreakdown]
   );
 
-  const bankBalance = useMemo(
-    () => BUDGET - poolClubs.reduce((sum, c) => sum + Number(c.price || 0), 0),
-    [poolClubs]
-  );
+  // Сколько выбрано клубов по каждой корзине — сет валиден, только если
+  // ровно PER_POT в каждой из POTS.
+  const countByPot = useMemo(() => {
+    const map = new Map();
+    poolClubs.forEach(c => map.set(c.pot, (map.get(c.pot) || 0) + 1));
+    return map;
+  }, [poolClubs]);
+  const potsComplete = POTS.every(p => (countByPot.get(p) || 0) === PER_POT);
 
   const tourStarted = !!gameweek?.starts_on && todayLocalISO() >= gameweek.starts_on;
 
   const captainValid = !!captainId && poolClubIds.includes(captainId);
-  const canSave = !tourStarted && !!gameweek && poolClubIds.length === POOL_SIZE && captainValid && bankBalance >= 0;
+  const canSave = !tourStarted && !!gameweek && poolClubIds.length === POOL_SIZE && potsComplete && captainValid;
 
   const isSaved =
     poolClubIds.length === savedClubIds.length &&
@@ -198,18 +200,20 @@ export default function PoolManagement({ user }) {
   const filteredClubs = useMemo(() => {
     let list = clubs;
     if (leagueFilter !== "all") list = list.filter(c => c.league === leagueFilter);
-    if (tierFilter !== "all") list = list.filter(c => c.tier === tierFilter);
+    if (potFilter !== "all") list = list.filter(c => c.pot === potFilter);
     list = [...list];
-    if (sortBy === "price_desc") list.sort((a, b) => b.price - a.price);
-    else if (sortBy === "price_asc") list.sort((a, b) => a.price - b.price);
+    if (sortBy === "pot_asc") list.sort((a, b) => a.pot - b.pot || a.name.localeCompare(b.name, "ru"));
     else if (sortBy === "name_asc") list.sort((a, b) => a.name.localeCompare(b.name, "ru"));
     return list;
-  }, [clubs, leagueFilter, tierFilter, sortBy]);
+  }, [clubs, leagueFilter, potFilter, sortBy]);
 
   function addClub(clubId) {
     if (tourStarted) return;
-    if (poolClubIds.length >= POOL_SIZE) return;
     if (poolClubIds.includes(clubId)) return;
+    if (poolClubIds.length >= POOL_SIZE) return;
+    const club = clubsById.get(clubId);
+    if (!club) return;
+    if ((countByPot.get(club.pot) || 0) >= PER_POT) return;
     setPoolClubIds(prev => [...prev, clubId]);
   }
 
@@ -291,7 +295,7 @@ export default function PoolManagement({ user }) {
           </span>
         </div>
         <div className="text-sm text-slate-400 mb-4">
-          Докажи, что ты лучший футбольный аналитик. Собери свой пул из 5 клубов на тур и возглавь рейтинг экспертов.
+          Докажи, что ты лучший футбольный аналитик. Собери сет из 10 клубов — по 2 из каждой из 5 корзин — и возглавь рейтинг экспертов.
         </div>
 
         {tourStarted && (
@@ -332,62 +336,75 @@ export default function PoolManagement({ user }) {
 
         <div className="flex flex-col md:flex-row gap-6">
           <aside className="md:w-[35%] flex flex-col gap-4">
-            <div className={`rounded-2xl p-5 border ${bankBalance < 0 ? "bg-red-950/40 border-red-500" : "bg-slate-800 border-emerald-500/30"}`}>
-              <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Баланс</div>
-              <div className={`text-3xl font-extrabold ${bankBalance < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                {formatMoney(bankBalance)}
+            <div className={`rounded-2xl p-5 border ${potsComplete ? "bg-slate-800 border-emerald-500/30" : "bg-slate-800 border-slate-700"}`}>
+              <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Собрано</div>
+              <div className={`text-3xl font-extrabold ${potsComplete ? "text-emerald-400" : "text-slate-200"}`}>
+                {poolClubIds.length}/{POOL_SIZE}
               </div>
+              <div className="text-xs text-slate-500 mt-1">По 2 клуба из каждой из 5 корзин</div>
             </div>
 
-            <div className="flex flex-col gap-3">
-              {Array.from({ length: POOL_SIZE }).map((_, i) => {
-                const club = poolClubs[i];
-                if (!club) {
-                  return (
-                    <div key={`empty_${i}`} className="h-20 rounded-xl border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-500 gap-2">
-                      <span className="text-lg">＋</span>
-                      <span>Слот пуст</span>
-                    </div>
-                  );
-                }
-                const isCaptain = captainId === club.id;
-                const crownVisibilityClass = isCaptain
-                  ? "opacity-100"
-                  : captainId
-                    ? "opacity-0 group-hover:opacity-40 hover:!opacity-100"
-                    : "opacity-30 hover:opacity-70";
-                const euro = EURO_BADGE[club.euro_competition];
+            <div className="flex flex-col gap-4">
+              {POTS.map(pot => {
+                const potClubs = poolClubs.filter(c => c.pot === pot);
+                const potDone = potClubs.length === PER_POT;
                 return (
-                  <div key={club.id} className="group relative overflow-hidden rounded-xl border border-slate-700 bg-slate-800 p-3 pl-4 flex items-center gap-3">
-                    {euro && <div title={euro.title} className={`absolute left-0 top-0 bottom-0 w-1.5 ${euro.bar}`} />}
-                    <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 object-contain flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold truncate">{club.name}</div>
-                      <div className="text-xs text-slate-400">{club.league} · {formatMoney(club.price)}</div>
+                  <div key={pot} className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className={`font-bold px-2 py-0.5 rounded-full ${POT_BADGE[pot]}`}>Корзина {pot}</span>
+                      <span className={potDone ? "text-emerald-400" : "text-slate-500"}>{potClubs.length}/{PER_POT}</span>
                     </div>
-                    {!tourStarted && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => toggleCaptain(club.id)}
-                          title={isCaptain ? "Убрать джокера" : "Сделать джокером"}
-                          className={`flex-shrink-0 transition ${isCaptain ? "text-amber-400" : "text-slate-400"} ${crownVisibilityClass}`}
-                        >
-                          <CrownIcon className="w-6 h-6" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeClub(club.id)}
-                          title="Убрать из сета"
-                          className="text-slate-500 hover:text-red-400 flex-shrink-0"
-                        >
-                          ✕
-                        </button>
-                      </>
-                    )}
-                    {tourStarted && isCaptain && (
-                      <CrownIcon className="w-6 h-6 text-amber-400 flex-shrink-0" />
-                    )}
+                    {Array.from({ length: PER_POT }).map((_, i) => {
+                      const club = potClubs[i];
+                      if (!club) {
+                        return (
+                          <div key={`empty_${pot}_${i}`} className="h-16 rounded-xl border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-500 gap-2 text-sm">
+                            <span className="text-lg">＋</span>
+                            <span>Слот пуст</span>
+                          </div>
+                        );
+                      }
+                      const isCaptain = captainId === club.id;
+                      const crownVisibilityClass = isCaptain
+                        ? "opacity-100"
+                        : captainId
+                          ? "opacity-0 group-hover:opacity-40 hover:!opacity-100"
+                          : "opacity-30 hover:opacity-70";
+                      const euro = EURO_BADGE[club.euro_competition];
+                      return (
+                        <div key={club.id} className="group relative overflow-hidden rounded-xl border border-slate-700 bg-slate-800 p-3 pl-4 flex items-center gap-3">
+                          {euro && <div title={euro.title} className={`absolute left-0 top-0 bottom-0 w-1.5 ${euro.bar}`} />}
+                          <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 object-contain flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold truncate">{club.name}</div>
+                            <div className="text-xs text-slate-400">{club.league}</div>
+                          </div>
+                          {!tourStarted && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => toggleCaptain(club.id)}
+                                title={isCaptain ? "Убрать джокера" : "Сделать джокером"}
+                                className={`flex-shrink-0 transition ${isCaptain ? "text-amber-400" : "text-slate-400"} ${crownVisibilityClass}`}
+                              >
+                                <CrownIcon className="w-6 h-6" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeClub(club.id)}
+                                title="Убрать из сета"
+                                className="text-slate-500 hover:text-red-400 flex-shrink-0"
+                              >
+                                ✕
+                              </button>
+                            </>
+                          )}
+                          {tourStarted && isCaptain && (
+                            <CrownIcon className="w-6 h-6 text-amber-400 flex-shrink-0" />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -423,16 +440,16 @@ export default function PoolManagement({ user }) {
                 ))}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {TIERS.map(t => (
+                {POT_FILTERS.map(p => (
                   <button
-                    key={t.value}
+                    key={p.value}
                     type="button"
-                    onClick={() => setTierFilter(t.value)}
+                    onClick={() => setPotFilter(p.value)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                      tierFilter === t.value ? "bg-sky-500 border-sky-500 text-slate-900" : "border-slate-700 text-slate-300 hover:border-slate-500"
+                      potFilter === p.value ? "bg-sky-500 border-sky-500 text-slate-900" : "border-slate-700 text-slate-300 hover:border-slate-500"
                     }`}
                   >
-                    {t.label}
+                    {p.label}
                   </button>
                 ))}
                 <select
@@ -440,8 +457,7 @@ export default function PoolManagement({ user }) {
                   onChange={e => setSortBy(e.target.value)}
                   className="ml-auto bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-1.5 text-slate-200"
                 >
-                  <option value="price_desc">Сначала дороже</option>
-                  <option value="price_asc">Сначала дешевле</option>
+                  <option value="pot_asc">По корзине</option>
                   <option value="name_asc">По алфавиту</option>
                 </select>
               </div>
@@ -450,11 +466,11 @@ export default function PoolManagement({ user }) {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {filteredClubs.map(club => {
                 const inPool = poolClubIds.includes(club.id);
-                const poolFull = poolClubIds.length >= POOL_SIZE;
-                const disabled = tourStarted || inPool || (poolFull && !inPool);
+                const potFull = (countByPot.get(club.pot) || 0) >= PER_POT;
+                const disabled = tourStarted || inPool || (potFull && !inPool);
                 let label = "Добавить";
                 if (inPool) label = "В сете";
-                else if (poolFull) label = "Сет заполнен";
+                else if (potFull) label = "Корзина заполнена";
 
                 const euro = EURO_BADGE[club.euro_competition];
                 return (
@@ -465,13 +481,12 @@ export default function PoolManagement({ user }) {
                       {euro && (
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${euro.pill}`}>{euro.label}</span>
                       )}
-                      <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${TIER_BADGE[club.tier] || "bg-slate-500 text-slate-950"}`}>
-                        {club.tier}
+                      <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${POT_BADGE[club.pot] || "bg-slate-500 text-slate-950"}`}>
+                        Корзина {club.pot}
                       </span>
                     </div>
                     <div className="font-semibold truncate">{club.name}</div>
                     <div className="text-xs text-slate-400">{club.league}</div>
-                    <div className="text-emerald-400 font-bold">{formatMoney(club.price)}</div>
                     <button
                       type="button"
                       onClick={() => addClub(club.id)}
