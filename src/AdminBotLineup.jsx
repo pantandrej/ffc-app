@@ -59,7 +59,7 @@ export function AdminBotLineupInner({ user }) {
         const [profRes, gwRes, clubsRes, teamsRes] = await Promise.all([
           supabase.from("fantasysta_profiles").select("id,username").order("username"),
           supabase.from("gameweeks").select("*").order("id"),
-          supabase.from("clubs").select("*").order("league").order("name"),
+          supabase.from("clubs").select("*").order("pot").order("rank_in_pot"),
           supabase.from("teams").select("id,name").order("name"),
         ]);
         if (profRes.error) throw profRes.error;

@@ -96,7 +96,7 @@ export default function PoolManagement({ user }) {
       setLoadError(null);
       try {
         const [clubsRes, activeGwRes] = await Promise.all([
-          supabase.from("clubs").select("*").order("league").order("tier"),
+          supabase.from("clubs").select("*").order("pot").order("rank_in_pot"),
           supabase.from("gameweeks").select("*").eq("status", "active").order("id").limit(1).maybeSingle(),
         ]);
         if (clubsRes.error) throw clubsRes.error;
@@ -202,7 +202,7 @@ export default function PoolManagement({ user }) {
     if (leagueFilter !== "all") list = list.filter(c => c.league === leagueFilter);
     if (potFilter !== "all") list = list.filter(c => c.pot === potFilter);
     list = [...list];
-    if (sortBy === "pot_asc") list.sort((a, b) => a.pot - b.pot || a.name.localeCompare(b.name, "ru"));
+    if (sortBy === "pot_asc") list.sort((a, b) => a.pot - b.pot || a.rank_in_pot - b.rank_in_pot);
     else if (sortBy === "name_asc") list.sort((a, b) => a.name.localeCompare(b.name, "ru"));
     return list;
   }, [clubs, leagueFilter, potFilter, sortBy]);
