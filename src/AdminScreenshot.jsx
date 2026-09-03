@@ -10,7 +10,7 @@ function formatPoints(n) {
 // Компактная страница только для скриншота в пост — личная и командная
 // таблицы рядом, с брендингом сверху, без лишних UI-элементов (вкладок,
 // подписей "N тур сыграно" и т.п.), чтобы влезло побольше строк.
-function CompactTable({ title, rows, nameKey, subtitle }) {
+function CompactTable({ title, rows, nameKey, subtitle, badge }) {
   return (
     <div className="flex-1 min-w-0">
       <div className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-2">{title}</div>
@@ -26,6 +26,7 @@ function CompactTable({ title, rows, nameKey, subtitle }) {
               <div className="flex items-center gap-3">
                 <div className="w-5 text-slate-500 font-semibold flex-shrink-0 text-xs">{i + 1}</div>
                 <div className="flex-1 min-w-0 truncate font-medium">{r[nameKey]}</div>
+                {badge && <div className="flex-shrink-0">{badge(r)}</div>}
                 <div className="font-bold flex-shrink-0">{formatPoints(r.total_points)}</div>
               </div>
               {subtitle && (
@@ -45,23 +46,28 @@ export function AdminScreenshotInner({ user }) {
   const [personal, setPersonal] = useState([]);
   const [teams, setTeams] = useState([]);
   const [membersByTeam, setMembersByTeam] = useState(new Map());
+  const [latestGameweek, setLatestGameweek] = useState(null);
+  const [submittedProfiles, setSubmittedProfiles] = useState(new Set());
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const [pRes, tRes, mRes] = await Promise.all([
+        const [pRes, tRes, mRes, gwRes] = await Promise.all([
           supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
           supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
           supabase.from("team_members").select("team_id, fantasysta_profiles(username)"),
+          supabase.from("gameweeks").select("id").order("id", { ascending: false }).limit(1).maybeSingle(),
         ]);
         if (pRes.error) throw pRes.error;
         if (tRes.error) throw tRes.error;
         if (mRes.error) throw mRes.error;
+        if (gwRes.error) throw gwRes.error;
         if (cancelled) return;
         setPersonal(pRes.data || []);
         setTeams(tRes.data || []);
+        setLatestGameweek(gwRes.data?.id ?? null);
 
         const map = new Map();
         (mRes.data || []).forEach(m => {
@@ -70,6 +76,13 @@ export function AdminScreenshotInner({ user }) {
           map.set(m.team_id, list);
         });
         setMembersByTeam(map);
+
+        if (gwRes.data?.id != null) {
+          const subRes = await supabase.from("user_lineups").select("profile_id").eq("gameweek_id", gwRes.data.id);
+          if (cancelled) return;
+          if (subRes.error) throw subRes.error;
+          setSubmittedProfiles(new Set((subRes.data || []).map(r => r.profile_id)));
+        }
       } catch (e) {
         if (!cancelled) setError(friendlyError(e));
       } finally {
@@ -97,7 +110,16 @@ export function AdminScreenshotInner({ user }) {
           <div className="text-red-400 py-8 text-center">{error}</div>
         ) : (
           <div className="flex flex-col md:flex-row gap-6">
-            <CompactTable title="Личный зачёт" rows={personal} nameKey="username" />
+            <CompactTable
+              title={`Личный зачёт${latestGameweek != null ? ` · прислал тур №${latestGameweek}` : ""}`}
+              rows={personal}
+              nameKey="username"
+              badge={r => (
+                submittedProfiles.has(r.profile_id)
+                  ? <span className="text-emerald-400 text-xs" title={`Прислал тур №${latestGameweek}`}>✓</span>
+                  : <span className="text-slate-600 text-xs" title="Не прислал">—</span>
+              )}
+            />
             <CompactTable
               title="Командный зачёт"
               rows={teams}
