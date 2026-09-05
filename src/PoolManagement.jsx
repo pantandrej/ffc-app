@@ -86,9 +86,9 @@ export default function PoolManagement({ user }) {
   const [potFilter, setPotFilter] = useState("all");
   const [sortBy, setSortBy] = useState("pot_asc");
 
-  const [clubResults, setClubResults] = useState(new Map()); // club_id -> total_points
   const [firstKickoffAt, setFirstKickoffAt] = useState(null); // момент первого матча тура (ISO)
-  const [liveGameweek, setLiveGameweek] = useState(null); // тур со статусом active, если это НЕ тот же тур, что редактируем
+  const [historyBreakdowns, setHistoryBreakdowns] = useState([]); // [{gw, rows, total}] по всем турам ДО открытого, по возрастанию id
+  const [collapsedIds, setCollapsedIds] = useState(new Set());
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -107,25 +107,72 @@ export default function PoolManagement({ user }) {
         // видят и могут редактировать именно его, независимо от того, что
         // предыдущий тур ещё идёт (у него свой статус "active" для
         // календаря/результатов).
-        const [clubsRes, latestGwRes, activeGwRes] = await Promise.all([
+        const [clubsRes, allGwRes] = await Promise.all([
           supabase.from("clubs").select("*").order("pot").order("rank_in_pot"),
-          supabase.from("gameweeks").select("*").order("id", { ascending: false }).limit(1).maybeSingle(),
-          supabase.from("gameweeks").select("*").eq("status", "active").order("id", { ascending: false }).limit(1).maybeSingle(),
+          supabase.from("gameweeks").select("*").order("id", { ascending: true }),
         ]);
         if (clubsRes.error) throw clubsRes.error;
-        if (latestGwRes.error) throw latestGwRes.error;
-        if (activeGwRes.error) throw activeGwRes.error;
+        if (allGwRes.error) throw allGwRes.error;
         if (cancelled) return;
 
         setClubs(clubsRes.data || []);
 
-        const gw = latestGwRes.data || null;
+        const allGw = allGwRes.data || [];
+        const gw = allGw.length > 0 ? allGw[allGw.length - 1] : null;
         if (cancelled) return;
         setGameweek(gw);
-        // Если "открытый для выбора" тур (самый новый) — не тот же самый, что
-        // сейчас реально идёт, показываем отдельно, что за тур идёт live и
-        // зафиксирован, чтобы не путать с тем, что редактируется ниже.
-        setLiveGameweek(activeGwRes.data && activeGwRes.data.id !== gw?.id ? activeGwRes.data : null);
+
+        // Все туры ДО открытого — отдельные карточки "твой состав на N-й тур"
+        // с итогом (или "тур не сыгран", пока не все результаты внесены).
+        const historyGws = gw ? allGw.filter(g => g.id < gw.id) : [];
+        if (historyGws.length > 0) {
+          const historyIds = historyGws.map(g => g.id);
+          const [historyLineupsRes, historyResultsRes] = await Promise.all([
+            supabase.from("user_lineups").select("gameweek_id, club_id, is_club_captain").eq("profile_id", user.id).in("gameweek_id", historyIds),
+            supabase.from("club_results").select("gameweek_id, club_id, total_points").in("gameweek_id", historyIds),
+          ]);
+          if (cancelled) return;
+          if (historyLineupsRes.error) throw historyLineupsRes.error;
+          if (historyResultsRes.error) throw historyResultsRes.error;
+
+          const resultsByGw = new Map();
+          (historyResultsRes.data || []).forEach(r => {
+            const map = resultsByGw.get(r.gameweek_id) || new Map();
+            map.set(r.club_id, r.total_points);
+            resultsByGw.set(r.gameweek_id, map);
+          });
+          const lineupsByGw = new Map();
+          (historyLineupsRes.data || []).forEach(r => {
+            const list = lineupsByGw.get(r.gameweek_id) || [];
+            list.push(r);
+            lineupsByGw.set(r.gameweek_id, list);
+          });
+
+          const clubsMap = new Map((clubsRes.data || []).map(c => [c.id, c]));
+          const breakdowns = historyGws.map(g => {
+            const lineupRows = lineupsByGw.get(g.id) || [];
+            const resultsMap = resultsByGw.get(g.id) || new Map();
+            const rows = lineupRows.map(r => {
+              const club = clubsMap.get(r.club_id);
+              const basePoints = resultsMap.has(r.club_id) ? Number(resultsMap.get(r.club_id)) : null;
+              return {
+                club,
+                points: basePoints === null ? null : (r.is_club_captain ? basePoints * 2 : basePoints),
+                isCaptain: r.is_club_captain,
+              };
+            }).filter(row => row.club);
+            const total = rows.some(r => r.points === null) ? null : rows.reduce((s, r) => s + r.points, 0);
+            return { gw: g, rows, total };
+          });
+          if (cancelled) return;
+          setHistoryBreakdowns(breakdowns);
+          // По умолчанию видно только самый свежий из прошлых туров, старые
+          // сворачиваем — не листать же всю историю каждый раз.
+          setCollapsedIds(new Set(breakdowns.slice(0, -1).map(b => b.gw.id)));
+        } else {
+          setHistoryBreakdowns([]);
+          setCollapsedIds(new Set());
+        }
 
         if (gw) {
           const lineupRes = await supabase
@@ -143,11 +190,6 @@ export default function PoolManagement({ user }) {
           setCaptainId(cap);
           setSavedClubIds(ids);
           setSavedCaptainId(cap);
-
-          const resultsRes = await supabase.from("club_results").select("club_id, total_points").eq("gameweek_id", gw.id);
-          if (cancelled) return;
-          if (resultsRes.error) throw resultsRes.error;
-          setClubResults(new Map((resultsRes.data || []).map(r => [r.club_id, r.total_points])));
 
           // Сет блокируется в момент первого матча тура (по всем 5 лигам),
           // а не в полночь дня начала — иначе пятница блокируется целиком,
@@ -185,27 +227,6 @@ export default function PoolManagement({ user }) {
   const poolClubs = useMemo(
     () => poolClubIds.map(id => clubsById.get(id)).filter(Boolean),
     [poolClubIds, clubsById]
-  );
-
-  // Разбивка очков ЗАФИКСИРОВАННОГО (сохранённого) сета за этот тур — а не
-  // текущего черновика, который игрок может ещё крутить до сохранения.
-  const savedTourBreakdown = useMemo(
-    () => savedClubIds.map(id => {
-      const club = clubsById.get(id);
-      const basePoints = clubResults.has(id) ? Number(clubResults.get(id)) : null;
-      const isCaptain = id === savedCaptainId;
-      return {
-        club,
-        basePoints,
-        points: basePoints === null ? null : (isCaptain ? basePoints * 2 : basePoints),
-        isCaptain,
-      };
-    }).filter(row => row.club),
-    [savedClubIds, savedCaptainId, clubsById, clubResults]
-  );
-  const savedTourTotal = useMemo(
-    () => savedTourBreakdown.some(r => r.points === null) ? null : savedTourBreakdown.reduce((s, r) => s + r.points, 0),
-    [savedTourBreakdown]
   );
 
   // Сколько выбрано клубов по каждой корзине — сет валиден, только если
@@ -260,6 +281,15 @@ export default function PoolManagement({ user }) {
   function toggleCaptain(clubId) {
     if (tourStarted) return;
     setCaptainId(prev => (prev === clubId ? null : clubId));
+  }
+
+  function toggleCollapsed(gwId) {
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(gwId)) next.delete(gwId);
+      else next.add(gwId);
+      return next;
+    });
   }
 
   async function handleSave() {
@@ -332,19 +362,6 @@ export default function PoolManagement({ user }) {
           Докажи, что ты лучший футбольный аналитик. Собери сет из 10 клубов — по 2 из каждой из 5 корзин — и возглавь рейтинг экспертов.
         </div>
 
-        {liveGameweek && (
-          <div className="mb-6 rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-300 flex items-center gap-2">
-            <span>🔒</span>
-            <span>
-              Тур №{liveGameweek.id} идёт прямо сейчас
-              {liveGameweek.starts_on && liveGameweek.ends_on && (
-                <> ({formatTourDate(liveGameweek.starts_on)} — {formatTourDate(liveGameweek.ends_on)})</>
-              )}
-              {" "}— тот сет уже зафиксирован и не меняется. Ниже — сет на следующий тур.
-            </span>
-          </div>
-        )}
-
         {tourStarted ? (
           <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
             Первый матч тура уже начался — менять сет нельзя. Дождись следующего тура.
@@ -364,26 +381,40 @@ export default function PoolManagement({ user }) {
           <span className="text-slate-300">Джокер <b className="text-amber-400">очки ×2</b></span>
         </div>
 
-        {savedTourBreakdown.length > 0 && (
-          <div className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-800/60 px-4 py-3">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-              <span className="text-slate-500 font-semibold uppercase tracking-wide text-xs">Очки твоего сета в этом туре</span>
-              <span className="font-extrabold text-lg text-emerald-400">
-                {savedTourTotal === null ? "тур не сыгран" : `${savedTourTotal} очков`}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {savedTourBreakdown.map(row => (
-                <span
-                  key={row.club.id}
-                  className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
-                >
-                  {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
+        {historyBreakdowns.map(({ gw, rows, total }) => {
+          const collapsed = collapsedIds.has(gw.id);
+          return (
+            <div key={gw.id} className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-800/60 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => toggleCollapsed(gw.id)}
+                className="w-full flex items-center justify-between flex-wrap gap-2"
+              >
+                <span className="text-slate-500 font-semibold uppercase tracking-wide text-xs flex items-center gap-1.5">
+                  <span className={`transition-transform inline-block ${collapsed ? "" : "rotate-90"}`}>▸</span>
+                  Твой состав на {gw.id}-й тур
                 </span>
-              ))}
+                <span className="font-extrabold text-lg text-emerald-400">
+                  {total === null ? "тур не сыгран" : `${total} очков`}
+                </span>
+              </button>
+              {!collapsed && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {rows.map(row => (
+                    <span
+                      key={row.club.id}
+                      className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
+                    >
+                      {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })}
+
+        <h2 className="font-bold text-lg mb-3">Твой состав на {gameweek.id}-й тур — выбирай</h2>
 
         <div className="flex flex-col md:flex-row gap-6">
           <aside className="md:w-[35%] flex flex-col gap-4">
