@@ -71,8 +71,10 @@ export function AdminBotLineupInner({ user }) {
         setGameweeks(gwRes.data || []);
         setClubs(clubsRes.data || []);
         setTeams(teamsRes.data || []);
-        const active = (gwRes.data || []).find(g => g.status === "active") || (gwRes.data || [])[0];
-        if (active) setGameweekId(active.id);
+        // По умолчанию — самый новый тур (макс. id): именно его чаще всего
+        // нужно донастраивать/дозаполнять, даже если предыдущий ещё "active".
+        const latest = (gwRes.data || []).reduce((best, g) => (!best || g.id > best.id ? g : best), null);
+        if (latest) setGameweekId(latest.id);
       } catch (e) {
         if (!cancelled) showToast(friendlyError(e), "error");
       }

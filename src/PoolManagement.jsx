@@ -101,22 +101,22 @@ export default function PoolManagement({ user }) {
       setLoading(true);
       setLoadError(null);
       try {
-        const [clubsRes, activeGwRes] = await Promise.all([
+        // "Мой сет" всегда открыт на САМЫЙ НОВЫЙ тур (макс. id), а не по
+        // статусу — как только админ заводит следующий тур, игроки сразу
+        // видят и могут редактировать именно его, независимо от того, что
+        // предыдущий тур ещё идёт (у него свой статус "active" для
+        // календаря/результатов).
+        const [clubsRes, latestGwRes] = await Promise.all([
           supabase.from("clubs").select("*").order("pot").order("rank_in_pot"),
-          supabase.from("gameweeks").select("*").eq("status", "active").order("id").limit(1).maybeSingle(),
+          supabase.from("gameweeks").select("*").order("id", { ascending: false }).limit(1).maybeSingle(),
         ]);
         if (clubsRes.error) throw clubsRes.error;
-        if (activeGwRes.error) throw activeGwRes.error;
+        if (latestGwRes.error) throw latestGwRes.error;
         if (cancelled) return;
 
         setClubs(clubsRes.data || []);
 
-        let gw = activeGwRes.data || null;
-        if (!gw) {
-          const upcomingRes = await supabase.from("gameweeks").select("*").eq("status", "upcoming").order("id").limit(1).maybeSingle();
-          if (upcomingRes.error) throw upcomingRes.error;
-          gw = upcomingRes.data || null;
-        }
+        const gw = latestGwRes.data || null;
         if (cancelled) return;
         setGameweek(gw);
 
