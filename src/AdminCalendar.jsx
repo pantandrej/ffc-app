@@ -45,6 +45,8 @@ export function AdminCalendarInner({ user }) {
   const [league, setLeague] = useState(LEAGUES[0]);
   const [homeClubId, setHomeClubId] = useState("");
   const [awayClubId, setAwayClubId] = useState("");
+  const [homeExternal, setHomeExternal] = useState("");
+  const [awayExternal, setAwayExternal] = useState("");
   const [kickoffAt, setKickoffAt] = useState("");
 
   const showToast = useCallback((text, kind = "success") => {
@@ -91,7 +93,7 @@ export function AdminCalendarInner({ user }) {
     try {
       const { data, error } = await supabase
         .from("club_fixtures")
-        .select("id,league,kickoff_at,status,original_kickoff_at,home_club_id,away_club_id,home:clubs!club_fixtures_home_club_id_fkey(name),away:clubs!club_fixtures_away_club_id_fkey(name)")
+        .select("id,league,kickoff_at,status,original_kickoff_at,home_club_id,away_club_id,home_opponent_name,away_opponent_name,home:clubs!club_fixtures_home_club_id_fkey(name),away:clubs!club_fixtures_away_club_id_fkey(name)")
         .gte("kickoff_at", startsOn)
         .lte("kickoff_at", endOfDayIso(endsOn))
         .order("league")
@@ -148,22 +150,28 @@ export function AdminCalendarInner({ user }) {
 
   async function addFixture(e) {
     e.preventDefault();
-    if (!homeClubId || !awayClubId || homeClubId === awayClubId || !kickoffAt) {
-      showToast("Выбери лигу, дату и двух разных клубов", "error");
+    const homeOk = homeClubId ? !homeExternal.trim() : !!homeExternal.trim();
+    const awayOk = awayClubId ? !awayExternal.trim() : !!awayExternal.trim();
+    if (!homeOk || !awayOk || !kickoffAt || (homeClubId && homeClubId === awayClubId)) {
+      showToast("Для каждой стороны выбери ровно один вариант: клуб ИЛИ внешний соперник — и дату", "error");
       return;
     }
     setCreateBusy(true);
     try {
       const { error } = await supabase.from("club_fixtures").insert({
         league,
-        home_club_id: homeClubId,
-        away_club_id: awayClubId,
+        home_club_id: homeClubId || null,
+        away_club_id: awayClubId || null,
+        home_opponent_name: homeClubId ? null : homeExternal.trim(),
+        away_opponent_name: awayClubId ? null : awayExternal.trim(),
         kickoff_at: kickoffAt,
       });
       if (error) throw error;
       showToast("✓ Матч добавлен");
       setHomeClubId("");
       setAwayClubId("");
+      setHomeExternal("");
+      setAwayExternal("");
       setKickoffAt("");
       await loadFixtures();
     } catch (e) {
@@ -269,21 +277,41 @@ export function AdminCalendarInner({ user }) {
             </select>
             <select
               value={homeClubId}
-              onChange={e => setHomeClubId(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2"
+              onChange={e => { setHomeClubId(e.target.value); if (e.target.value) setHomeExternal(""); }}
+              disabled={!!homeExternal.trim()}
+              className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2 disabled:opacity-40"
             >
               <option value="">Клуб (дома)</option>
               {clubsInLeague.map(c => <option key={c.id} value={c.id}>{euroTag ? `${c.name} (${c.league})` : c.name}</option>)}
             </select>
+            {euroTag && (
+              <input
+                type="text"
+                value={homeExternal}
+                onChange={e => { setHomeExternal(e.target.value); if (e.target.value) setHomeClubId(""); }}
+                placeholder="…или внешний клуб"
+                className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2 w-36"
+              />
+            )}
             <span className="text-slate-500">—</span>
             <select
               value={awayClubId}
-              onChange={e => setAwayClubId(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2"
+              onChange={e => { setAwayClubId(e.target.value); if (e.target.value) setAwayExternal(""); }}
+              disabled={!!awayExternal.trim()}
+              className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2 disabled:opacity-40"
             >
               <option value="">Клуб (гости)</option>
               {clubsInLeague.map(c => <option key={c.id} value={c.id}>{euroTag ? `${c.name} (${c.league})` : c.name}</option>)}
             </select>
+            {euroTag && (
+              <input
+                type="text"
+                value={awayExternal}
+                onChange={e => { setAwayExternal(e.target.value); if (e.target.value) setAwayClubId(""); }}
+                placeholder="…или внешний клуб"
+                className="bg-slate-800 border border-slate-700 rounded-lg text-sm px-3 py-2 w-36"
+              />
+            )}
             <input
               type="datetime-local"
               value={kickoffAt}
@@ -324,9 +352,9 @@ export function AdminCalendarInner({ user }) {
                 <div key={fx.id} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 flex items-center justify-between gap-3 text-sm flex-wrap">
                   <span className="text-xs text-slate-500 w-20 flex-shrink-0">{fx.league}</span>
                   <div className="flex-1 min-w-0 truncate">
-                    <span className="font-medium">{fx.home?.name}</span>
+                    <span className="font-medium">{fx.home?.name || fx.home_opponent_name}</span>
                     <span className="text-slate-500"> — </span>
-                    <span className="font-medium">{fx.away?.name}</span>
+                    <span className="font-medium">{fx.away?.name || fx.away_opponent_name}</span>
                   </div>
 
                   {editingId === fx.id ? (
