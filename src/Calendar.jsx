@@ -19,6 +19,7 @@ export default function Calendar() {
   const [error, setError] = useState("");
   const [gameweek, setGameweek] = useState(null);
   const [fixtures, setFixtures] = useState([]);
+  const [futureFixtures, setFutureFixtures] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +51,18 @@ export default function Calendar() {
           if (fxRes.error) throw fxRes.error;
           if (cancelled) return;
           setFixtures(fxRes.data || []);
+
+          // Всё, что уже занесено в календарь ПОСЛЕ этого тура — чтобы было
+          // видно наперёд, а не только на ближайшие 7 дней.
+          const futureRes = await supabase
+            .from("club_fixtures")
+            .select("id,league,kickoff_at,status,original_kickoff_at,home_opponent_name,away_opponent_name,home:clubs!club_fixtures_home_club_id_fkey(name,logo_url),away:clubs!club_fixtures_away_club_id_fkey(name,logo_url)")
+            .gt("kickoff_at", `${gw.ends_on}T23:59:59`)
+            .order("kickoff_at")
+            .order("league");
+          if (futureRes.error) throw futureRes.error;
+          if (cancelled) return;
+          setFutureFixtures(futureRes.data || []);
         }
       } catch (e) {
         if (!cancelled) setError(friendlyError(e));
@@ -69,6 +82,19 @@ export default function Calendar() {
     });
     return [...map.entries()];
   }, [fixtures]);
+
+  // Дальнейший календарь группируем по дню (не по лиге) — так виднее, что
+  // происходит неделя за неделей, а не 5 длинных списков подряд.
+  const futureByDay = useMemo(() => {
+    const map = new Map();
+    futureFixtures.forEach(fx => {
+      const day = new Date(fx.kickoff_at).toDateString();
+      const list = map.get(day) || [];
+      list.push(fx);
+      map.set(day, list);
+    });
+    return [...map.entries()];
+  }, [futureFixtures]);
 
   if (loading) return <div className="text-slate-400 p-8">Загрузка…</div>;
   if (error) return <div className="text-red-400 p-8">{error}</div>;
@@ -110,6 +136,38 @@ export default function Calendar() {
               </div>
             </section>
           ))}
+        </div>
+      )}
+
+      {futureByDay.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-lg font-extrabold mb-4">📆 Дальнейший календарь</h2>
+          <div className="flex flex-col gap-6">
+            {futureByDay.map(([day, list]) => (
+              <section key={day}>
+                <h3 className="font-bold text-sm text-slate-400 uppercase tracking-wide mb-3">
+                  {new Date(list[0].kickoff_at).toLocaleDateString("ru-RU", { weekday: "long", day: "2-digit", month: "long" })}
+                </h3>
+                <div className="flex flex-col gap-2">
+                  {list.map(fx => (
+                    <div key={fx.id} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 flex items-center gap-3">
+                      <span className="text-[10px] text-slate-500 uppercase w-16 flex-shrink-0">{fx.league}</span>
+                      <span className="flex-1 min-w-0 truncate font-medium text-right">{fx.home?.name || fx.home_opponent_name}</span>
+                      <span className="text-slate-500 text-xs flex-shrink-0 px-2 flex flex-col items-center gap-1">
+                        {fx.status === "postponed" && (
+                          <span title={`Было: ${formatKickoff(fx.original_kickoff_at) || ""}`} className="px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30 text-[10px]">
+                            перенесён
+                          </span>
+                        )}
+                        {formatKickoff(fx.kickoff_at) || "—"}
+                      </span>
+                      <span className="flex-1 min-w-0 truncate font-medium">{fx.away?.name || fx.away_opponent_name}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
       )}
     </div>

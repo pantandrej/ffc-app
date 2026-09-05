@@ -116,11 +116,15 @@ export default function AuthGate({ children }) {
 
           <div className="max-w-5xl mx-auto grid md:grid-cols-[1fr_auto] gap-8 items-start">
             <section>
-              <h2 className="font-bold text-lg mb-3">Сейчас — бесплатная квалификация</h2>
+              <h2 className="font-bold text-lg mb-3">Личный баттл с командным зачётом</h2>
               <div className="flex flex-col gap-3">
                 <div className="rounded-xl border border-slate-700 bg-slate-800 p-3">
-                  <div className="font-semibold text-emerald-400 text-sm mb-1">Личный зачёт · бесплатно, весь август</div>
-                  <div className="text-xs text-slate-400">Играешь сам за себя — никакой команды собирать не нужно. Сумма твоих очков за все туры, один общий рейтинг всех игроков.</div>
+                  <div className="font-semibold text-emerald-400 text-sm mb-1">Личный зачёт · бесплатно</div>
+                  <div className="text-xs text-slate-400">Играешь сам за себя — никакой команды собирать не нужно. Сумма твоих очков за все туры, один общий рейтинг экспертов.</div>
+                </div>
+                <div className="rounded-xl border border-slate-700 bg-slate-800 p-3">
+                  <div className="font-semibold text-sky-300 text-sm mb-1">🤝 Командный зачёт · уже сейчас, бесплатно</div>
+                  <div className="text-xs text-slate-400">Позови друзей в одну команду — их личные очки заодно усредняются в командный рейтинг, отдельно от общего.</div>
                 </div>
                 <div className="rounded-xl border border-slate-700 bg-slate-800 p-3">
                   <div className="font-semibold text-amber-300 text-sm mb-1">💎 Бриллиантовая лига · платно, позже</div>
