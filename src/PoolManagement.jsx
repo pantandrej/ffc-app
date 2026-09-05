@@ -406,11 +406,11 @@ export default function PoolManagement({ user }) {
 
         {tourStarted ? (
           <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
-            Первый матч тура уже начался — менять сет нельзя. Дождись следующего тура.
+            Первый матч тура уже начался — сет на {gameweek.id}-й тур менять нельзя. Дождись следующего тура.
           </div>
         ) : firstKickoffAt && (
           <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-sky-200">
-            Сет можно менять до первого матча тура — {formatDeadline(firstKickoffAt)} (мск).
+            Сет на {gameweek.id}-й тур можно менять до первого матча тура — {formatDeadline(firstKickoffAt)} (мск).
           </div>
         )}
 
