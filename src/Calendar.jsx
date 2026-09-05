@@ -26,14 +26,11 @@ export default function Calendar() {
     (async () => {
       setLoading(true);
       try {
-        const activeRes = await supabase.from("gameweeks").select("*").eq("status", "active").order("id").limit(1).maybeSingle();
-        if (activeRes.error) throw activeRes.error;
-        let gw = activeRes.data;
-        if (!gw) {
-          const upcomingRes = await supabase.from("gameweeks").select("*").eq("status", "upcoming").order("id").limit(1).maybeSingle();
-          if (upcomingRes.error) throw upcomingRes.error;
-          gw = upcomingRes.data;
-        }
+        // Показываем календарь САМОГО НОВОГО тура (как и "Мой сет") — того,
+        // на который сейчас реально собирают сет, а не того, что уже идёт.
+        const latestRes = await supabase.from("gameweeks").select("*").order("id", { ascending: false }).limit(1).maybeSingle();
+        if (latestRes.error) throw latestRes.error;
+        const gw = latestRes.data;
         if (cancelled) return;
         setGameweek(gw || null);
 
