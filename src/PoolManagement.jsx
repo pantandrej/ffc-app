@@ -166,9 +166,9 @@ export default function PoolManagement({ user }) {
           });
           if (cancelled) return;
           setHistoryBreakdowns(breakdowns);
-          // По умолчанию видно только самый свежий из прошлых туров, старые
-          // сворачиваем — не листать же всю историю каждый раз.
-          setCollapsedIds(new Set(breakdowns.slice(0, -1).map(b => b.gw.id)));
+          // Все прошлые туры развёрнуты по умолчанию — сворачивание доступно
+          // вручную, если список разрастётся.
+          setCollapsedIds(new Set());
         } else {
           setHistoryBreakdowns([]);
           setCollapsedIds(new Set());
@@ -362,16 +362,6 @@ export default function PoolManagement({ user }) {
           Докажи, что ты лучший футбольный аналитик. Собери сет из 10 клубов — по 2 из каждой из 5 корзин — и возглавь рейтинг экспертов.
         </div>
 
-        {tourStarted ? (
-          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
-            Первый матч тура уже начался — менять сет нельзя. Дождись следующего тура.
-          </div>
-        ) : firstKickoffAt && (
-          <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-sky-200">
-            Сет можно менять до первого матча тура — {formatDeadline(firstKickoffAt)} (мск).
-          </div>
-        )}
-
         <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
           <span className="text-slate-500 font-semibold uppercase tracking-wide">Как начисляются баллы</span>
           <span className="text-slate-300">Победа <b className="text-emerald-400">+3</b></span>
@@ -413,6 +403,16 @@ export default function PoolManagement({ user }) {
             </div>
           );
         })}
+
+        {tourStarted ? (
+          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
+            Первый матч тура уже начался — менять сет нельзя. Дождись следующего тура.
+          </div>
+        ) : firstKickoffAt && (
+          <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-sky-200">
+            Сет можно менять до первого матча тура — {formatDeadline(firstKickoffAt)} (мск).
+          </div>
+        )}
 
         <h2 className="font-bold text-lg mb-3">Твой состав на {gameweek.id}-й тур — выбирай</h2>
 
