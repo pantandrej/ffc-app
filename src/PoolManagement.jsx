@@ -88,6 +88,7 @@ export default function PoolManagement({ user }) {
 
   const [clubResults, setClubResults] = useState(new Map()); // club_id -> total_points
   const [firstKickoffAt, setFirstKickoffAt] = useState(null); // момент первого матча тура (ISO)
+  const [liveGameweek, setLiveGameweek] = useState(null); // тур со статусом active, если это НЕ тот же тур, что редактируем
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -106,12 +107,14 @@ export default function PoolManagement({ user }) {
         // видят и могут редактировать именно его, независимо от того, что
         // предыдущий тур ещё идёт (у него свой статус "active" для
         // календаря/результатов).
-        const [clubsRes, latestGwRes] = await Promise.all([
+        const [clubsRes, latestGwRes, activeGwRes] = await Promise.all([
           supabase.from("clubs").select("*").order("pot").order("rank_in_pot"),
           supabase.from("gameweeks").select("*").order("id", { ascending: false }).limit(1).maybeSingle(),
+          supabase.from("gameweeks").select("*").eq("status", "active").order("id", { ascending: false }).limit(1).maybeSingle(),
         ]);
         if (clubsRes.error) throw clubsRes.error;
         if (latestGwRes.error) throw latestGwRes.error;
+        if (activeGwRes.error) throw activeGwRes.error;
         if (cancelled) return;
 
         setClubs(clubsRes.data || []);
@@ -119,6 +122,10 @@ export default function PoolManagement({ user }) {
         const gw = latestGwRes.data || null;
         if (cancelled) return;
         setGameweek(gw);
+        // Если "открытый для выбора" тур (самый новый) — не тот же самый, что
+        // сейчас реально идёт, показываем отдельно, что за тур идёт live и
+        // зафиксирован, чтобы не путать с тем, что редактируется ниже.
+        setLiveGameweek(activeGwRes.data && activeGwRes.data.id !== gw?.id ? activeGwRes.data : null);
 
         if (gw) {
           const lineupRes = await supabase
@@ -315,7 +322,7 @@ export default function PoolManagement({ user }) {
         <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-extrabold tracking-tight">⚽ Мой сет</h1>
           <span className="text-sm text-slate-400">
-            Тур №{gameweek.id} · {gameweek.status === "active" ? "идёт" : "предстоящий"}
+            Тур №{gameweek.id} · {tourStarted ? "уже начался" : "открыт для выбора"}
             {gameweek.starts_on && gameweek.ends_on && (
               <> · {formatTourDate(gameweek.starts_on)} — {formatTourDate(gameweek.ends_on)}</>
             )}
@@ -324,6 +331,19 @@ export default function PoolManagement({ user }) {
         <div className="text-sm text-slate-400 mb-4">
           Докажи, что ты лучший футбольный аналитик. Собери сет из 10 клубов — по 2 из каждой из 5 корзин — и возглавь рейтинг экспертов.
         </div>
+
+        {liveGameweek && (
+          <div className="mb-6 rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-300 flex items-center gap-2">
+            <span>🔒</span>
+            <span>
+              Тур №{liveGameweek.id} идёт прямо сейчас
+              {liveGameweek.starts_on && liveGameweek.ends_on && (
+                <> ({formatTourDate(liveGameweek.starts_on)} — {formatTourDate(liveGameweek.ends_on)})</>
+              )}
+              {" "}— тот сет уже зафиксирован и не меняется. Ниже — сет на следующий тур.
+            </span>
+          </div>
+        )}
 
         {tourStarted ? (
           <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
