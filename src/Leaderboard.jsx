@@ -5,10 +5,13 @@ function formatPoints(n) {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n);
 }
 
-// Личный зачёт "все против всех" — никакой зависимости от команд: только
-// сумма очков по собственным сетам игрока за все туры (см. leaderboard_solo).
+// Личный зачёт "все против всех" — никакой зависимости от команд: сумма
+// очков по собственным сетам игрока за все туры, с разбивкой по турам
+// (см. leaderboard_solo / leaderboard_solo_by_tour).
 function PointsTab({ user }) {
   const [rows, setRows] = useState([]);
+  const [byTourRows, setByTourRows] = useState([]);
+  const [gameweekIds, setGameweekIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -16,13 +19,20 @@ function PointsTab({ user }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data, error: err } = await supabase
-        .from("leaderboard_solo")
-        .select("*")
-        .order("total_points", { ascending: false });
+      const [totalsRes, byTourRes, gwRes] = await Promise.all([
+        supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
+        supabase.from("leaderboard_solo_by_tour").select("*"),
+        supabase.from("gameweeks").select("id").order("id", { ascending: true }),
+      ]);
       if (cancelled) return;
-      if (err) setError(err.message);
-      else setRows(data || []);
+      if (totalsRes.error) setError(totalsRes.error.message);
+      else if (byTourRes.error) setError(byTourRes.error.message);
+      else if (gwRes.error) setError(gwRes.error.message);
+      else {
+        setRows(totalsRes.data || []);
+        setByTourRows(byTourRes.data || []);
+        setGameweekIds((gwRes.data || []).map(g => g.id));
+      }
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -32,24 +42,48 @@ function PointsTab({ user }) {
   if (error) return <div className="text-red-400 py-8 text-center">{error}</div>;
   if (rows.length === 0) return <div className="text-slate-400 text-center py-16">Пока никто не набрал очков.</div>;
 
+  const pointsByProfile = new Map();
+  byTourRows.forEach(r => {
+    const m = pointsByProfile.get(r.profile_id) || new Map();
+    m.set(r.gameweek_id, r.points);
+    pointsByProfile.set(r.profile_id, m);
+  });
+
   return (
-    <div className="rounded-xl border border-slate-700 overflow-hidden">
-      {rows.map((r, i) => {
-        const isMe = r.profile_id === user.id;
-        return (
-          <div
-            key={r.profile_id}
-            className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t border-slate-800" : ""} ${isMe ? "bg-emerald-500/10" : "bg-slate-800"}`}
-          >
-            <div className="w-7 text-slate-400 font-semibold flex-shrink-0">{i + 1}</div>
-            <div className="flex-1 min-w-0">
-              <div className={`font-semibold truncate ${isMe ? "text-emerald-400" : ""}`}>{r.username}</div>
-              <div className="text-xs text-slate-500 truncate">{r.gameweeks_played} {r.gameweeks_played === 1 ? "тур" : "тура"} сыграно</div>
-            </div>
-            <div className="font-bold text-lg flex-shrink-0">{formatPoints(r.total_points)}</div>
-          </div>
-        );
-      })}
+    <div className="rounded-xl border border-slate-700 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
+            <th className="text-left px-3 py-2">#</th>
+            <th className="text-left px-3 py-2">Игрок</th>
+            {gameweekIds.map(id => (
+              <th key={id} className="px-3 py-2 text-center whitespace-nowrap">Тур {id}</th>
+            ))}
+            <th className="px-3 py-2 text-center">Сумма</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const isMe = r.profile_id === user.id;
+            const tourPoints = pointsByProfile.get(r.profile_id);
+            return (
+              <tr
+                key={r.profile_id}
+                className={`border-t border-slate-800 ${isMe ? "bg-emerald-500/10" : i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}
+              >
+                <td className="px-3 py-2 text-slate-500">{i + 1}</td>
+                <td className={`px-3 py-2 font-semibold truncate ${isMe ? "text-emerald-400" : ""}`}>{r.username}</td>
+                {gameweekIds.map(id => (
+                  <td key={id} className="px-3 py-2 text-center text-slate-300">
+                    {tourPoints?.has(id) ? formatPoints(tourPoints.get(id)) : "—"}
+                  </td>
+                ))}
+                <td className="px-3 py-2 text-center font-bold text-base">{formatPoints(r.total_points)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
