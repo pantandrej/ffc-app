@@ -40,6 +40,59 @@ function PopularClubsChart({ rows, logoByClubId }) {
   );
 }
 
+// Личный зачёт с колонкой на каждый тур — как в обычной "Таблице", только
+// без подсветки "это я" (тут смотрит админ, а не конкретный игрок) и с более
+// плотной вёрсткой для скриншота.
+function PersonalByTourTable({ rows, byTourRows, gameweekIds }) {
+  const pointsByProfile = new Map();
+  byTourRows.forEach(r => {
+    const m = pointsByProfile.get(r.profile_id) || new Map();
+    m.set(r.gameweek_id, r.points);
+    pointsByProfile.set(r.profile_id, m);
+  });
+
+  return (
+    <div>
+      <div className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-2">Личный зачёт</div>
+      <div className="rounded-xl border border-slate-700 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
+              <th className="text-left px-3 py-1.5">#</th>
+              <th className="text-left px-3 py-1.5">Игрок</th>
+              {gameweekIds.map(id => (
+                <th key={id} className="px-3 py-1.5 text-center whitespace-nowrap">Тур {id}</th>
+              ))}
+              <th className="px-3 py-1.5 text-center">Сумма</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={gameweekIds.length + 3} className="text-slate-500 text-sm px-4 py-3">Пока пусто.</td></tr>
+            ) : (
+              rows.map((r, i) => {
+                const tourPoints = pointsByProfile.get(r.profile_id);
+                return (
+                  <tr key={r.profile_id} className={`border-t border-slate-800 ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
+                    <td className="px-3 py-1.5 text-slate-500">{i + 1}</td>
+                    <td className="px-3 py-1.5 font-medium truncate">{r.username}</td>
+                    {gameweekIds.map(id => (
+                      <td key={id} className="px-3 py-1.5 text-center text-slate-300">
+                        {tourPoints?.has(id) ? formatPoints(tourPoints.get(id)) : "—"}
+                      </td>
+                    ))}
+                    <td className="px-3 py-1.5 text-center font-bold">{formatPoints(r.total_points)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // Компактная страница только для скриншота в пост — личная и командная
 // таблицы рядом, с брендингом сверху, без лишних UI-элементов (вкладок,
 // подписей "N тур сыграно" и т.п.), чтобы влезло побольше строк.
@@ -77,10 +130,10 @@ export function AdminScreenshotInner({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [personal, setPersonal] = useState([]);
+  const [byTourRows, setByTourRows] = useState([]);
+  const [gameweekIds, setGameweekIds] = useState([]);
   const [teams, setTeams] = useState([]);
   const [membersByTeam, setMembersByTeam] = useState(new Map());
-  const [latestGameweek, setLatestGameweek] = useState(null);
-  const [submittedProfiles, setSubmittedProfiles] = useState(new Set());
   const [popularClubs, setPopularClubs] = useState([]);
   const [logoByClubId, setLogoByClubId] = useState(new Map());
 
@@ -89,20 +142,24 @@ export function AdminScreenshotInner({ user }) {
     (async () => {
       setLoading(true);
       try {
-        const [pRes, tRes, mRes, gwRes] = await Promise.all([
+        const [pRes, byTourRes, tRes, mRes, allGwRes] = await Promise.all([
           supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
+          supabase.from("leaderboard_solo_by_tour").select("*"),
           supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
           supabase.from("team_members").select("team_id, fantasysta_profiles(username)"),
-          supabase.from("gameweeks").select("id").order("id", { ascending: false }).limit(1).maybeSingle(),
+          supabase.from("gameweeks").select("id").order("id", { ascending: true }),
         ]);
         if (pRes.error) throw pRes.error;
+        if (byTourRes.error) throw byTourRes.error;
         if (tRes.error) throw tRes.error;
         if (mRes.error) throw mRes.error;
-        if (gwRes.error) throw gwRes.error;
+        if (allGwRes.error) throw allGwRes.error;
         if (cancelled) return;
         setPersonal(pRes.data || []);
+        setByTourRows(byTourRes.data || []);
         setTeams(tRes.data || []);
-        setLatestGameweek(gwRes.data?.id ?? null);
+        const allGwIds = (allGwRes.data || []).map(g => g.id);
+        setGameweekIds(allGwIds);
 
         const map = new Map();
         (mRes.data || []).forEach(m => {
@@ -112,17 +169,15 @@ export function AdminScreenshotInner({ user }) {
         });
         setMembersByTeam(map);
 
-        if (gwRes.data?.id != null) {
-          const [subRes, popRes, clubsRes] = await Promise.all([
-            supabase.from("user_lineups").select("profile_id").eq("gameweek_id", gwRes.data.id),
-            supabase.from("club_pick_popularity").select("*").eq("gameweek_id", gwRes.data.id).order("times_picked", { ascending: false }).limit(12),
+        const latestGwId = allGwIds.length > 0 ? allGwIds[allGwIds.length - 1] : null;
+        if (latestGwId != null) {
+          const [popRes, clubsRes] = await Promise.all([
+            supabase.from("club_pick_popularity").select("*").eq("gameweek_id", latestGwId).order("times_picked", { ascending: false }).limit(12),
             supabase.from("clubs").select("id, logo_url"),
           ]);
           if (cancelled) return;
-          if (subRes.error) throw subRes.error;
           if (popRes.error) throw popRes.error;
           if (clubsRes.error) throw clubsRes.error;
-          setSubmittedProfiles(new Set((subRes.data || []).map(r => r.profile_id)));
           setPopularClubs(popRes.data || []);
           setLogoByClubId(new Map((clubsRes.data || []).map(c => [c.id, c.logo_url])));
         }
@@ -153,25 +208,16 @@ export function AdminScreenshotInner({ user }) {
           <div className="text-red-400 py-8 text-center">{error}</div>
         ) : (
           <>
+            <PersonalByTourTable rows={personal} byTourRows={byTourRows} gameweekIds={gameweekIds} />
             <div className="flex flex-col md:flex-row gap-6">
-              <CompactTable
-                title={`Личный зачёт${latestGameweek != null ? ` · прислал тур №${latestGameweek}` : ""}`}
-                rows={personal}
-                nameKey="username"
-                badge={r => (
-                  submittedProfiles.has(r.profile_id)
-                    ? <span className="text-emerald-400 text-xs" title={`Прислал тур №${latestGameweek}`}>✓</span>
-                    : <span className="text-slate-600 text-xs" title="Не прислал">—</span>
-                )}
-              />
               <CompactTable
                 title="Командный зачёт"
                 rows={teams}
                 nameKey="team_name"
                 subtitle={r => `В зачёте: ${(membersByTeam.get(r.team_id) || []).join(", ") || "—"}`}
               />
+              <PopularClubsChart rows={popularClubs} logoByClubId={logoByClubId} />
             </div>
-            <PopularClubsChart rows={popularClubs} logoByClubId={logoByClubId} />
           </>
         )}
       </div>
