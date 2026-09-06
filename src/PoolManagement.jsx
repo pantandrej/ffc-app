@@ -385,7 +385,9 @@ export default function PoolManagement({ user }) {
                   Твой состав на {gw.id}-й тур
                 </span>
                 <span className="font-extrabold text-lg text-emerald-400">
-                  {total === null ? "тур не сыгран" : `${total} очков`}
+                  {total !== null
+                    ? `${total} очков`
+                    : rows.some(r => r.points !== null) ? "тур идёт" : "тур не сыгран"}
                 </span>
               </button>
               {!collapsed && (
