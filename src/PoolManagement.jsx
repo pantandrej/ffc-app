@@ -461,7 +461,7 @@ export default function PoolManagement({ user }) {
                           <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 object-contain flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="font-semibold truncate">{club.name}</div>
-                            <div className="text-xs text-slate-400">{club.league}</div>
+                            <div className="text-xs text-slate-400">{club.league}{euro ? `, ${euro.label}` : ""}</div>
                           </div>
                           {!tourStarted && (
                             <>
@@ -570,7 +570,7 @@ export default function PoolManagement({ user }) {
                       </span>
                     </div>
                     <div className="font-semibold truncate">{club.name}</div>
-                    <div className="text-xs text-slate-400">{club.league}</div>
+                    <div className="text-xs text-slate-400">{club.league}{euro ? `, ${euro.label}` : ""}</div>
                     <button
                       type="button"
                       onClick={() => addClub(club.id)}
