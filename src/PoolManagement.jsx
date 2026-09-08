@@ -57,13 +57,6 @@ function formatDeadline(d) {
   return new Date(d).toLocaleString("ru-RU", { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
 }
 
-// Локальная (устройства игрока) дата в формате YYYY-MM-DD — starts_on
-// хранится как чистая дата без времени, сравниваем календарными днями.
-function todayLocalISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 // Единственный экран выбора клубов — пишет в user_lineups (личный сет на
 // каждого игрока). Очки команды в Общей лиге = среднее по всем участникам
 // (см. sql/fantasysta_module12_unified_lineup_scoring.sql); та же таблица
@@ -86,7 +79,7 @@ export default function PoolManagement({ user }) {
   const [potFilter, setPotFilter] = useState("all");
   const [sortBy, setSortBy] = useState("pot_asc");
 
-  const [firstKickoffAt, setFirstKickoffAt] = useState(null); // момент первого матча тура (ISO)
+  const [firstKickoffByClub, setFirstKickoffByClub] = useState(new Map()); // club_id -> ISO момента его первого матча в этом туре
   const [historyBreakdowns, setHistoryBreakdowns] = useState([]); // [{gw, rows, total}] по всем турам ДО открытого, по возрастанию id
   const [collapsedIds, setCollapsedIds] = useState(new Set());
 
@@ -191,21 +184,26 @@ export default function PoolManagement({ user }) {
           setSavedClubIds(ids);
           setSavedCaptainId(cap);
 
-          // Сет блокируется в момент первого матча тура (по всем 5 лигам),
-          // а не в полночь дня начала — иначе пятница блокируется целиком,
-          // хотя первый матч может быть только вечером.
+          // Каждый клуб блокируется отдельно, в момент СВОЕГО первого матча
+          // в этом туре — а не весь сет разом по первому матчу любого клуба.
+          // Клубы, которые ещё не играли, можно менять/переставлять Джокера
+          // вплоть до их собственного матча.
           if (gw.starts_on && gw.ends_on) {
             const fxRes = await supabase
               .from("club_fixtures")
-              .select("kickoff_at")
+              .select("kickoff_at, home_club_id, away_club_id")
               .gte("kickoff_at", gw.starts_on)
               .lt("kickoff_at", `${gw.ends_on}T23:59:59.999`)
-              .order("kickoff_at", { ascending: true })
-              .limit(1)
-              .maybeSingle();
+              .order("kickoff_at", { ascending: true });
             if (cancelled) return;
             if (fxRes.error) throw fxRes.error;
-            setFirstKickoffAt(fxRes.data?.kickoff_at || null);
+            const map = new Map();
+            (fxRes.data || []).forEach(fx => {
+              [fx.home_club_id, fx.away_club_id].forEach(id => {
+                if (id && !map.has(id)) map.set(id, fx.kickoff_at);
+              });
+            });
+            setFirstKickoffByClub(map);
           }
         }
       } catch (e) {
@@ -238,14 +236,40 @@ export default function PoolManagement({ user }) {
   }, [poolClubs]);
   const potsComplete = POTS.every(p => (countByPot.get(p) || 0) === PER_POT);
 
-  // Порог блокировки — момент первого матча тура, если календарь уже занесён;
-  // иначе (fallback) полночь дня начала тура, как раньше.
-  const tourStarted = firstKickoffAt
-    ? Date.now() >= new Date(firstKickoffAt).getTime()
-    : !!gameweek?.starts_on && todayLocalISO() >= gameweek.starts_on;
+  // Клуб заблокирован, если его собственный (первый) матч в этом туре уже
+  // начался — независимо от того, играли ли уже остальные 9 клубов сета.
+  const lockedClubIds = useMemo(() => {
+    const now = Date.now();
+    const set = new Set();
+    firstKickoffByClub.forEach((kickoffAt, clubId) => {
+      if (new Date(kickoffAt).getTime() <= now) set.add(clubId);
+    });
+    return set;
+  }, [firstKickoffByClub]);
 
   const captainValid = !!captainId && poolClubIds.includes(captainId);
-  const canSave = !tourStarted && !!gameweek && poolClubIds.length === POOL_SIZE && potsComplete && captainValid;
+  const canSave = !!gameweek && poolClubIds.length === POOL_SIZE && potsComplete && captainValid;
+
+  const tourPhaseLabel = useMemo(() => {
+    if (lockedClubIds.size === 0) return "открыт для выбора";
+    if (poolClubIds.length === POOL_SIZE && poolClubIds.every(id => lockedClubIds.has(id))) return "завершён";
+    return "идёт";
+  }, [lockedClubIds, poolClubIds]);
+
+  // Ближайший момент, когда заблокируется ЕЩЁ ОДИН клуб из уже выбранных —
+  // чтобы показать не абстрактный дедлайн на весь тур, а конкретно то, что
+  // сейчас имеет значение для этого игрока.
+  const nextLockForMyPicks = useMemo(() => {
+    const now = Date.now();
+    let soonest = null;
+    poolClubIds.forEach(id => {
+      const kickoffAt = firstKickoffByClub.get(id);
+      if (!kickoffAt) return;
+      const t = new Date(kickoffAt).getTime();
+      if (t > now && (soonest === null || t < soonest)) soonest = t;
+    });
+    return soonest;
+  }, [poolClubIds, firstKickoffByClub]);
 
   const isSaved =
     poolClubIds.length === savedClubIds.length &&
@@ -263,7 +287,7 @@ export default function PoolManagement({ user }) {
   }, [clubs, leagueFilter, potFilter, sortBy]);
 
   function addClub(clubId) {
-    if (tourStarted) return;
+    if (lockedClubIds.has(clubId)) return;
     if (poolClubIds.includes(clubId)) return;
     if (poolClubIds.length >= POOL_SIZE) return;
     const club = clubsById.get(clubId);
@@ -273,13 +297,13 @@ export default function PoolManagement({ user }) {
   }
 
   function removeClub(clubId) {
-    if (tourStarted) return;
+    if (lockedClubIds.has(clubId)) return;
     setPoolClubIds(prev => prev.filter(id => id !== clubId));
     if (captainId === clubId) setCaptainId(null);
   }
 
   function toggleCaptain(clubId) {
-    if (tourStarted) return;
+    if (lockedClubIds.has(clubId)) return;
     setCaptainId(prev => (prev === clubId ? null : clubId));
   }
 
@@ -292,25 +316,52 @@ export default function PoolManagement({ user }) {
     });
   }
 
+  // Сохраняем ТОЛЬКО то, что реально поменялось — а не "удалить всё, вставить
+  // заново". Иначе строка уже сыгравшего (и потому неприкосновенного по RLS)
+  // клуба попала бы под общий DELETE и конфликтовала бы с последующим INSERT
+  // того же club_id. Раз UI и так не даёт трогать заблокированные клубы,
+  // toRemove/toAdd естественным образом состоят только из незаблокированных.
   async function handleSave() {
     if (!canSave || !gameweek) return;
     setSaving(true);
     try {
-      const { error: delError } = await supabase
-        .from("user_lineups")
-        .delete()
-        .eq("profile_id", user.id)
-        .eq("gameweek_id", gameweek.id);
-      if (delError) throw delError;
+      const toRemove = savedClubIds.filter(id => !poolClubIds.includes(id));
+      const toAdd = poolClubIds.filter(id => !savedClubIds.includes(id));
+      const unchanged = poolClubIds.filter(id => savedClubIds.includes(id));
 
-      const rows = poolClubIds.map(clubId => ({
-        profile_id: user.id,
-        gameweek_id: gameweek.id,
-        club_id: clubId,
-        is_club_captain: clubId === captainId,
-      }));
-      const { error: insError } = await supabase.from("user_lineups").insert(rows);
-      if (insError) throw insError;
+      if (toRemove.length > 0) {
+        const { error } = await supabase
+          .from("user_lineups")
+          .delete()
+          .eq("profile_id", user.id)
+          .eq("gameweek_id", gameweek.id)
+          .in("club_id", toRemove);
+        if (error) throw error;
+      }
+
+      if (toAdd.length > 0) {
+        const rows = toAdd.map(clubId => ({
+          profile_id: user.id,
+          gameweek_id: gameweek.id,
+          club_id: clubId,
+          is_club_captain: clubId === captainId,
+        }));
+        const { error } = await supabase.from("user_lineups").insert(rows);
+        if (error) throw error;
+      }
+
+      for (const clubId of unchanged) {
+        const wasCaptain = clubId === savedCaptainId;
+        const isCaptainNow = clubId === captainId;
+        if (wasCaptain === isCaptainNow) continue;
+        const { error } = await supabase
+          .from("user_lineups")
+          .update({ is_club_captain: isCaptainNow })
+          .eq("profile_id", user.id)
+          .eq("gameweek_id", gameweek.id)
+          .eq("club_id", clubId);
+        if (error) throw error;
+      }
 
       setSavedClubIds(poolClubIds);
       setSavedCaptainId(captainId);
@@ -352,7 +403,7 @@ export default function PoolManagement({ user }) {
         <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-extrabold tracking-tight">⚽ Мой сет</h1>
           <span className="text-sm text-slate-400">
-            Тур №{gameweek.id} · {tourStarted ? "уже начался" : "открыт для выбора"}
+            Тур №{gameweek.id} · {tourPhaseLabel}
             {gameweek.starts_on && gameweek.ends_on && (
               <> · {formatTourDate(gameweek.starts_on)} — {formatTourDate(gameweek.ends_on)}</>
             )}
@@ -406,13 +457,14 @@ export default function PoolManagement({ user }) {
           );
         })}
 
-        {tourStarted ? (
-          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
-            Первый матч тура уже начался — сет на {gameweek.id}-й тур менять нельзя. Дождись следующего тура.
-          </div>
-        ) : firstKickoffAt && (
-          <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-sky-200">
-            Сет на {gameweek.id}-й тур можно менять до первого матча тура — {formatDeadline(firstKickoffAt)} (мск).
+        <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-sky-200">
+          Клубы блокируются по одному, каждый в момент своего матча — сыгравшие уже нельзя менять (отмечены 🔒), остальные можно крутить вплоть до их игры.
+          {nextLockForMyPicks && <> Ближайшая блокировка — {formatDeadline(nextLockForMyPicks)} (мск).</>}
+        </div>
+
+        {tourPhaseLabel === "завершён" && (
+          <div className="mb-6 rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-300">
+            Все клубы тура №{gameweek.id} уже сыграли — сет полностью зафиксирован.
           </div>
         )}
 
@@ -449,6 +501,7 @@ export default function PoolManagement({ user }) {
                         );
                       }
                       const isCaptain = captainId === club.id;
+                      const isLocked = lockedClubIds.has(club.id);
                       const crownVisibilityClass = isCaptain
                         ? "opacity-100"
                         : captainId
@@ -460,10 +513,13 @@ export default function PoolManagement({ user }) {
                           {euro && <div title={euro.title} className={`absolute left-0 top-0 bottom-0 w-1.5 ${euro.bar}`} />}
                           <img src={club.logo_url || PLACEHOLDER_LOGO} alt="" className="w-10 h-10 object-contain flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <div className="font-semibold truncate">{club.name}</div>
+                            <div className="font-semibold truncate flex items-center gap-1.5">
+                              {club.name}
+                              {isLocked && <span title="Уже сыграл — не поменять" className="text-xs">🔒</span>}
+                            </div>
                             <div className="text-xs text-slate-400">{club.league}{euro ? `, ${euro.label}` : ""}</div>
                           </div>
-                          {!tourStarted && (
+                          {!isLocked && (
                             <>
                               <button
                                 type="button"
@@ -483,7 +539,7 @@ export default function PoolManagement({ user }) {
                               </button>
                             </>
                           )}
-                          {tourStarted && isCaptain && (
+                          {isLocked && isCaptain && (
                             <CrownIcon className="w-6 h-6 text-amber-400 flex-shrink-0" />
                           )}
                         </div>
@@ -500,9 +556,9 @@ export default function PoolManagement({ user }) {
               disabled={!canSave || saving || isSaved}
               className="w-full py-4 rounded-xl font-bold text-lg transition bg-emerald-500 hover:bg-emerald-400 text-slate-900 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
             >
-              {tourStarted ? "Тур начался — сет заблокирован" : saving ? "Сохраняю…" : isSaved ? "✓ Сет сохранён" : "Сохранить сет"}
+              {saving ? "Сохраняю…" : isSaved ? "✓ Сет сохранён" : "Сохранить сет"}
             </button>
-            {!tourStarted && !captainValid && poolClubIds.length === POOL_SIZE && (
+            {!captainValid && poolClubIds.length === POOL_SIZE && (
               <div className="text-xs text-amber-400 text-center">Выбери Джокера среди выбранных клубов</div>
             )}
           </aside>
@@ -551,9 +607,11 @@ export default function PoolManagement({ user }) {
               {filteredClubs.map(club => {
                 const inPool = poolClubIds.includes(club.id);
                 const potFull = (countByPot.get(club.pot) || 0) >= PER_POT;
-                const disabled = tourStarted || inPool || (potFull && !inPool);
+                const isLocked = lockedClubIds.has(club.id);
+                const disabled = isLocked || inPool || (potFull && !inPool);
                 let label = "Добавить";
                 if (inPool) label = "В сете";
+                else if (isLocked) label = "Уже сыграл";
                 else if (potFull) label = "Корзина заполнена";
 
                 const euro = EURO_BADGE[club.euro_competition];
@@ -569,7 +627,10 @@ export default function PoolManagement({ user }) {
                         Корзина {club.pot}
                       </span>
                     </div>
-                    <div className="font-semibold truncate">{club.name}</div>
+                    <div className="font-semibold truncate flex items-center gap-1.5">
+                      {club.name}
+                      {isLocked && <span title="Уже сыграл" className="text-xs">🔒</span>}
+                    </div>
                     <div className="text-xs text-slate-400">{club.league}{euro ? `, ${euro.label}` : ""}</div>
                     <button
                       type="button"
