@@ -81,6 +81,7 @@ export default function PoolManagement({ user }) {
 
   const [firstKickoffByClub, setFirstKickoffByClub] = useState(new Map()); // club_id -> ISO момента его первого матча в этом туре
   const [historyBreakdowns, setHistoryBreakdowns] = useState([]); // [{gw, rows, total}] по всем турам ДО открытого, по возрастанию id
+  const [currentBreakdown, setCurrentBreakdown] = useState(null); // {gw, rows, total} для открытого тура — по мере поступления результатов
   const [collapsedIds, setCollapsedIds] = useState(new Set());
 
   const showToast = useCallback((text, kind = "success") => {
@@ -159,9 +160,9 @@ export default function PoolManagement({ user }) {
           });
           if (cancelled) return;
           setHistoryBreakdowns(breakdowns);
-          // Все прошлые туры развёрнуты по умолчанию — сворачивание доступно
-          // вручную, если список разрастётся.
-          setCollapsedIds(new Set());
+          // Прошлые туры свёрнуты по умолчанию — они уже отыграны, разворачивать
+          // вручную нужно редко. Открытый тур в этот Set не попадает.
+          setCollapsedIds(new Set(historyIds));
         } else {
           setHistoryBreakdowns([]);
           setCollapsedIds(new Set());
@@ -183,6 +184,33 @@ export default function PoolManagement({ user }) {
           setCaptainId(cap);
           setSavedClubIds(ids);
           setSavedCaptainId(cap);
+
+          // Тот же разбор "твой состав на N-й тур", что и для прошлых туров,
+          // но для открытого — очки подтягиваются по мере внесения результатов
+          // (см. историю выше), и карточка не сворачивается по умолчанию.
+          if (rows.length > 0) {
+            const currentResultsRes = await supabase
+              .from("club_results")
+              .select("club_id, total_points")
+              .eq("gameweek_id", gw.id);
+            if (cancelled) return;
+            if (currentResultsRes.error) throw currentResultsRes.error;
+            const clubsMap = new Map((clubsRes.data || []).map(c => [c.id, c]));
+            const currentResultsMap = new Map((currentResultsRes.data || []).map(r => [r.club_id, Number(r.total_points)]));
+            const curRows = rows.map(r => {
+              const club = clubsMap.get(r.club_id);
+              const basePoints = currentResultsMap.has(r.club_id) ? currentResultsMap.get(r.club_id) : null;
+              return {
+                club,
+                points: basePoints === null ? null : (r.is_club_captain ? basePoints * 2 : basePoints),
+                isCaptain: r.is_club_captain,
+              };
+            }).filter(row => row.club);
+            const curTotal = curRows.some(r => r.points === null) ? null : curRows.reduce((s, r) => s + r.points, 0);
+            setCurrentBreakdown({ gw, rows: curRows, total: curTotal });
+          } else {
+            setCurrentBreakdown(null);
+          }
 
           // Каждый клуб блокируется отдельно, в момент СВОЕГО первого матча
           // в этом туре — а не весь сет разом по первому матчу любого клуба.
@@ -422,7 +450,7 @@ export default function PoolManagement({ user }) {
           <span className="text-slate-300">Джокер <b className="text-amber-400">очки ×2</b></span>
         </div>
 
-        {historyBreakdowns.map(({ gw, rows, total }) => {
+        {[...historyBreakdowns, ...(currentBreakdown ? [currentBreakdown] : [])].map(({ gw, rows, total }) => {
           const collapsed = collapsedIds.has(gw.id);
           return (
             <div key={gw.id} className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-800/60 px-4 py-3">
