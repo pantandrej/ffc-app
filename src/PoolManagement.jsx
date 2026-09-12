@@ -83,6 +83,7 @@ export default function PoolManagement({ user }) {
   const [historyBreakdowns, setHistoryBreakdowns] = useState([]); // [{gw, rows, total}] по всем турам ДО открытого, по возрастанию id
   const [currentBreakdown, setCurrentBreakdown] = useState(null); // {gw, rows, total} для открытого тура — по мере поступления результатов
   const [collapsedIds, setCollapsedIds] = useState(new Set());
+  const [pastToursOpen, setPastToursOpen] = useState(false);
 
   const showToast = useCallback((text, kind = "success") => {
     setToast({ text, kind });
@@ -450,40 +451,93 @@ export default function PoolManagement({ user }) {
           <span className="text-slate-300">Джокер <b className="text-amber-400">очки ×2</b></span>
         </div>
 
-        {[...historyBreakdowns, ...(currentBreakdown ? [currentBreakdown] : [])].map(({ gw, rows, total }) => {
-          const collapsed = collapsedIds.has(gw.id);
-          return (
-            <div key={gw.id} className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-800/60 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => toggleCollapsed(gw.id)}
-                className="w-full flex items-center justify-between flex-wrap gap-2"
-              >
-                <span className="text-slate-500 font-semibold uppercase tracking-wide text-xs flex items-center gap-1.5">
-                  <span className={`transition-transform inline-block ${collapsed ? "" : "rotate-90"}`}>▸</span>
-                  Твой состав на {gw.id}-й тур
-                </span>
-                <span className="font-extrabold text-lg text-emerald-400">
-                  {total !== null
-                    ? `${total} очков`
-                    : rows.some(r => r.points !== null) ? "тур идёт" : "тур не сыгран"}
-                </span>
-              </button>
-              {!collapsed && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {rows.map(row => (
-                    <span
-                      key={row.club.id}
-                      className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
-                    >
-                      {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {historyBreakdowns.length > 0 && (
+          <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setPastToursOpen(v => !v)}
+              className="w-full flex items-center justify-between flex-wrap gap-2"
+            >
+              <span className="text-slate-500 font-semibold uppercase tracking-wide text-xs flex items-center gap-1.5">
+                <span className={`transition-transform inline-block ${pastToursOpen ? "rotate-90" : ""}`}>▸</span>
+                Прошлые туры
+              </span>
+              <span className="text-xs text-slate-500">
+                {historyBreakdowns.length} {historyBreakdowns.length === 1 ? "тур" : "тура"}
+              </span>
+            </button>
+            {pastToursOpen && (
+              <div className="flex flex-col gap-3 mt-3">
+                {historyBreakdowns.map(({ gw, rows, total }) => {
+                  const collapsed = collapsedIds.has(gw.id);
+                  return (
+                    <div key={gw.id} className="rounded-lg border border-emerald-500/20 bg-slate-900/40 px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleCollapsed(gw.id)}
+                        className="w-full flex items-center justify-between flex-wrap gap-2"
+                      >
+                        <span className="text-slate-500 font-semibold uppercase tracking-wide text-xs flex items-center gap-1.5">
+                          <span className={`transition-transform inline-block ${collapsed ? "" : "rotate-90"}`}>▸</span>
+                          Твой состав на {gw.id}-й тур
+                        </span>
+                        <span className="font-extrabold text-base text-emerald-400">
+                          {total !== null
+                            ? `${total} очков`
+                            : rows.some(r => r.points !== null) ? "тур идёт" : "тур не сыгран"}
+                        </span>
+                      </button>
+                      {!collapsed && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {rows.map(row => (
+                            <span
+                              key={row.club.id}
+                              className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
+                            >
+                              {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {currentBreakdown && (
+          <div className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-800/60 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => toggleCollapsed(currentBreakdown.gw.id)}
+              className="w-full flex items-center justify-between flex-wrap gap-2"
+            >
+              <span className="text-slate-500 font-semibold uppercase tracking-wide text-xs flex items-center gap-1.5">
+                <span className={`transition-transform inline-block ${collapsedIds.has(currentBreakdown.gw.id) ? "" : "rotate-90"}`}>▸</span>
+                Твой состав на {currentBreakdown.gw.id}-й тур
+              </span>
+              <span className="font-extrabold text-lg text-emerald-400">
+                {currentBreakdown.total !== null
+                  ? `${currentBreakdown.total} очков`
+                  : currentBreakdown.rows.some(r => r.points !== null) ? "тур идёт" : "тур не сыгран"}
+              </span>
+            </button>
+            {!collapsedIds.has(currentBreakdown.gw.id) && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {currentBreakdown.rows.map(row => (
+                  <span
+                    key={row.club.id}
+                    className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
+                  >
+                    {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mb-6 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-sky-200">
           Клубы блокируются по одному, каждый в момент своего матча — сыгравшие уже нельзя менять (отмечены 🔒), остальные можно крутить вплоть до их игры.
