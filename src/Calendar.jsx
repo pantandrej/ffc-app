@@ -23,7 +23,10 @@ function groupByDay(fixtures) {
   return [...map.entries()];
 }
 
+// Пока матч не сыгран — показываем время; как только в club_fixtures занесён
+// счёт (модуль 34), вместо времени показываем результат.
 function FixtureRow({ fx }) {
+  const played = fx.home_score !== null && fx.home_score !== undefined;
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 flex items-center gap-3">
       <span className="text-[10px] text-slate-500 uppercase w-16 flex-shrink-0">{fx.league}</span>
@@ -34,7 +37,11 @@ function FixtureRow({ fx }) {
             перенесён
           </span>
         )}
-        {formatKickoff(fx.kickoff_at) || "—"}
+        {played ? (
+          <span className="text-sm font-extrabold text-emerald-400">{fx.home_score} : {fx.away_score}</span>
+        ) : (
+          formatKickoff(fx.kickoff_at) || "—"
+        )}
       </span>
       <span className="flex-1 min-w-0 truncate font-medium">{fx.away?.name || fx.away_opponent_name}</span>
     </div>
@@ -69,7 +76,7 @@ export default function Calendar() {
         if (gw?.starts_on && gw?.ends_on) {
           const fxRes = await supabase
             .from("club_fixtures")
-            .select("id,league,kickoff_at,status,original_kickoff_at,home_opponent_name,away_opponent_name,home:clubs!club_fixtures_home_club_id_fkey(name,logo_url),away:clubs!club_fixtures_away_club_id_fkey(name,logo_url)")
+            .select("id,league,kickoff_at,status,original_kickoff_at,home_opponent_name,away_opponent_name,home_score,away_score,home:clubs!club_fixtures_home_club_id_fkey(name,logo_url),away:clubs!club_fixtures_away_club_id_fkey(name,logo_url)")
             .gte("kickoff_at", gw.starts_on)
             .lte("kickoff_at", `${gw.ends_on}T23:59:59`)
             .order("kickoff_at")
@@ -82,7 +89,7 @@ export default function Calendar() {
           // видно наперёд, а не только на ближайшие 7 дней.
           const futureRes = await supabase
             .from("club_fixtures")
-            .select("id,league,kickoff_at,status,original_kickoff_at,home_opponent_name,away_opponent_name,home:clubs!club_fixtures_home_club_id_fkey(name,logo_url),away:clubs!club_fixtures_away_club_id_fkey(name,logo_url)")
+            .select("id,league,kickoff_at,status,original_kickoff_at,home_opponent_name,away_opponent_name,home_score,away_score,home:clubs!club_fixtures_home_club_id_fkey(name,logo_url),away:clubs!club_fixtures_away_club_id_fkey(name,logo_url)")
             .gt("kickoff_at", `${gw.ends_on}T23:59:59`)
             .order("kickoff_at")
             .order("league");
