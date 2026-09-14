@@ -124,7 +124,7 @@ export default function PoolManagement({ user }) {
           const historyIds = historyGws.map(g => g.id);
           const [historyLineupsRes, historyResultsRes] = await Promise.all([
             supabase.from("user_lineups").select("gameweek_id, club_id, is_club_captain").eq("profile_id", user.id).in("gameweek_id", historyIds),
-            supabase.from("club_results").select("gameweek_id, club_id, total_points").in("gameweek_id", historyIds),
+            supabase.from("club_results").select("gameweek_id, club_id, total_points, points_breakdown").in("gameweek_id", historyIds),
           ]);
           if (cancelled) return;
           if (historyLineupsRes.error) throw historyLineupsRes.error;
@@ -133,7 +133,7 @@ export default function PoolManagement({ user }) {
           const resultsByGw = new Map();
           (historyResultsRes.data || []).forEach(r => {
             const map = resultsByGw.get(r.gameweek_id) || new Map();
-            map.set(r.club_id, r.total_points);
+            map.set(r.club_id, { points: r.total_points, breakdown: r.points_breakdown });
             resultsByGw.set(r.gameweek_id, map);
           });
           const lineupsByGw = new Map();
@@ -149,10 +149,12 @@ export default function PoolManagement({ user }) {
             const resultsMap = resultsByGw.get(g.id) || new Map();
             const rows = lineupRows.map(r => {
               const club = clubsMap.get(r.club_id);
-              const basePoints = resultsMap.has(r.club_id) ? Number(resultsMap.get(r.club_id)) : null;
+              const result = resultsMap.get(r.club_id);
+              const basePoints = result ? Number(result.points) : null;
               return {
                 club,
                 points: basePoints === null ? null : (r.is_club_captain ? basePoints * 2 : basePoints),
+                pointsBreakdown: result?.breakdown || null,
                 isCaptain: r.is_club_captain,
               };
             }).filter(row => row.club);
@@ -192,18 +194,20 @@ export default function PoolManagement({ user }) {
           if (rows.length > 0) {
             const currentResultsRes = await supabase
               .from("club_results")
-              .select("club_id, total_points")
+              .select("club_id, total_points, points_breakdown")
               .eq("gameweek_id", gw.id);
             if (cancelled) return;
             if (currentResultsRes.error) throw currentResultsRes.error;
             const clubsMap = new Map((clubsRes.data || []).map(c => [c.id, c]));
-            const currentResultsMap = new Map((currentResultsRes.data || []).map(r => [r.club_id, Number(r.total_points)]));
+            const currentResultsMap = new Map((currentResultsRes.data || []).map(r => [r.club_id, { points: r.total_points, breakdown: r.points_breakdown }]));
             const curRows = rows.map(r => {
               const club = clubsMap.get(r.club_id);
-              const basePoints = currentResultsMap.has(r.club_id) ? currentResultsMap.get(r.club_id) : null;
+              const result = currentResultsMap.get(r.club_id);
+              const basePoints = result ? Number(result.points) : null;
               return {
                 club,
                 points: basePoints === null ? null : (r.is_club_captain ? basePoints * 2 : basePoints),
+                pointsBreakdown: result?.breakdown || null,
                 isCaptain: r.is_club_captain,
               };
             }).filter(row => row.club);
@@ -494,7 +498,7 @@ export default function PoolManagement({ user }) {
                               key={row.club.id}
                               className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
                             >
-                              {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
+                              {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : (row.pointsBreakdown || row.points)}
                             </span>
                           ))}
                         </div>
@@ -531,7 +535,7 @@ export default function PoolManagement({ user }) {
                     key={row.club.id}
                     className={`px-2 py-1 rounded-lg text-xs ${row.isCaptain ? "bg-amber-400/10 text-amber-300 border border-amber-400/30 font-semibold" : "bg-slate-900 text-slate-300 border border-slate-700"}`}
                   >
-                    {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : row.points}
+                    {row.isCaptain && "🃏 "}{row.club.name}: {row.points === null ? "—" : (row.pointsBreakdown || row.points)}
                   </span>
                 ))}
               </div>
