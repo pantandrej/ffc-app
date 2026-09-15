@@ -54,7 +54,7 @@ function FantasystaShell({ user, profile, signOut }) {
     { id: "pool", label: "⚽ Мой сет" },
     { id: "team", label: "👥 Команда" },
     { id: "table", label: "🏆 Таблица" },
-    { id: "calendar", label: "📅 Календарь" },
+    { id: "calendar", label: "📅 Календарь и результаты" },
     ...(isAdmin ? [{ id: "admin", label: "🛠 Админка" }] : []),
   ];
 
