@@ -328,7 +328,9 @@ export function AdminScreenshotInner({ user }) {
               />
               <PopularClubsChart rows={popularClubs} logoByClubId={logoByClubId} />
             </div>
-            {groupMembers.length > 0 && (
+            {groupMembers.length === 0 ? (
+              <div className="text-slate-500 text-sm px-1">Группы плей-офф не загрузились (пусто в solo_group_members).</div>
+            ) : (
               <div className="flex flex-col md:flex-row gap-6">
                 {GROUP_LABELS.map(label => (
                   <GroupTable
