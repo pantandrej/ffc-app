@@ -150,10 +150,172 @@ function TeamsTab({ user, myTeamId }) {
   );
 }
 
-// Таблица "Общей лиги": вкладки — Личный (сумма очков за всё время) и
-// Командный (средний командный зачёт, сумма за всё время).
+const GROUP_LABELS = ["A", "B"];
+
+// Группы плей-офф личного зачёта — топ-12 разбиты змейкой на 2 группы по 6,
+// внутри группы круговой турнир (5 туров = 5 соперников). Результат каждого
+// матча группы считается на лету: сравниваем очки обоих игроков за тот
+// реальный тур (leaderboard_solo_by_tour) — больше очков выиграл матч.
+function GroupsTab({ user }) {
+  const [members, setMembers] = useState([]);
+  const [fixtures, setFixtures] = useState([]);
+  const [pointsByTour, setPointsByTour] = useState(new Map()); // profile_id -> Map(gw_id -> points)
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const [membersRes, fixturesRes, byTourRes] = await Promise.all([
+        supabase.from("solo_group_members").select("group_label, seed, profile_id, fantasysta_profiles(username)").order("group_label").order("seed"),
+        supabase.from("solo_group_fixtures").select("group_label, round, gameweek_id, profile_id_1, profile_id_2").order("group_label").order("round"),
+        supabase.from("leaderboard_solo_by_tour").select("profile_id, gameweek_id, points"),
+      ]);
+      if (cancelled) return;
+      if (membersRes.error) setError(membersRes.error.message);
+      else if (fixturesRes.error) setError(fixturesRes.error.message);
+      else if (byTourRes.error) setError(byTourRes.error.message);
+      else {
+        setMembers(membersRes.data || []);
+        setFixtures(fixturesRes.data || []);
+        const map = new Map();
+        (byTourRes.data || []).forEach(r => {
+          const m = map.get(r.profile_id) || new Map();
+          m.set(r.gameweek_id, Number(r.points));
+          map.set(r.profile_id, m);
+        });
+        setPointsByTour(map);
+      }
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return <div className="text-slate-400 py-8 text-center">Загрузка…</div>;
+  if (error) return <div className="text-red-400 py-8 text-center">{error}</div>;
+  if (members.length === 0) return <div className="text-slate-400 text-center py-16">Группы ещё не сформированы.</div>;
+
+  const nameByProfile = new Map(members.map(m => [m.profile_id, m.fantasysta_profiles?.username || "?"]));
+
+  function getPoints(profileId, gwId) {
+    return pointsByTour.get(profileId)?.get(gwId);
+  }
+
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="text-xs text-sky-200 bg-sky-500/5 border border-sky-500/30 rounded-xl px-4 py-3">
+        Топ-12 личного зачёта разбит на 2 группы по 6 (места 1,4,5,8,9,12 — группа A; 2,3,6,7,10,11 — группа B). Пока тур 3 не завершён, состав групп предварительный.
+        Внутри группы — круговой турнир: тур 4 = 1-й тур группы, ... тур 8 = 5-й (финальный) тур группы. Тур 9 — финал, пара определится по итогам групп.
+      </div>
+
+      {GROUP_LABELS.map(label => {
+        const groupMembers = members.filter(m => m.group_label === label);
+        const groupFixtures = fixtures.filter(f => f.group_label === label);
+
+        // Считаем таблицу группы по сыгранным матчам.
+        const standings = new Map(groupMembers.map(m => [m.profile_id, { played: 0, w: 0, d: 0, l: 0, pf: 0, pa: 0, gpts: 0 }]));
+        groupFixtures.forEach(f => {
+          const p1 = getPoints(f.profile_id_1, f.gameweek_id);
+          const p2 = getPoints(f.profile_id_2, f.gameweek_id);
+          if (p1 === undefined || p2 === undefined) return; // тур ещё не сыгран
+          const s1 = standings.get(f.profile_id_1);
+          const s2 = standings.get(f.profile_id_2);
+          s1.played++; s2.played++;
+          s1.pf += p1; s1.pa += p2;
+          s2.pf += p2; s2.pa += p1;
+          if (p1 > p2) { s1.w++; s2.l++; s1.gpts += 3; }
+          else if (p1 < p2) { s2.w++; s1.l++; s2.gpts += 3; }
+          else { s1.d++; s2.d++; s1.gpts += 1; s2.gpts += 1; }
+        });
+        const table = groupMembers
+          .map(m => ({ profileId: m.profile_id, name: nameByProfile.get(m.profile_id), ...standings.get(m.profile_id) }))
+          .sort((a, b) => b.gpts - a.gpts || (b.pf - b.pa) - (a.pf - a.pa));
+
+        const byRound = new Map();
+        groupFixtures.forEach(f => {
+          const list = byRound.get(f.round) || [];
+          list.push(f);
+          byRound.set(f.round, list);
+        });
+
+        return (
+          <div key={label}>
+            <h2 className="font-extrabold text-lg mb-3">Группа {label}</h2>
+            <div className="rounded-xl border border-slate-700 overflow-x-auto mb-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
+                    <th className="text-left px-3 py-2">#</th>
+                    <th className="text-left px-3 py-2">Игрок</th>
+                    <th className="px-2 py-2 text-center">И</th>
+                    <th className="px-2 py-2 text-center">В</th>
+                    <th className="px-2 py-2 text-center">Н</th>
+                    <th className="px-2 py-2 text-center">П</th>
+                    <th className="px-2 py-2 text-center">Очки+/-</th>
+                    <th className="px-3 py-2 text-center">О</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {table.map((r, i) => {
+                    const isMe = r.profileId === user.id;
+                    return (
+                      <tr key={r.profileId} className={`border-t border-slate-800 ${isMe ? "bg-emerald-500/10" : i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
+                        <td className="px-3 py-2 text-slate-500">{i + 1}</td>
+                        <td className={`px-3 py-2 font-semibold truncate ${isMe ? "text-emerald-400" : ""}`}>{r.name}</td>
+                        <td className="px-2 py-2 text-center text-slate-300">{r.played}</td>
+                        <td className="px-2 py-2 text-center text-slate-300">{r.w}</td>
+                        <td className="px-2 py-2 text-center text-slate-300">{r.d}</td>
+                        <td className="px-2 py-2 text-center text-slate-300">{r.l}</td>
+                        <td className="px-2 py-2 text-center text-slate-400 text-xs">{r.pf}:{r.pa}</td>
+                        <td className="px-3 py-2 text-center font-bold">{r.gpts}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+              {[1, 2, 3, 4, 5].map(round => {
+                const list = byRound.get(round) || [];
+                return (
+                  <div key={round} className="rounded-lg border border-slate-700 bg-slate-800/60 p-2.5">
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5">Тур {round + 3} · {round}-й тур группы</div>
+                    <div className="flex flex-col gap-1.5">
+                      {list.map((f, idx) => {
+                        const p1 = getPoints(f.profile_id_1, f.gameweek_id);
+                        const p2 = getPoints(f.profile_id_2, f.gameweek_id);
+                        const played = p1 !== undefined && p2 !== undefined;
+                        return (
+                          <div key={idx} className="text-xs flex items-center justify-between gap-1">
+                            <span className="truncate flex-1">{nameByProfile.get(f.profile_id_1)}</span>
+                            <span className={`font-bold flex-shrink-0 px-1 ${played ? "text-emerald-400" : "text-slate-600"}`}>
+                              {played ? `${p1}:${p2}` : "—"}
+                            </span>
+                            <span className="truncate flex-1 text-right">{nameByProfile.get(f.profile_id_2)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="text-xs text-slate-500 text-center py-2">🏆 Тур 9 — финал групп (пара определится по итогам)</div>
+    </div>
+  );
+}
+
+// Таблица "Общей лиги": вкладки — Личный (сумма очков за всё время),
+// Командный (средний командный зачёт, сумма за всё время) и Группы (плей-офф
+// топ-12).
 export default function Leaderboard({ user }) {
-  const [tab, setTab] = useState("points"); // "points" | "teams"
+  const [tab, setTab] = useState("points"); // "points" | "teams" | "groups"
   const [myTeamId, setMyTeamId] = useState(null);
 
   useEffect(() => {
@@ -166,7 +328,7 @@ export default function Leaderboard({ user }) {
   }, [user.id]);
 
   return (
-    <div className="max-w-2xl mx-auto p-4 md:p-8">
+    <div className="max-w-4xl mx-auto p-4 md:p-8">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <h1 className="text-xl font-extrabold">🏆 Рейтинг экспертов</h1>
         <div className="flex gap-1.5">
@@ -184,11 +346,19 @@ export default function Leaderboard({ user }) {
           >
             Командный
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("groups")}
+            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${tab === "groups" ? "bg-emerald-500 text-slate-900" : "text-slate-300 hover:bg-slate-800"}`}
+          >
+            Группы
+          </button>
         </div>
       </div>
 
       {tab === "points" && <PointsTab user={user} />}
       {tab === "teams" && <TeamsTab user={user} myTeamId={myTeamId} />}
+      {tab === "groups" && <GroupsTab user={user} />}
     </div>
   );
 }
