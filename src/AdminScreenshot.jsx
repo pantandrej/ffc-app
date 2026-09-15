@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import { ADMIN_EMAILS } from "./AdminResults.jsx";
 import { friendlyError } from "./lib/friendlyError.js";
@@ -126,6 +126,98 @@ function CompactTable({ title, rows, nameKey, subtitle, badge }) {
   );
 }
 
+const GROUP_LABELS = ["A", "B"];
+
+// Компактная таблица одной группы плей-офф — для скриншота, без подсветки
+// "это я" (тут смотрит админ). Результат матча считается на лету по очкам
+// обоих игроков за тот тур (byTourRows), как и на вкладке "Таблица".
+function GroupTable({ label, members, fixtures, pointsByTour }) {
+  function getPoints(profileId, gwId) {
+    return pointsByTour.get(profileId)?.get(gwId);
+  }
+
+  const nameByProfile = new Map(members.map(m => [m.profile_id, m.fantasysta_profiles?.username || "?"]));
+  const standings = new Map(members.map(m => [m.profile_id, { played: 0, w: 0, d: 0, l: 0, pf: 0, pa: 0, gpts: 0 }]));
+  fixtures.forEach(f => {
+    const p1 = getPoints(f.profile_id_1, f.gameweek_id);
+    const p2 = getPoints(f.profile_id_2, f.gameweek_id);
+    if (p1 === undefined || p2 === undefined) return;
+    const s1 = standings.get(f.profile_id_1);
+    const s2 = standings.get(f.profile_id_2);
+    s1.played++; s2.played++;
+    s1.pf += p1; s1.pa += p2;
+    s2.pf += p2; s2.pa += p1;
+    if (p1 > p2) { s1.w++; s2.l++; s1.gpts += 3; }
+    else if (p1 < p2) { s2.w++; s1.l++; s2.gpts += 3; }
+    else { s1.d++; s2.d++; s1.gpts += 1; s2.gpts += 1; }
+  });
+  const table = members
+    .map(m => ({ profileId: m.profile_id, name: nameByProfile.get(m.profile_id), ...standings.get(m.profile_id) }))
+    .sort((a, b) => b.gpts - a.gpts || (b.pf - b.pa) - (a.pf - a.pa));
+
+  const byRound = new Map();
+  fixtures.forEach(f => {
+    const list = byRound.get(f.round) || [];
+    list.push(f);
+    byRound.set(f.round, list);
+  });
+
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="text-sm font-bold uppercase tracking-wide text-slate-400 mb-2">Группа {label}</div>
+      <div className="rounded-xl border border-slate-700 overflow-hidden mb-2">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-800 text-slate-400 text-xs uppercase">
+              <th className="text-left px-3 py-1.5">#</th>
+              <th className="text-left px-3 py-1.5">Игрок</th>
+              <th className="px-2 py-1.5 text-center">И</th>
+              <th className="px-2 py-1.5 text-center">В</th>
+              <th className="px-2 py-1.5 text-center">Н</th>
+              <th className="px-2 py-1.5 text-center">П</th>
+              <th className="px-3 py-1.5 text-center">О</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.map((r, i) => (
+              <tr key={r.profileId} className={`border-t border-slate-800 ${i % 2 === 0 ? "bg-slate-900" : "bg-slate-900/60"}`}>
+                <td className="px-3 py-1.5 text-slate-500">{i + 1}</td>
+                <td className="px-3 py-1.5 font-medium truncate">{r.name}</td>
+                <td className="px-2 py-1.5 text-center text-slate-300">{r.played}</td>
+                <td className="px-2 py-1.5 text-center text-slate-300">{r.w}</td>
+                <td className="px-2 py-1.5 text-center text-slate-300">{r.d}</td>
+                <td className="px-2 py-1.5 text-center text-slate-300">{r.l}</td>
+                <td className="px-3 py-1.5 text-center font-bold">{r.gpts}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-col gap-1">
+        {[1, 2, 3, 4, 5].map(round => {
+          const list = byRound.get(round) || [];
+          if (list.length === 0) return null;
+          return (
+            <div key={round} className="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5">
+              <span className="text-slate-500 font-semibold flex-shrink-0">Тур {round + 3}:</span>
+              {list.map((f, idx) => {
+                const p1 = getPoints(f.profile_id_1, f.gameweek_id);
+                const p2 = getPoints(f.profile_id_2, f.gameweek_id);
+                const played = p1 !== undefined && p2 !== undefined;
+                return (
+                  <span key={idx}>
+                    {nameByProfile.get(f.profile_id_1)} {played ? `${p1}:${p2}` : "—"} {nameByProfile.get(f.profile_id_2)}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function AdminScreenshotInner({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -136,28 +228,36 @@ export function AdminScreenshotInner({ user }) {
   const [membersByTeam, setMembersByTeam] = useState(new Map());
   const [popularClubs, setPopularClubs] = useState([]);
   const [logoByClubId, setLogoByClubId] = useState(new Map());
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [groupFixtures, setGroupFixtures] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const [pRes, byTourRes, tRes, mRes, allGwRes] = await Promise.all([
+        const [pRes, byTourRes, tRes, mRes, allGwRes, gmRes, gfRes] = await Promise.all([
           supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
           supabase.from("leaderboard_solo_by_tour").select("*"),
           supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
           supabase.from("team_members").select("team_id, fantasysta_profiles(username)"),
           supabase.from("gameweeks").select("id").order("id", { ascending: true }),
+          supabase.from("solo_group_members").select("group_label, seed, profile_id, fantasysta_profiles(username)").order("group_label").order("seed"),
+          supabase.from("solo_group_fixtures").select("group_label, round, gameweek_id, profile_id_1, profile_id_2").order("group_label").order("round"),
         ]);
         if (pRes.error) throw pRes.error;
         if (byTourRes.error) throw byTourRes.error;
         if (tRes.error) throw tRes.error;
         if (mRes.error) throw mRes.error;
         if (allGwRes.error) throw allGwRes.error;
+        if (gmRes.error) throw gmRes.error;
+        if (gfRes.error) throw gfRes.error;
         if (cancelled) return;
         setPersonal(pRes.data || []);
         setByTourRows(byTourRes.data || []);
         setTeams(tRes.data || []);
+        setGroupMembers(gmRes.data || []);
+        setGroupFixtures(gfRes.data || []);
         const allGwIds = (allGwRes.data || []).map(g => g.id);
         setGameweekIds(allGwIds);
 
@@ -190,6 +290,16 @@ export function AdminScreenshotInner({ user }) {
     return () => { cancelled = true; };
   }, []);
 
+  const pointsByTourMap = useMemo(() => {
+    const map = new Map();
+    byTourRows.forEach(r => {
+      const m = map.get(r.profile_id) || new Map();
+      m.set(r.gameweek_id, Number(r.points));
+      map.set(r.profile_id, m);
+    });
+    return map;
+  }, [byTourRows]);
+
   if (!ADMIN_EMAILS.includes(user.email)) {
     return <div className="p-10 text-center text-slate-400">Эта страница только для админа.</div>;
   }
@@ -218,6 +328,19 @@ export function AdminScreenshotInner({ user }) {
               />
               <PopularClubsChart rows={popularClubs} logoByClubId={logoByClubId} />
             </div>
+            {groupMembers.length > 0 && (
+              <div className="flex flex-col md:flex-row gap-6">
+                {GROUP_LABELS.map(label => (
+                  <GroupTable
+                    key={label}
+                    label={label}
+                    members={groupMembers.filter(m => m.group_label === label)}
+                    fixtures={groupFixtures.filter(f => f.group_label === label)}
+                    pointsByTour={pointsByTourMap}
+                  />
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
