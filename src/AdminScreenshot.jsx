@@ -153,7 +153,7 @@ function GroupTable({ label, members, fixtures, pointsByTour }) {
   });
   const table = members
     .map(m => ({ profileId: m.profile_id, name: nameByProfile.get(m.profile_id), ...standings.get(m.profile_id) }))
-    .sort((a, b) => b.gpts - a.gpts || (b.pf - b.pa) - (a.pf - a.pa));
+    .sort((a, b) => b.gpts - a.gpts || b.pf - a.pf || (b.pf - b.pa) - (a.pf - a.pa));
 
   const byRound = new Map();
   fixtures.forEach(f => {
