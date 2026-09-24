@@ -178,6 +178,7 @@ function GroupTable({ label, members, fixtures, pointsByTour, gwsWithResults }) 
               <th className="px-2 py-1.5 text-center">В</th>
               <th className="px-2 py-1.5 text-center">Н</th>
               <th className="px-2 py-1.5 text-center">П</th>
+              <th className="px-3 py-1.5 text-center">Баллы</th>
               <th className="px-3 py-1.5 text-center">О</th>
             </tr>
           </thead>
@@ -190,6 +191,7 @@ function GroupTable({ label, members, fixtures, pointsByTour, gwsWithResults }) 
                 <td className="px-2 py-1.5 text-center text-slate-300">{r.w}</td>
                 <td className="px-2 py-1.5 text-center text-slate-300">{r.d}</td>
                 <td className="px-2 py-1.5 text-center text-slate-300">{r.l}</td>
+                <td className="px-3 py-1.5 text-center font-bold text-emerald-400">{r.pf}</td>
                 <td className="px-3 py-1.5 text-center font-bold">{r.gpts}</td>
               </tr>
             ))}

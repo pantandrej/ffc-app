@@ -261,6 +261,7 @@ function GroupsTab({ user }) {
                     <th className="px-2 py-2 text-center">Н</th>
                     <th className="px-2 py-2 text-center">П</th>
                     <th className="px-2 py-2 text-center">Очки+/-</th>
+                    <th className="px-3 py-2 text-center">Баллы</th>
                     <th className="px-3 py-2 text-center">О</th>
                   </tr>
                 </thead>
@@ -276,6 +277,7 @@ function GroupsTab({ user }) {
                         <td className="px-2 py-2 text-center text-slate-300">{r.d}</td>
                         <td className="px-2 py-2 text-center text-slate-300">{r.l}</td>
                         <td className="px-2 py-2 text-center text-slate-400 text-xs">{r.pf}:{r.pa}</td>
+                        <td className="px-3 py-2 text-center font-bold text-emerald-400">{r.pf}</td>
                         <td className="px-3 py-2 text-center font-bold">{r.gpts}</td>
                       </tr>
                     );
