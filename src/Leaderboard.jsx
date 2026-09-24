@@ -160,6 +160,7 @@ function GroupsTab({ user }) {
   const [members, setMembers] = useState([]);
   const [fixtures, setFixtures] = useState([]);
   const [pointsByTour, setPointsByTour] = useState(new Map()); // profile_id -> Map(gw_id -> points)
+  const [gwsWithResults, setGwsWithResults] = useState(new Set()); // туры, где реально есть club_results
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -167,15 +168,17 @@ function GroupsTab({ user }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [membersRes, fixturesRes, byTourRes] = await Promise.all([
+      const [membersRes, fixturesRes, byTourRes, resultsRes] = await Promise.all([
         supabase.from("solo_group_members").select("group_label, seed, profile_id, fantasysta_profiles(username)").order("group_label").order("seed"),
         supabase.from("solo_group_fixtures").select("group_label, round, gameweek_id, profile_id_1, profile_id_2").order("group_label").order("round"),
         supabase.from("leaderboard_solo_by_tour").select("profile_id, gameweek_id, points"),
+        supabase.from("club_results").select("gameweek_id"),
       ]);
       if (cancelled) return;
       if (membersRes.error) setError(membersRes.error.message);
       else if (fixturesRes.error) setError(fixturesRes.error.message);
       else if (byTourRes.error) setError(byTourRes.error.message);
+      else if (resultsRes.error) setError(resultsRes.error.message);
       else {
         setMembers(membersRes.data || []);
         setFixtures(fixturesRes.data || []);
@@ -186,6 +189,7 @@ function GroupsTab({ user }) {
           map.set(r.profile_id, m);
         });
         setPointsByTour(map);
+        setGwsWithResults(new Set((resultsRes.data || []).map(r => r.gameweek_id)));
       }
       setLoading(false);
     })();
@@ -198,7 +202,11 @@ function GroupsTab({ user }) {
 
   const nameByProfile = new Map(members.map(m => [m.profile_id, m.fantasysta_profiles?.username || "?"]));
 
+  // leaderboard_solo_by_tour отдаёт 0 очков и для ещё не сыгранного тура
+  // (просто нет строк club_results, чтобы просуммировать) — поэтому матч
+  // группы считаем решённым, только если по туру реально есть результаты.
   function getPoints(profileId, gwId) {
+    if (!gwsWithResults.has(gwId)) return undefined;
     return pointsByTour.get(profileId)?.get(gwId);
   }
 

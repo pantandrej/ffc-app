@@ -131,8 +131,11 @@ const GROUP_LABELS = ["A", "B"];
 // Компактная таблица одной группы плей-офф — для скриншота, без подсветки
 // "это я" (тут смотрит админ). Результат матча считается на лету по очкам
 // обоих игроков за тот тур (byTourRows), как и на вкладке "Таблица".
-function GroupTable({ label, members, fixtures, pointsByTour }) {
+function GroupTable({ label, members, fixtures, pointsByTour, gwsWithResults }) {
+  // leaderboard_solo_by_tour отдаёт 0 очков и для ещё не сыгранного тура —
+  // считаем матч решённым только если по туру реально есть club_results.
   function getPoints(profileId, gwId) {
+    if (!gwsWithResults.has(gwId)) return undefined;
     return pointsByTour.get(profileId)?.get(gwId);
   }
 
@@ -230,13 +233,14 @@ export function AdminScreenshotInner({ user }) {
   const [logoByClubId, setLogoByClubId] = useState(new Map());
   const [groupMembers, setGroupMembers] = useState([]);
   const [groupFixtures, setGroupFixtures] = useState([]);
+  const [gwsWithResults, setGwsWithResults] = useState(new Set());
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const [pRes, byTourRes, tRes, mRes, allGwRes, gmRes, gfRes] = await Promise.all([
+        const [pRes, byTourRes, tRes, mRes, allGwRes, gmRes, gfRes, crRes] = await Promise.all([
           supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
           supabase.from("leaderboard_solo_by_tour").select("*"),
           supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
@@ -244,6 +248,7 @@ export function AdminScreenshotInner({ user }) {
           supabase.from("gameweeks").select("id").order("id", { ascending: true }),
           supabase.from("solo_group_members").select("group_label, seed, profile_id, fantasysta_profiles(username)").order("group_label").order("seed"),
           supabase.from("solo_group_fixtures").select("group_label, round, gameweek_id, profile_id_1, profile_id_2").order("group_label").order("round"),
+          supabase.from("club_results").select("gameweek_id"),
         ]);
         if (pRes.error) throw pRes.error;
         if (byTourRes.error) throw byTourRes.error;
@@ -252,12 +257,14 @@ export function AdminScreenshotInner({ user }) {
         if (allGwRes.error) throw allGwRes.error;
         if (gmRes.error) throw gmRes.error;
         if (gfRes.error) throw gfRes.error;
+        if (crRes.error) throw crRes.error;
         if (cancelled) return;
         setPersonal(pRes.data || []);
         setByTourRows(byTourRes.data || []);
         setTeams(tRes.data || []);
         setGroupMembers(gmRes.data || []);
         setGroupFixtures(gfRes.data || []);
+        setGwsWithResults(new Set((crRes.data || []).map(r => r.gameweek_id)));
         const allGwIds = (allGwRes.data || []).map(g => g.id);
         setGameweekIds(allGwIds);
 
@@ -339,6 +346,7 @@ export function AdminScreenshotInner({ user }) {
                     members={groupMembers.filter(m => m.group_label === label)}
                     fixtures={groupFixtures.filter(f => f.group_label === label)}
                     pointsByTour={pointsByTourMap}
+                    gwsWithResults={gwsWithResults}
                   />
                 ))}
               </div>
