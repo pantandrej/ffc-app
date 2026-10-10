@@ -22,7 +22,7 @@ function PointsTab({ user }) {
       const [totalsRes, byTourRes, gwRes] = await Promise.all([
         supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
         supabase.from("leaderboard_solo_by_tour").select("*"),
-        supabase.from("gameweeks").select("id").order("id", { ascending: true }),
+        supabase.from("gameweeks").select("id, starts_on").order("id", { ascending: true }),
       ]);
       if (cancelled) return;
       if (totalsRes.error) setError(totalsRes.error.message);
@@ -31,7 +31,8 @@ function PointsTab({ user }) {
       else {
         setRows(totalsRes.data || []);
         setByTourRows(byTourRes.data || []);
-        setGameweekIds((gwRes.data || []).map(g => g.id));
+        const todayStr = new Date().toISOString().slice(0, 10);
+        setGameweekIds((gwRes.data || []).filter(g => !g.starts_on || g.starts_on <= todayStr).map(g => g.id));
       }
       setLoading(false);
     })();

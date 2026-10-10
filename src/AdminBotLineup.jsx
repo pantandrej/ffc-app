@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { pickCurrentGameweek } from "./lib/currentTour.js";
 import { supabase } from "./lib/supabaseClient.js";
 import { ADMIN_EMAILS } from "./AdminResults.jsx";
 import { friendlyError } from "./lib/friendlyError.js";
@@ -71,9 +72,8 @@ export function AdminBotLineupInner({ user }) {
         setGameweeks(gwRes.data || []);
         setClubs(clubsRes.data || []);
         setTeams(teamsRes.data || []);
-        // По умолчанию — самый новый тур (макс. id): именно его чаще всего
-        // нужно донастраивать/дозаполнять, даже если предыдущий ещё "active".
-        const latest = (gwRes.data || []).reduce((best, g) => (!best || g.id > best.id ? g : best), null);
+        // По умолчанию — текущий тур (последний из уже начавшихся).
+        const latest = pickCurrentGameweek(gwRes.data || []);
         if (latest) setGameweekId(latest.id);
       } catch (e) {
         if (!cancelled) showToast(friendlyError(e), "error");

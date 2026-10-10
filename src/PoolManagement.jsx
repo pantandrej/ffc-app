@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import { friendlyError } from "./lib/friendlyError.js";
+import { pickCurrentGameweek } from "./lib/currentTour.js";
 
 const POTS = [1, 2, 3, 4, 5];
 const PER_POT = 2;
@@ -113,7 +114,7 @@ export default function PoolManagement({ user }) {
         setClubs(clubsRes.data || []);
 
         const allGw = allGwRes.data || [];
-        const gw = allGw.length > 0 ? allGw[allGw.length - 1] : null;
+        const gw = pickCurrentGameweek(allGw);
         if (cancelled) return;
         setGameweek(gw);
 

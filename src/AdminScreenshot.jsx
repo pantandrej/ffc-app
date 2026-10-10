@@ -247,7 +247,7 @@ export function AdminScreenshotInner({ user }) {
           supabase.from("leaderboard_solo_by_tour").select("*"),
           supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
           supabase.from("team_members").select("team_id, fantasysta_profiles(username)"),
-          supabase.from("gameweeks").select("id").order("id", { ascending: true }),
+          supabase.from("gameweeks").select("id, starts_on").order("id", { ascending: true }),
           supabase.from("solo_group_members").select("group_label, seed, profile_id, fantasysta_profiles(username)").order("group_label").order("seed"),
           supabase.from("solo_group_fixtures").select("group_label, round, gameweek_id, profile_id_1, profile_id_2").order("group_label").order("round"),
           supabase.from("club_results").select("gameweek_id"),
@@ -267,7 +267,8 @@ export function AdminScreenshotInner({ user }) {
         setGroupMembers(gmRes.data || []);
         setGroupFixtures(gfRes.data || []);
         setGwsWithResults(new Set((crRes.data || []).map(r => r.gameweek_id)));
-        const allGwIds = (allGwRes.data || []).map(g => g.id);
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const allGwIds = (allGwRes.data || []).filter(g => !g.starts_on || g.starts_on <= todayStr).map(g => g.id);
         setGameweekIds(allGwIds);
 
         const map = new Map();

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import { friendlyError } from "./lib/friendlyError.js";
+import { pickCurrentGameweek } from "./lib/currentTour.js";
 
 // Календарь на ближайший месяц показываем с сегодня до этой даты — весь
 // сезон расписан заранее на 2026/2027 год, но заводить реальные матчи в
 // club_fixtures есть смысл только на обозримый горизонт.
-const CALENDAR_HORIZON = "2026-10-31T23:59:59";
+const CALENDAR_HORIZON = "2026-11-30T23:59:59";
 
 function formatDate(d) {
   if (!d) return "";
@@ -164,7 +165,7 @@ export default function Calendar() {
   }, []);
 
   const monthByDay = useMemo(() => groupByDay(monthFixtures), [monthFixtures]);
-  const latestGwId = gameweeks.length > 0 ? gameweeks[gameweeks.length - 1].id : null;
+  const latestGwId = pickCurrentGameweek(gameweeks)?.id ?? null;
 
   if (loading) return <div className="text-slate-400 p-8">Загрузка…</div>;
   if (error) return <div className="text-red-400 p-8">{error}</div>;
