@@ -337,6 +337,11 @@ export default function PoolManagement({ user }) {
 
   function toggleCaptain(clubId) {
     if (lockedClubIds.has(clubId)) return;
+    // Джокер, чей клуб уже сыграл, переназначить нельзя (строка заблокирована).
+    if (captainId && captainId !== clubId && lockedClubIds.has(captainId)) {
+      showToast("Джокер уже сыграл — его нельзя перенести на другой клуб", "error");
+      return;
+    }
     setCaptainId(prev => (prev === clubId ? null : clubId));
   }
 
@@ -372,6 +377,24 @@ export default function PoolManagement({ user }) {
         if (error) throw error;
       }
 
+      // Порядок важен: в user_lineups не может быть двух Джокеров на игрока за
+      // тур (уникальный индекс), поэтому сначала снимаем Джокера со старого
+      // клуба, потом вставляем новые клубы и только в конце повышаем нового.
+      async function setCaptainFlag(clubId, value) {
+        const { error } = await supabase
+          .from("user_lineups")
+          .update({ is_club_captain: value })
+          .eq("profile_id", user.id)
+          .eq("gameweek_id", gameweek.id)
+          .eq("club_id", clubId);
+        if (error) throw error;
+      }
+
+      const toDemote = unchanged.filter(id => id === savedCaptainId && id !== captainId);
+      const toPromote = unchanged.filter(id => id !== savedCaptainId && id === captainId);
+
+      for (const clubId of toDemote) await setCaptainFlag(clubId, false);
+
       if (toAdd.length > 0) {
         const rows = toAdd.map(clubId => ({
           profile_id: user.id,
@@ -383,18 +406,7 @@ export default function PoolManagement({ user }) {
         if (error) throw error;
       }
 
-      for (const clubId of unchanged) {
-        const wasCaptain = clubId === savedCaptainId;
-        const isCaptainNow = clubId === captainId;
-        if (wasCaptain === isCaptainNow) continue;
-        const { error } = await supabase
-          .from("user_lineups")
-          .update({ is_club_captain: isCaptainNow })
-          .eq("profile_id", user.id)
-          .eq("gameweek_id", gameweek.id)
-          .eq("club_id", clubId);
-        if (error) throw error;
-      }
+      for (const clubId of toPromote) await setCaptainFlag(clubId, true);
 
       setSavedClubIds(poolClubIds);
       setSavedCaptainId(captainId);
