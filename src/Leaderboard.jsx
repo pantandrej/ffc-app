@@ -160,6 +160,7 @@ const GROUP_LABELS = ["A", "B"];
 function GroupsTab({ user }) {
   const [members, setMembers] = useState([]);
   const [fixtures, setFixtures] = useState([]);
+  const [finals, setFinals] = useState([]);
   const [pointsByTour, setPointsByTour] = useState(new Map()); // profile_id -> Map(gw_id -> points)
   const [gwsWithResults, setGwsWithResults] = useState(new Set()); // туры, где реально есть club_results
   const [loading, setLoading] = useState(true);
@@ -169,20 +170,23 @@ function GroupsTab({ user }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [membersRes, fixturesRes, byTourRes, resultsRes] = await Promise.all([
+      const [membersRes, fixturesRes, finalsRes, byTourRes, resultsRes] = await Promise.all([
         supabase.from("solo_group_members").select("group_label, seed, profile_id, fantasysta_profiles(username)").order("group_label").order("seed"),
         supabase.from("solo_group_fixtures").select("group_label, round, gameweek_id, profile_id_1, profile_id_2").order("group_label").order("round"),
+        supabase.from("solo_final_fixtures").select("place, gameweek_id, profile_id_1, profile_id_2").order("place"),
         supabase.from("leaderboard_solo_by_tour").select("profile_id, gameweek_id, points"),
         supabase.from("club_results").select("gameweek_id"),
       ]);
       if (cancelled) return;
       if (membersRes.error) setError(membersRes.error.message);
       else if (fixturesRes.error) setError(fixturesRes.error.message);
+      else if (finalsRes.error) setError(finalsRes.error.message);
       else if (byTourRes.error) setError(byTourRes.error.message);
       else if (resultsRes.error) setError(resultsRes.error.message);
       else {
         setMembers(membersRes.data || []);
         setFixtures(fixturesRes.data || []);
+        setFinals(finalsRes.data || []);
         const map = new Map();
         (byTourRes.data || []).forEach(r => {
           const m = map.get(r.profile_id) || new Map();
@@ -215,7 +219,7 @@ function GroupsTab({ user }) {
     <div className="flex flex-col gap-8">
       <div className="text-xs text-sky-200 bg-sky-500/5 border border-sky-500/30 rounded-xl px-4 py-3">
         Топ-12 личного зачёта по итогам тура 3 разбит на 2 группы по 6 (места 1,4,5,8,9,12 — группа A; 2,3,6,7,10,11 — группа B).
-        Внутри группы — круговой турнир: тур 4 = 1-й тур группы, ... тур 8 = 5-й (финальный) тур группы. Тур 9 — финал, пара определится по итогам групп.
+        Внутри группы — круговой турнир: тур 4 = 1-й тур группы, ... тур 8 = 5-й (финальный) тур группы. Тур 9 — финал: место N группы A играет с местом N группы B.
       </div>
 
       {GROUP_LABELS.map(label => {
@@ -317,7 +321,31 @@ function GroupsTab({ user }) {
         );
       })}
 
-      <div className="text-xs text-slate-500 text-center py-2">🏆 Тур 9 — финал групп (пара определится по итогам)</div>
+      {finals.length > 0 && (
+        <div>
+          <h2 className="font-extrabold text-lg mb-1">🏆 Финал</h2>
+          <div className="text-xs text-slate-400 mb-3">Тур 9 (3–8 ноября): место N группы A играет с местом N группы B. Выигрывает тот, кто наберёт больше очков за тур.</div>
+          <div className="flex flex-col gap-2">
+            {finals.map(f => {
+              const p1 = getPoints(f.profile_id_1, f.gameweek_id);
+              const p2 = getPoints(f.profile_id_2, f.gameweek_id);
+              const played = p1 !== undefined && p2 !== undefined;
+              const title = f.place === 1 ? "Финал · 1–2 места" : `Матч за ${f.place * 2 - 1}–${f.place * 2} места`;
+              const meIn = f.profile_id_1 === user.id || f.profile_id_2 === user.id;
+              return (
+                <div key={f.place} className={`rounded-lg border p-3 ${meIn ? "border-emerald-500/50 bg-emerald-500/10" : "border-slate-700 bg-slate-800/60"}`}>
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5">{title}</div>
+                  <div className="text-sm flex items-center justify-between gap-2">
+                    <span className={`truncate flex-1 font-semibold ${played && p1 > p2 ? "text-emerald-400" : ""}`}>{nameByProfile.get(f.profile_id_1)}</span>
+                    <span className={`font-bold flex-shrink-0 px-1 ${played ? "text-emerald-400" : "text-slate-600"}`}>{played ? `${p1}:${p2}` : "—"}</span>
+                    <span className={`truncate flex-1 text-right font-semibold ${played && p2 > p1 ? "text-emerald-400" : ""}`}>{nameByProfile.get(f.profile_id_2)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
