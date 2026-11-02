@@ -324,7 +324,7 @@ function GroupsTab({ user }) {
       {finals.length > 0 && (
         <div>
           <h2 className="font-extrabold text-lg mb-1">🏆 Финал</h2>
-          <div className="text-xs text-slate-400 mb-3">Тур 9 (3–8 ноября): место N группы A играет с местом N группы B. Выигрывает тот, кто наберёт больше очков за тур.</div>
+          <div className="text-xs text-slate-400 mb-3">Тур 9 (3–15 ноября): место N группы A играет с местом N группы B. Выигрывает тот, кто наберёт больше очков за тур.</div>
           <div className="flex flex-col gap-2">
             {finals.map(f => {
               const p1 = getPoints(f.profile_id_1, f.gameweek_id);
