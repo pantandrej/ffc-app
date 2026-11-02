@@ -1,5 +1,5 @@
 -- ============================================================================
--- FANTASYСТА — Модуль 38. Финал личного зачёта (тур 9, 3-15 ноября)
+-- FANTASYСТА — Модуль 38. Финал личного зачёта (тур 9, 3-8 ноября)
 -- По итогам групп (тур 8 = 5-й тур группы) место N группы A играет с местом N
 -- группы B: 6 матчей за места 1-2, 3-4, 5-6, 7-8, 9-10, 11-12. Результат
 -- матча, как и в группах, считается на фронтенде: больше очков за тур 9 —
@@ -35,8 +35,5 @@ FROM (VALUES
 JOIN public.solo_group_members a ON a.group_label = v.ga AND a.seed = v.sa
 JOIN public.solo_group_members b ON b.group_label = v.gb AND b.seed = v.sb
 ON CONFLICT (place) DO UPDATE SET profile_id_1 = excluded.profile_id_1, profile_id_2 = excluded.profile_id_2;
-
--- Тур 9 продлён до 15 ноября (матчей клубов на 9-15 ноября в календаре нет).
-UPDATE public.gameweeks SET ends_on = '2026-11-15' WHERE id = 9;
 
 NOTIFY pgrst, 'reload schema';
