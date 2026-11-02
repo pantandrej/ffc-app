@@ -223,6 +223,75 @@ function GroupTable({ label, members, fixtures, pointsByTour, gwsWithResults }) 
   );
 }
 
+// Финал плей-офф (тур 9): место N группы A против места N группы B. Главный
+// матч (за 1-2 места) — крупной золотой карточкой, остальные пять — сеткой
+// поменьше. Победитель матча (больше очков за тур) подсвечивается.
+function FinalBracket({ finals, groupMembers, pointsByTour, gwsWithResults }) {
+  if (finals.length === 0) return null;
+  const nameByProfile = new Map(groupMembers.map(m => [m.profile_id, m.fantasysta_profiles?.username || "?"]));
+  const placeByProfile = new Map(groupMembers.map(m => [m.profile_id, `${m.group_label}`]));
+  function getPoints(profileId, gwId) {
+    if (!gwsWithResults.has(gwId)) return undefined;
+    return pointsByTour.get(profileId)?.get(gwId);
+  }
+  const title = place => (place === 1 ? "Финал" : `Матч за ${place * 2 - 1}–${place * 2} места`);
+
+  function Side({ profileId, place, score, win, right }) {
+    return (
+      <div className={`flex-1 min-w-0 flex flex-col ${right ? "items-end text-right" : "items-start text-left"}`}>
+        <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${win ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
+          {placeByProfile.get(profileId)}{place}
+        </span>
+        <span className={`mt-1 max-w-full truncate font-bold ${win ? "text-emerald-300" : "text-slate-100"}`}>{nameByProfile.get(profileId)}</span>
+        {score !== undefined && <span className={`text-xs font-semibold ${win ? "text-emerald-400" : "text-slate-500"}`}>{score} очк.</span>}
+      </div>
+    );
+  }
+
+  function Match({ f, big }) {
+    const p1 = getPoints(f.profile_id_1, f.gameweek_id);
+    const p2 = getPoints(f.profile_id_2, f.gameweek_id);
+    const played = p1 !== undefined && p2 !== undefined;
+    const w1 = played && p1 > p2;
+    const w2 = played && p2 > p1;
+    return (
+      <div className={big
+        ? "rounded-2xl border border-amber-400/50 bg-gradient-to-br from-amber-500/15 via-slate-900 to-amber-500/10 p-5 shadow-[0_0_40px_-12px_rgba(251,191,36,0.5)]"
+        : "rounded-xl border border-slate-700 bg-slate-900 p-3"}>
+        <div className={`text-center font-extrabold uppercase tracking-widest mb-3 ${big ? "text-amber-300 text-sm" : "text-slate-500 text-[10px]"}`}>
+          {big ? "🏆 " : ""}{title(f.place)}
+        </div>
+        <div className={`flex items-center gap-3 ${big ? "text-xl" : "text-sm"}`}>
+          <Side profileId={f.profile_id_1} place={f.place} score={p1} win={w1} />
+          <div className="flex-shrink-0 text-center">
+            {played ? (
+              <div className={`font-black tabular-nums ${big ? "text-4xl text-amber-300" : "text-xl text-emerald-400"}`}>{p1}:{p2}</div>
+            ) : (
+              <div className={`font-black italic ${big ? "text-3xl text-amber-400/80" : "text-lg text-slate-600"}`}>VS</div>
+            )}
+          </div>
+          <Side profileId={f.profile_id_2} place={f.place} score={p2} win={w2} right />
+        </div>
+      </div>
+    );
+  }
+
+  const main = finals.find(f => f.place === 1);
+  const rest = finals.filter(f => f.place !== 1);
+  return (
+    <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-b from-slate-900 to-slate-950 p-4 md:p-6 flex flex-col gap-4">
+      <div className="text-center">
+        <div className="text-2xl md:text-3xl font-black uppercase tracking-widest text-amber-300">Финал</div>
+        <div className="text-xs md:text-sm text-slate-400 mt-1">Тур 9 · 3–8 ноября · место N группы A против места N группы B</div>
+      </div>
+      {main && <Match f={main} big />}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {rest.map(f => <Match key={f.place} f={f} />)}
+      </div>
+    </div>
+  );
+}
+
 export function AdminScreenshotInner({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -235,6 +304,7 @@ export function AdminScreenshotInner({ user }) {
   const [logoByClubId, setLogoByClubId] = useState(new Map());
   const [groupMembers, setGroupMembers] = useState([]);
   const [groupFixtures, setGroupFixtures] = useState([]);
+  const [finals, setFinals] = useState([]);
   const [gwsWithResults, setGwsWithResults] = useState(new Set());
 
   useEffect(() => {
@@ -242,7 +312,7 @@ export function AdminScreenshotInner({ user }) {
     (async () => {
       setLoading(true);
       try {
-        const [pRes, byTourRes, tRes, mRes, allGwRes, gmRes, gfRes, crRes] = await Promise.all([
+        const [pRes, byTourRes, tRes, mRes, allGwRes, gmRes, gfRes, crRes, finRes] = await Promise.all([
           supabase.from("leaderboard_solo").select("*").order("total_points", { ascending: false }),
           supabase.from("leaderboard_solo_by_tour").select("*"),
           supabase.from("leaderboard_teams").select("*").order("total_points", { ascending: false }),
@@ -251,6 +321,7 @@ export function AdminScreenshotInner({ user }) {
           supabase.from("solo_group_members").select("group_label, seed, profile_id, fantasysta_profiles(username)").order("group_label").order("seed"),
           supabase.from("solo_group_fixtures").select("group_label, round, gameweek_id, profile_id_1, profile_id_2").order("group_label").order("round"),
           supabase.from("club_results").select("gameweek_id"),
+          supabase.from("solo_final_fixtures").select("place, gameweek_id, profile_id_1, profile_id_2").order("place"),
         ]);
         if (pRes.error) throw pRes.error;
         if (byTourRes.error) throw byTourRes.error;
@@ -260,12 +331,14 @@ export function AdminScreenshotInner({ user }) {
         if (gmRes.error) throw gmRes.error;
         if (gfRes.error) throw gfRes.error;
         if (crRes.error) throw crRes.error;
+        if (finRes.error) throw finRes.error;
         if (cancelled) return;
         setPersonal(pRes.data || []);
         setByTourRows(byTourRes.data || []);
         setTeams(tRes.data || []);
         setGroupMembers(gmRes.data || []);
         setGroupFixtures(gfRes.data || []);
+        setFinals(finRes.data || []);
         setGwsWithResults(new Set((crRes.data || []).map(r => r.gameweek_id)));
         const todayStr = new Date().toISOString().slice(0, 10);
         const allGwIds = (allGwRes.data || []).filter(g => !g.starts_on || g.starts_on <= todayStr).map(g => g.id);
@@ -354,6 +427,7 @@ export function AdminScreenshotInner({ user }) {
                 ))}
               </div>
             )}
+            <FinalBracket finals={finals} groupMembers={groupMembers} pointsByTour={pointsByTourMap} gwsWithResults={gwsWithResults} />
           </>
         )}
       </div>
